@@ -14,5 +14,5 @@ public sealed record DomainEventNotification<TDomainEvent>(TDomainEvent DomainEv
 /// Implement this to react to a domain event. Handlers run in-process, inside the same request,
 /// after the aggregate's events have been persisted.
 /// </summary>
-public interface IDomainEventHandler<in TDomainEvent> : INotificationHandler<DomainEventNotification<TDomainEvent>>
+public interface IDomainEventHandler<TDomainEvent> : INotificationHandler<DomainEventNotification<TDomainEvent>>
     where TDomainEvent : IDomainEvent;

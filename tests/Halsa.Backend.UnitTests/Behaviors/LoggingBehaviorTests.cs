@@ -7,7 +7,7 @@ namespace Halsa.Backend.UnitTests.Behaviors;
 
 public sealed class LoggingBehaviorTests
 {
-    private sealed record SampleRequest : IRequest<Result>;
+    public sealed record SampleRequest : IRequest<Result>;
 
     [Fact]
     public async Task Handle_ShouldReturnTheHandlerResponse()

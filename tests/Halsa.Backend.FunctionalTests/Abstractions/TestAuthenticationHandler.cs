@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Halsa.Backend.Infrastructure.Authentication;
 using Halsa.Backend.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
@@ -25,8 +26,9 @@ internal sealed class TestAuthenticationHandler(
     {
         Claim[] claims =
         [
-            new(ClaimTypes.NameIdentifier, TestUserId.ToString()),
-            new(ClaimTypes.Email, "dev@example.com"),
+            // Same raw claim names Keycloak puts in the token, so the tests exercise CurrentUser for real.
+            new(CurrentUser.SubjectClaimType, TestUserId.ToString()),
+            new(CurrentUser.EmailClaimType, "dev@example.com"),
             new("permissions", Permissions.WorkItemsRead),
             new("permissions", Permissions.WorkItemsWrite)
         ];

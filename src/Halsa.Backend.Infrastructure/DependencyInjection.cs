@@ -14,8 +14,11 @@ using Halsa.Backend.SharedKernel.Abstractions;
 using Halsa.Backend.SharedKernel.EventSourcing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using StackExchange.Redis;
 
 namespace Halsa.Backend.Infrastructure;
 
@@ -101,12 +104,44 @@ public static class DependencyInjection
 
     private static IServiceCollection AddCaching(this IServiceCollection services, IConfiguration configuration)
     {
+        services
+            .AddOptions<CachingOptions>()
+            .Bind(configuration.GetSection(CachingOptions.SectionName))
+            .ValidateOnStart();
+
+        CachingOptions caching = configuration
+            .GetSection(CachingOptions.SectionName)
+            .Get<CachingOptions>() ?? new CachingOptions();
+
         string? redis = configuration.GetConnectionString("Cache");
 
-        services.AddStackExchangeRedisCache(options =>
+        // Without Redis, HybridCache runs in-process only: fine for one replica, wrong for several,
+        // because a tag eviction on one replica would never reach the others.
+        if (!string.IsNullOrWhiteSpace(redis))
         {
-            options.Configuration = redis;
-            options.InstanceName = "halsa.backend:";
+            services.AddStackExchangeRedisCache(options =>
+            {
+                ConfigurationOptions redisOptions = ConfigurationOptions.Parse(redis);
+
+                // Start even if Redis is down and fail fast while it stays down: the cache is optional.
+                redisOptions.AbortOnConnectFail = false;
+                redisOptions.ConnectTimeout = 2_000;
+                redisOptions.SyncTimeout = 1_000;
+                redisOptions.AsyncTimeout = 1_000;
+
+                options.ConfigurationOptions = redisOptions;
+                options.InstanceName = "halsa.backend:";
+            });
+        }
+
+        services.AddHybridCache(options =>
+        {
+            options.MaximumPayloadBytes = caching.MaximumPayloadBytes;
+            options.DefaultEntryOptions = new HybridCacheEntryOptions
+            {
+                Expiration = caching.DefaultExpiration,
+                LocalCacheExpiration = caching.LocalCacheExpiration
+            };
         });
 
         services.AddSingleton<ICacheService, CacheService>();
@@ -118,9 +153,17 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services
+        IHealthChecksBuilder healthChecks = services
             .AddHealthChecks()
             .AddNpgSql(configuration.GetConnectionString("Database")!, name: "postgres");
+
+        string? redis = configuration.GetConnectionString("Cache");
+
+        // Degraded, not Unhealthy: without Redis the API still answers, just slower.
+        if (!string.IsNullOrWhiteSpace(redis))
+        {
+            healthChecks.AddRedis(redis, name: "redis", failureStatus: HealthStatus.Degraded);
+        }
 
         return services;
     }

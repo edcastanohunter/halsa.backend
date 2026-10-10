@@ -1,0 +1,767 @@
+openapi: 3.1.0
+info:
+  title: Halsa ATEL API
+  version: 1.0.0-draft
+  summary: Contrato de integración ARL/IPS y del frontend para la gestión de siniestros ATEL.
+  description: |
+    Contrato conceptual. La fuente de verdad al implementar es el OpenAPI que genera
+    `Microsoft.AspNetCore.OpenApi` en `/openapi/v1.json`. Ambos deben coincidir y los cambios se
+    revisan aquí primero.
+
+    Convenciones:
+    - JSON en camelCase. Fechas en ISO 8601: `date` para días y `date-time` con zona horaria para instantes.
+    - Los errores siguen RFC 9457 (`application/problem+json`). El campo `code` es estable y apto para i18n en el frontend.
+    - Los códigos externos se envían como `{ sistema, codigo }` para mapearlos a FHIR `Coding` sin pérdida.
+    - Todas las escrituras de integración exigen `Idempotency-Key`.
+    - El tenant (ARL) NUNCA viaja en el cuerpo ni en la URL. Se toma del token.
+servers:
+  - url: https://api.halsa.co/v1
+    description: Producción
+  - url: http://localhost:5600/v1
+    description: Desarrollo local
+
+tags:
+  - name: Integraciones
+    description: Entrada desde los cores de las ARL y las IPS (máquina a máquina).
+  - name: Incapacidades
+    description: Carga de certificados de incapacidad por IPS o personal médico.
+  - name: Clinico
+    description: Accesos sensibles con step-up.
+
+security:
+  - personal: []
+
+paths:
+  /integraciones/furat:
+    post:
+      tags: [Integraciones]
+      operationId: recibirFurat
+      summary: Recibe un FURAT (Res. 156/2005) desde el core de una ARL.
+      description: |
+        Webhook entrante. Responde `202` en cuanto el reporte queda persistido y radicado.
+        El cruce con la afiliación y la deduplicación son asíncronos. Su resultado se notifica
+        con los webhooks salientes `caso.validado` y `caso.rechazado`.
+
+        Requiere:
+        - mTLS en Nginx, con un token ligado al certificado (`cnf.x5t#S256`).
+        - Un token de client credentials del client `int-arl-{codigo}` con el rol `integracion:furat:write`.
+      security:
+        - integracion: [integracion:furat:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FuratRequest' }
+            examples:
+              caidaAltura: { $ref: '#/components/examples/FuratCaidaAltura' }
+      responses:
+        '202':
+          description: Reporte aceptado y radicado.
+          headers:
+            Location:
+              description: URL para consultar el estado del procesamiento.
+              schema: { type: string, example: /v1/integraciones/furat/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RadicacionResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '409': { $ref: '#/components/responses/ConflictoIdempotencia' }
+        '413': { $ref: '#/components/responses/DemasiadoGrande' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /integraciones/furat/{solicitudId}:
+    get:
+      tags: [Integraciones]
+      operationId: consultarEstadoFurat
+      summary: Estado del procesamiento asíncrono de un FURAT.
+      security:
+        - integracion: [integracion:furat:write]
+      parameters:
+        - name: solicitudId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Estado actual.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RadicacionResponse' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /integraciones/furep:
+    post:
+      tags: [Integraciones]
+      operationId: recibirFurep
+      summary: Recibe un FUREP (Res. 156/2005) desde el core de una ARL.
+      description: Mismo comportamiento, seguridad e idempotencia que `/integraciones/furat`.
+      security:
+        - integracion: [integracion:furep:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FurepRequest' }
+      responses:
+        '202':
+          description: Reporte aceptado y radicado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RadicacionResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '409': { $ref: '#/components/responses/ConflictoIdempotencia' }
+
+  /casos/{casoId}/incapacidades:
+    post:
+      tags: [Incapacidades]
+      operationId: cargarIncapacidad
+      summary: Carga un certificado de incapacidad temporal con su soporte PDF.
+      description: |
+        Lo consumen el backoffice (médico laboral o de IPS) y las integraciones de IPS.
+
+        Autorización:
+        - Permiso `incapacidades:write`.
+        - Actor ARL: el caso pertenece a su tenant.
+        - Actor IPS: existe una remisión vigente del caso hacia su IPS.
+        - Usuarios humanos: `acr >= 2` (MFA). Si no se cumple, la respuesta es `401` con step-up.
+
+        El diagnóstico se almacena cifrado en el esquema clínico. La respuesta solo devuelve datos
+        administrativos y alertas.
+
+        El cuerpo es `multipart/form-data` con exactamente dos partes:
+        - `datos` (`application/json`): metadatos del certificado.
+        - `soporte` (`application/pdf`): documento firmado, máximo 10 MB.
+      security:
+        - personal: [incapacidades:write]
+        - integracion: [incapacidades:write]
+      parameters:
+        - name: casoId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [datos, soporte]
+              properties:
+                datos: { $ref: '#/components/schemas/IncapacidadRequest' }
+                soporte:
+                  type: string
+                  contentMediaType: application/pdf
+                  description: PDF del certificado. Máximo 10 MB. Se valida la firma mágica `%PDF-` y se analiza con antivirus.
+            encoding:
+              datos: { contentType: application/json }
+              soporte: { contentType: application/pdf }
+      responses:
+        '201':
+          description: Incapacidad registrada.
+          headers:
+            Location:
+              schema: { type: string, example: /v1/casos/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b/incapacidades/0192f1e5-0000-7000-8000-000000000001 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncapacidadResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/StepUpRequerido' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflictoIdempotencia' }
+        '413': { $ref: '#/components/responses/DemasiadoGrande' }
+        '415':
+          description: El soporte no es un PDF válido.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '422':
+          description: |
+            Regla de negocio incumplida. Ejemplos de `code`: `INCAPACIDAD_SOLAPADA`,
+            `PRORROGA_SIN_INICIAL`, `CASO_CERRADO`.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
+  /casos/{casoId}/dictamen-pcl:
+    get:
+      tags: [Clinico]
+      operationId: obtenerDictamenPcl
+      summary: Dictamen de pérdida de capacidad laboral (acceso sensible y auditado).
+      description: |
+        Requiere `pcl:dictamen:read`, la asignación al caso, `acr >= 2` y `auth_time` de menos de 15 minutos.
+        Cada lectura, permitida o denegada, queda en `auditoria.accesos`.
+      security:
+        - personal: [pcl:dictamen:read]
+      parameters:
+        - name: casoId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Halsa-Motivo-Acceso
+          in: header
+          required: false
+          description: Obligatorio solo para el acceso de emergencia (`clinico:emergencia`). Mínimo 20 caracteres.
+          schema: { type: string, minLength: 20, maxLength: 500 }
+      responses:
+        '200':
+          description: Dictamen.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: 'no-store' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DictamenPclResponse' }
+        '401': { $ref: '#/components/responses/StepUpRequerido' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+webhooks:
+  plazoProximoAVencer:
+    post:
+      summary: "Evento saliente: plazo legal próximo a vencer."
+      description: |
+        Se entrega al endpoint suscrito por la ARL, al menos una vez (at-least-once). El receptor debe deduplicar por `eventoId`.
+        La firma va en `Halsa-Signature: t=<unix>,v1=<hex(HMAC-SHA256(secreto, t + "." + cuerpo))>`.
+        Se deben rechazar las firmas con más de 5 minutos de antigüedad.
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoPlazo' }
+      responses:
+        '2XX': { description: Recibido. Cualquier otra respuesta provoca un reintento con backoff durante 24 h. }
+  plazoVencido:
+    post:
+      summary: "Evento saliente: plazo legal vencido."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoPlazo' }
+      responses:
+        '2XX': { description: Recibido. }
+  casoValidado:
+    post:
+      summary: "Evento saliente: el FURAT/FUREP pasó la validación asíncrona."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoCaso' }
+      responses:
+        '2XX': { description: Recibido. }
+
+components:
+  securitySchemes:
+    personal:
+      type: oauth2
+      description: Realm `halsa`, client `halsa-backoffice` (Authorization Code + PKCE). Audiencia `halsa-api`.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/auth
+          tokenUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/token
+          scopes:
+            incapacidades:write: Cargar incapacidades
+            pcl:dictamen:read: Leer dictámenes PCL
+    integracion:
+      type: oauth2
+      description: Realm `halsa`, clients `int-arl-*` o `int-ips-*`. Client Credentials con `private_key_jwt` y token ligado a certificado mTLS (RFC 8705).
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/token
+          scopes:
+            integracion:furat:write: Radicar FURAT
+            integracion:furep:write: Radicar FUREP
+            incapacidades:write: Cargar incapacidades
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID generado por el emisor. Se conserva 72 h. Reutilizarlo con otro cuerpo devuelve `409`.
+      schema: { type: string, format: uuid }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Se propaga a los logs y a la auditoría. Si falta, la API genera uno y lo devuelve.
+      schema: { type: string, maxLength: 64 }
+    HalsaSignature:
+      name: Halsa-Signature
+      in: header
+      required: true
+      schema: { type: string, example: 't=1760050000,v1=5f2b...e9' }
+
+  schemas:
+    # ---------- Tipos base ----------
+    Codificado:
+      type: object
+      description: Código de una terminología externa. Se mapea a FHIR `Coding`.
+      required: [sistema, codigo]
+      properties:
+        sistema:
+          type: string
+          enum: [CIE-10, CIIU-4AC, DIVIPOLA, RES156-TIPO-LESION, RES156-PARTE-CUERPO, RES156-AGENTE, RES156-MECANISMO, CIUO-08AC]
+        codigo: { type: string, maxLength: 20 }
+        descripcion: { type: string, maxLength: 250 }
+
+    Identificacion:
+      type: object
+      required: [tipo, numero]
+      properties:
+        tipo:
+          type: string
+          description: |
+            Tipo de documento: CC = cédula de ciudadanía, CE = cédula de extranjería, TI = tarjeta de identidad,
+            PA = pasaporte, PE = permiso especial de permanencia, PT = permiso por protección temporal, NIT = número de identificación tributaria.
+          enum: [CC, CE, TI, PA, PE, PT, NIT]
+        numero: { type: string, pattern: '^[A-Za-z0-9]{3,20}$' }
+
+    Ubicacion:
+      type: object
+      required: [municipio, zona]
+      properties:
+        municipio:
+          allOf: [{ $ref: '#/components/schemas/Codificado' }]
+          description: Código DIVIPOLA de 5 dígitos (`sistema=DIVIPOLA`).
+        zona: { type: string, enum: [URBANA, RURAL] }
+        direccion: { type: string, maxLength: 200 }
+
+    # ---------- FURAT ----------
+    FuratRequest:
+      type: object
+      description: |
+        Estructura del FURAT (Res. 156/2005) normalizada. Los campos marcados con `x-clasificacion: clinico`
+        se separan en la ingesta y se guardan cifrados en el esquema `clinico`.
+      required: [version, numeroReporteOrigen, empleador, trabajador, evento, informante]
+      properties:
+        version: { type: string, const: '1.0' }
+        numeroReporteOrigen:
+          type: string
+          maxLength: 40
+          description: Identificador del reporte en el core de la ARL. Es la clave de negocio para deduplicar.
+        fechaReporte: { type: string, format: date-time }
+        empleador:
+          type: object
+          required: [identificacion, razonSocial, actividadEconomica, sede]
+          properties:
+            identificacion: { $ref: '#/components/schemas/Identificacion' }
+            razonSocial: { type: string, maxLength: 200 }
+            tipoVinculador: { type: string, enum: [EMPLEADOR, CONTRATANTE, COOPERATIVA, EMPRESA_SERVICIOS_TEMPORALES] }
+            actividadEconomica:
+              allOf: [{ $ref: '#/components/schemas/Codificado' }]
+              description: Código de actividad económica para riesgos laborales (`sistema=CIIU-4AC`).
+            sede:
+              type: object
+              required: [ubicacion]
+              properties:
+                nombre: { type: string, maxLength: 120 }
+                ubicacion: { $ref: '#/components/schemas/Ubicacion' }
+                telefono: { type: string, maxLength: 20 }
+        trabajador:
+          type: object
+          required: [identificacion, primerNombre, primerApellido, fechaNacimiento, sexo, tipoVinculacion, cargo, fechaIngreso]
+          properties:
+            identificacion: { $ref: '#/components/schemas/Identificacion' }
+            primerNombre: { type: string, maxLength: 60 }
+            segundoNombre: { type: string, maxLength: 60 }
+            primerApellido: { type: string, maxLength: 60 }
+            segundoApellido: { type: string, maxLength: 60 }
+            fechaNacimiento: { type: string, format: date }
+            sexo: { type: string, enum: [F, M, I] }
+            tipoVinculacion: { type: string, enum: [PLANTA, MISION, COOPERADO, ESTUDIANTE_APRENDIZ, INDEPENDIENTE] }
+            cargo: { type: string, maxLength: 120 }
+            ocupacion: { $ref: '#/components/schemas/Codificado' }
+            fechaIngreso: { type: string, format: date }
+            jornadaHabitual: { type: string, enum: [DIURNA, NOCTURNA, MIXTA, TURNOS] }
+            contacto:
+              type: object
+              properties:
+                telefono: { type: string, maxLength: 20 }
+                correo: { type: string, format: email }
+        evento:
+          type: object
+          required: [fechaHora, jornada, realizabaLaborHabitual, tipo, causoMuerte, lugar, ubicacion, descripcion]
+          properties:
+            fechaHora:
+              type: string
+              format: date-time
+              description: Instante del accidente con zona horaria (`-05:00`). No puede ser futuro.
+            diaSemana: { type: string, readOnly: true, description: Lo calcula el servidor. }
+            jornada: { type: string, enum: [NORMAL, EXTRA] }
+            realizabaLaborHabitual: { type: boolean }
+            laborRealizada: { type: string, maxLength: 200 }
+            tiempoLaboradoPrevioMinutos: { type: integer, minimum: 0 }
+            tipo: { type: string, enum: [PROPIO_DEL_TRABAJO, VIOLENCIA, TRANSITO, DEPORTIVO, RECREATIVO_CULTURAL] }
+            causoMuerte: { type: boolean }
+            esGrave:
+              type: boolean
+              description: Según la definición de la Res. 1401/2007. Activa el plazo `REMISION_INVESTIGACION_GRAVE`.
+            lugar: { type: string, enum: [DENTRO_EMPRESA, FUERA_EMPRESA] }
+            sitio: { type: string, enum: [ALMACEN, CORREDOR, PARQUEADERO, OFICINA, PLANTA, VIA_PUBLICA, OTRO] }
+            ubicacion: { $ref: '#/components/schemas/Ubicacion' }
+            tiposLesion:
+              type: array
+              x-clasificacion: clinico
+              items: { $ref: '#/components/schemas/Codificado' }
+            partesCuerpo:
+              type: array
+              x-clasificacion: clinico
+              items: { $ref: '#/components/schemas/Codificado' }
+            agente: { $ref: '#/components/schemas/Codificado' }
+            mecanismo: { $ref: '#/components/schemas/Codificado' }
+            descripcion:
+              type: string
+              minLength: 20
+              maxLength: 4000
+              x-clasificacion: clinico
+              description: Relato del evento. Puede contener información de salud, así que se cifra.
+        testigos:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [identificacion, nombreCompleto]
+            properties:
+              identificacion: { $ref: '#/components/schemas/Identificacion' }
+              nombreCompleto: { type: string, maxLength: 200 }
+              cargo: { type: string, maxLength: 120 }
+        informante:
+          type: object
+          required: [identificacion, nombreCompleto, cargo, fechaDiligenciamiento]
+          properties:
+            identificacion: { $ref: '#/components/schemas/Identificacion' }
+            nombreCompleto: { type: string, maxLength: 200 }
+            cargo: { type: string, maxLength: 120 }
+            fechaDiligenciamiento: { type: string, format: date-time }
+        ipsAtencionInicial:
+          type: object
+          properties:
+            codigoReps: { type: string, pattern: '^[0-9]{10,12}$' }
+            nombre: { type: string, maxLength: 200 }
+
+    # ---------- FUREP ----------
+    FurepRequest:
+      type: object
+      required: [version, numeroReporteOrigen, empleador, trabajador, enfermedad, informante]
+      properties:
+        version: { type: string, const: '1.0' }
+        numeroReporteOrigen: { type: string, maxLength: 40 }
+        empleador: { $ref: '#/components/schemas/FuratRequest/properties/empleador' }
+        trabajador: { $ref: '#/components/schemas/FuratRequest/properties/trabajador' }
+        informante: { $ref: '#/components/schemas/FuratRequest/properties/informante' }
+        enfermedad:
+          type: object
+          required: [fechaDiagnostico, diagnosticos, medicoDiagnostica]
+          properties:
+            fechaDiagnostico: { type: string, format: date }
+            diagnosticos:
+              type: array
+              minItems: 1
+              x-clasificacion: clinico
+              items: { $ref: '#/components/schemas/Codificado' }
+            factoresRiesgo:
+              type: array
+              items:
+                type: object
+                properties:
+                  descripcion: { type: string, maxLength: 300 }
+                  tiempoExposicionMeses: { type: integer, minimum: 0 }
+            medicoDiagnostica: { $ref: '#/components/schemas/Profesional' }
+
+    RadicacionResponse:
+      type: object
+      required: [solicitudId, radicado, estado, recibidoEn]
+      properties:
+        solicitudId: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string, example: ATEL-POS-2026-000123 }
+        estado: { type: string, enum: [RADICADO, VALIDADO, RECHAZADO, DUPLICADO] }
+        recibidoEn: { type: string, format: date-time }
+        plazos:
+          type: array
+          description: Plazos legales que abrió la radicación.
+          items: { $ref: '#/components/schemas/PlazoResumen' }
+        motivoRechazo: { $ref: '#/components/schemas/Problema' }
+
+    # ---------- Incapacidad ----------
+    IncapacidadRequest:
+      type: object
+      required: [numeroCertificado, tipo, fechaInicio, dias, diagnosticoPrincipal, profesional, ipsEmisora, modalidad]
+      properties:
+        numeroCertificado: { type: string, maxLength: 40 }
+        tipo: { type: string, enum: [INICIAL, PRORROGA] }
+        prorrogaDe:
+          type: string
+          format: uuid
+          description: Obligatorio si `tipo=PRORROGA`. Es el id de la incapacidad anterior del mismo caso.
+        fechaInicio: { type: string, format: date }
+        dias:
+          type: integer
+          minimum: 1
+          maximum: 30
+          description: Días calendario. La fecha fin la calcula el servidor (`fechaInicio + dias - 1`) para evitar inconsistencias.
+        diagnosticoPrincipal:
+          allOf: [{ $ref: '#/components/schemas/Codificado' }]
+          x-clasificacion: clinico
+          description: Código CIE-10 (`sistema=CIE-10`). Se cifra y nunca se devuelve en la respuesta.
+        diagnosticosRelacionados:
+          type: array
+          maxItems: 3
+          x-clasificacion: clinico
+          items: { $ref: '#/components/schemas/Codificado' }
+        profesional: { $ref: '#/components/schemas/Profesional' }
+        ipsEmisora:
+          type: object
+          required: [codigoReps]
+          properties:
+            codigoReps: { type: string, pattern: '^[0-9]{10,12}$' }
+            nombre: { type: string, maxLength: 200 }
+        modalidad: { type: string, enum: [PRESENCIAL, TELEMEDICINA] }
+        observaciones:
+          type: string
+          maxLength: 1000
+          x-clasificacion: clinico
+
+    IncapacidadResponse:
+      type: object
+      description: Solo datos administrativos. No incluye diagnósticos.
+      required: [id, casoId, tipo, fechaInicio, fechaFin, dias, diasAcumulados, estado]
+      properties:
+        id: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        tipo: { type: string, enum: [INICIAL, PRORROGA] }
+        fechaInicio: { type: string, format: date }
+        fechaFin: { type: string, format: date }
+        dias: { type: integer }
+        diasAcumulados:
+          type: integer
+          description: Suma de los días de la cadena inicial + prórrogas del caso.
+        estado: { type: string, enum: [REGISTRADA, EN_REVISION, APROBADA_PAGO, RECHAZADA] }
+        soporteId: { type: string, format: uuid }
+        alertas:
+          type: array
+          items:
+            type: object
+            required: [code, mensaje]
+            properties:
+              code:
+                type: string
+                enum: [ACUMULADO_150_DIAS, ACUMULADO_180_DIAS, ACUMULADO_540_DIAS, CARGA_EXTEMPORANEA]
+                description: |
+                  Umbrales de la Ley 776/2002.
+                  - `ACUMULADO_150_DIAS`: alerta temprana.
+                  - `ACUMULADO_180_DIAS`: se requiere concepto de rehabilitación para la prórroga.
+                  - `ACUMULADO_540_DIAS`: alerta de seguimiento de largo plazo, pendiente de validación jurídica.
+                  - `CARGA_EXTEMPORANEA`: el certificado se cargó tarde.
+              mensaje: { type: string }
+
+    # ---------- Clínico ----------
+    Profesional:
+      type: object
+      required: [identificacion, nombreCompleto, registroRethus]
+      properties:
+        identificacion: { $ref: '#/components/schemas/Identificacion' }
+        nombreCompleto: { type: string, maxLength: 200 }
+        registroRethus: { type: string, maxLength: 30 }
+        especialidad: { type: string, maxLength: 120 }
+
+    DictamenPclResponse:
+      type: object
+      required: [casoId, porcentajePcl, origen, fechaEstructuracion, fechaDictamen, calificador]
+      properties:
+        casoId: { type: string, format: uuid }
+        porcentajePcl: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+        origen: { type: string, enum: [LABORAL, COMUN, MIXTO] }
+        fechaEstructuracion: { type: string, format: date }
+        fechaDictamen: { type: string, format: date }
+        manual: { type: string, const: 'Decreto 1507/2014' }
+        componentes:
+          type: object
+          properties:
+            deficiencias: { type: number }
+            rolLaboralYOtrasAreas: { type: number }
+        fundamentos:
+          type: string
+          description: Motivación clínica. Es el contenido más sensible del sistema.
+        diagnosticos:
+          type: array
+          items: { $ref: '#/components/schemas/Codificado' }
+        calificador: { $ref: '#/components/schemas/Profesional' }
+        estadoNotificacion: { type: string, enum: [PENDIENTE, NOTIFICADO, EN_CONTROVERSIA, EN_FIRME] }
+        venceControversiaEn: { type: string, format: date }
+
+    # ---------- Eventos ----------
+    PlazoResumen:
+      type: object
+      required: [regla, venceEn]
+      properties:
+        regla:
+          type: string
+          example: INVESTIGACION_AT
+          description: Código de `sst.reglas_termino`.
+        baseLegal:
+          type: string
+          example: Res. 1401/2007
+        venceEn: { type: string, format: date-time }
+
+    EventoPlazo:
+      type: object
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, plazo]
+      properties:
+        eventoId: { type: string, format: uuid }
+        tipo: { type: string, enum: [plazo.proximo-a-vencer, plazo.vencido] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        plazo: { $ref: '#/components/schemas/PlazoResumen' }
+
+    EventoCaso:
+      type: object
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, numeroReporteOrigen]
+      properties:
+        eventoId: { type: string, format: uuid }
+        tipo: { type: string, enum: [caso.validado, caso.rechazado] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        numeroReporteOrigen: { type: string }
+
+    # ---------- Errores ----------
+    Problema:
+      type: object
+      description: RFC 9457. `code` es estable y `detail` es legible por humanos.
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string, example: FURAT_FECHA_FUTURA }
+        traceId: { type: string }
+        errors:
+          type: object
+          description: Errores de validación por ruta JSON.
+          additionalProperties:
+            type: array
+            items: { type: string }
+
+  responses:
+    Validacion:
+      description: Payload inválido.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+          example:
+            type: https://errors.halsa.co/validacion
+            title: Validation failed
+            status: 400
+            code: VALIDACION
+            errors:
+              evento.fechaHora: [La fecha del evento no puede ser futura.]
+              trabajador.identificacion.numero: [Formato inválido.]
+    NoAutenticado:
+      description: El token falta, es inválido o expiró.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    StepUpRequerido:
+      description: |
+        El token es válido pero insuficiente para un acceso sensible (RFC 9470). El frontend debe
+        reautenticar con los parámetros del header `WWW-Authenticate`.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: 'Bearer error="insufficient_user_authentication", acr_values="2", max_age=900'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    Prohibido:
+      description: Autenticado, pero sin permiso sobre el recurso. Queda auditado.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    NoEncontrado:
+      description: |
+        El recurso no existe o no es visible para el actor. No se distingue entre ambos casos
+        para no revelar qué casos existen en otro tenant.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    ConflictoIdempotencia:
+      description: La `Idempotency-Key` ya se usó con un cuerpo distinto.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    DemasiadoGrande:
+      description: El cuerpo supera el límite (2 MB en integraciones, 10 MB en el soporte PDF).
+    LimiteExcedido:
+      description: Se superó el rate limit del cliente.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+
+  examples:
+    FuratCaidaAltura:
+      summary: Caída desde altura en obra
+      value:
+        version: '1.0'
+        numeroReporteOrigen: POS-FURAT-2026-884123
+        fechaReporte: '2026-10-08T09:15:00-05:00'
+        empleador:
+          identificacion: { tipo: NIT, numero: '900123456' }
+          razonSocial: Constructora Andina S.A.S.
+          tipoVinculador: EMPLEADOR
+          actividadEconomica: { sistema: CIIU-4AC, codigo: '5410101', descripcion: Construcción de edificios }
+          sede:
+            nombre: Obra Torre Norte
+            ubicacion: { municipio: { sistema: DIVIPOLA, codigo: '05001' }, zona: URBANA, direccion: Cra 43A 1-50 }
+        trabajador:
+          identificacion: { tipo: CC, numero: '1020304050' }
+          primerNombre: Juan
+          primerApellido: Pérez
+          fechaNacimiento: '1990-04-12'
+          sexo: M
+          tipoVinculacion: PLANTA
+          cargo: Oficial de obra
+          fechaIngreso: '2024-02-01'
+          jornadaHabitual: DIURNA
+        evento:
+          fechaHora: '2026-10-07T14:30:00-05:00'
+          jornada: NORMAL
+          realizabaLaborHabitual: true
+          tipo: PROPIO_DEL_TRABAJO
+          causoMuerte: false
+          esGrave: true
+          lugar: DENTRO_EMPRESA
+          sitio: OTRO
+          ubicacion: { municipio: { sistema: DIVIPOLA, codigo: '05001' }, zona: URBANA }
+          tiposLesion: [{ sistema: RES156-TIPO-LESION, codigo: '20', descripcion: Fractura }]
+          partesCuerpo: [{ sistema: RES156-PARTE-CUERPO, codigo: '50', descripcion: Miembros superiores }]
+          agente: { sistema: RES156-AGENTE, codigo: '300', descripcion: Andamio }
+          mecanismo: { sistema: RES156-MECANISMO, codigo: '10', descripcion: Caída de personas }
+          descripcion: El trabajador cae desde el segundo nivel del andamio al desprenderse una plataforma durante el armado de formaleta.
+        informante:
+          identificacion: { tipo: CC, numero: '43123456' }
+          nombreCompleto: María Gómez
+          cargo: Coordinadora SST
+          fechaDiligenciamiento: '2026-10-08T09:00:00-05:00'
+        ipsAtencionInicial: { codigoReps: '050010212301', nombre: Clínica Las Américas }

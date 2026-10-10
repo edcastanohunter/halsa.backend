@@ -9,9 +9,9 @@ namespace Halsa.Backend.UnitTests.Behaviors;
 
 public sealed class ValidationBehaviorTests
 {
-    private sealed record SampleCommand(string Title) : ICommand<Guid>;
+    public sealed record SampleCommand(string Title) : ICommand<Guid>;
 
-    private sealed record VoidCommand : ICommand;
+    public sealed record VoidCommand : ICommand;
 
     [Fact]
     public async Task Handle_ShouldCallTheHandler_WhenThereAreNoValidators()

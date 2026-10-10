@@ -6,6 +6,7 @@ namespace Halsa.Backend.SharedKernel.Results;
 /// A machine-readable failure. Errors are values, never exceptions: exceptions are reserved
 /// for things the caller cannot reasonably handle.
 /// </summary>
+[JsonConverter(typeof(ErrorJsonConverter))]
 public record Error
 {
     /// <summary>The absence of an error. Built through a private constructor because an empty code
@@ -17,8 +18,8 @@ public record Error
         "A null value was provided where a value was required.",
         ErrorType.Failure);
 
-    /// <summary>Public so that cached results can be round-tripped through System.Text.Json.
-    /// Prefer the named factory methods below in application code.</summary>
+    /// <summary>Private: an empty code is exactly what the public constructor rejects.
+    /// <see cref="ErrorJsonConverter"/> maps an empty code back to this instance when deserializing.</summary>
     private Error()
     {
         Code = string.Empty;
@@ -26,7 +27,6 @@ public record Error
         Type = ErrorType.Failure;
     }
 
-    [JsonConstructor]
     public Error(string code, string description, ErrorType type)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code, nameof(code));

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Halsa.Backend.Application\Halsa.Backend.Application.csproj" />
+    <ProjectReference Include="..\..\src\Halsa.Backend.Infrastructure\Halsa.Backend.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Halsa.Backend.Domain\Halsa.Backend.Domain.csproj" />
     <ProjectReference Include="..\..\src\Halsa.Backend.Mediation\Halsa.Backend.Mediation.csproj" />
     <ProjectReference Include="..\..\src\Halsa.Backend.SharedKernel\Halsa.Backend.SharedKernel.csproj" />

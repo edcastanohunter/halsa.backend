@@ -23,6 +23,8 @@ public static class DependencyInjection
             configuration.AddOpenBehavior(typeof(LoggingBehavior<,>));
             configuration.AddOpenBehavior(typeof(ValidationBehavior<,>));
             configuration.AddOpenBehavior(typeof(QueryCachingBehavior<,>));
+            // A transaction behaviour, if added, goes after this line: eviction must run after the commit.
+            configuration.AddOpenBehavior(typeof(CacheInvalidationBehavior<,>));
         });
 
         services.AddValidatorsFromAssembly(

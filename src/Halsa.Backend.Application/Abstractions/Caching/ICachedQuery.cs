@@ -7,7 +7,11 @@ public interface ICachedQuery
 {
     string CacheKey { get; }
 
+    /// <summary>Distributed lifetime. The in-process copy never outlives the configured local expiration.</summary>
     TimeSpan? Expiration { get; }
+
+    /// <summary>Tags a write uses to evict this entry. See <see cref="IInvalidatesCache"/>.</summary>
+    IReadOnlyCollection<string> CacheTags { get; }
 }
 
 /// <inheritdoc cref="ICachedQuery" />

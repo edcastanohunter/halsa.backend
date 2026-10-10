@@ -12,16 +12,24 @@ internal sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : IC
 {
     public const string PermissionClaimType = "permissions";
 
+    /// <summary>
+    /// Raw JWT claim names. The bearer handler runs with <c>MapInboundClaims = false</c>, so
+    /// <c>sub</c> never becomes <see cref="ClaimTypes.NameIdentifier"/> and must be read as is.
+    /// </summary>
+    public const string SubjectClaimType = "sub";
+
+    public const string EmailClaimType = "email";
+
     private ClaimsPrincipal? Principal => httpContextAccessor.HttpContext?.User;
 
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated ?? false;
 
     public Guid UserId =>
-        Guid.TryParse(Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out Guid userId)
+        Guid.TryParse(Principal?.FindFirstValue(SubjectClaimType), out Guid userId)
             ? userId
             : Guid.Empty;
 
-    public string? Email => Principal?.FindFirstValue(ClaimTypes.Email);
+    public string? Email => Principal?.FindFirstValue(EmailClaimType);
 
     public IReadOnlyCollection<string> Permissions =>
         Principal is null
