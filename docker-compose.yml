@@ -1,0 +1,56 @@
+name: halsa.backend
+
+services:
+  halsa.backend.database:
+    image: postgres:17-alpine
+    container_name: halsa.backend.database
+    environment:
+      POSTGRES_DB: halsa.backend
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # Store everything in UTC. Npgsql maps timestamptz to UTC DateTime; matching the server
+      # removes an entire category of "off by a few hours" bugs.
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - halsa.backend-db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d halsa.backend"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  halsa.backend.identity:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: halsa.backend.identity
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./docker/keycloak:/opt/keycloak/data/import:ro
+      - halsa.backend-identity:/opt/keycloak/data
+    ports:
+      - "8080:8080"
+
+  halsa.backend.seq:
+    image: datalust/seq:latest
+    container_name: halsa.backend.seq
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5341:80"
+
+  halsa.backend.cache:
+    image: redis:7-alpine
+    container_name: halsa.backend.cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  halsa.backend-db:
+  halsa.backend-identity:

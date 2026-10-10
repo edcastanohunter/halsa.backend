@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Halsa.Backend.Api/Halsa.Backend.Api.csproj" />
+    <Project Path="src/Halsa.Backend.Application/Halsa.Backend.Application.csproj" />
+    <Project Path="src/Halsa.Backend.Domain/Halsa.Backend.Domain.csproj" />
+    <Project Path="src/Halsa.Backend.Infrastructure/Halsa.Backend.Infrastructure.csproj" />
+    <Project Path="src/Halsa.Backend.Mediation/Halsa.Backend.Mediation.csproj" />
+    <Project Path="src/Halsa.Backend.SharedKernel/Halsa.Backend.SharedKernel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Halsa.Backend.ArchitectureTests/Halsa.Backend.ArchitectureTests.csproj" />
+    <Project Path="tests/Halsa.Backend.FunctionalTests/Halsa.Backend.FunctionalTests.csproj" />
+    <Project Path="tests/Halsa.Backend.IntegrationTests/Halsa.Backend.IntegrationTests.csproj" />
+    <Project Path="tests/Halsa.Backend.UnitTests/Halsa.Backend.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/solution items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="docker-compose.yml" />
+    <File Path="README.md" />
+  </Folder>
+</Solution>

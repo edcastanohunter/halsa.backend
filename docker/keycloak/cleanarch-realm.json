@@ -1,0 +1,49 @@
+{
+  "realm": "halsa.backend",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "work-items:read", "description": "Read work items" },
+      { "name": "work-items:write", "description": "Create and modify work items" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "halsa.backend-api",
+      "name": "Halsa.Backend API",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:5600/*", "http://localhost:4200/*"],
+      "webOrigins": ["*"],
+      "protocol": "openid-connect",
+      "attributes": { "post.logout.redirect.uris": "+" },
+      "protocolMappers": [
+        {
+          "name": "audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "halsa.backend-api",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "dev",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "dev@example.com",
+      "firstName": "Dev",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+      "realmRoles": ["work-items:read", "work-items:write"]
+    }
+  ]
+}

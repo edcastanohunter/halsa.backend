@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Halsa.Backend.Domain</RootNamespace>
+    <AssemblyName>Halsa.Backend.Domain</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The domain depends on nothing but the shared kernel. No EF Core, no ASP.NET, no mediator. -->
+    <ProjectReference Include="..\Halsa.Backend.SharedKernel\Halsa.Backend.SharedKernel.csproj" />
+  </ItemGroup>
+
+</Project>

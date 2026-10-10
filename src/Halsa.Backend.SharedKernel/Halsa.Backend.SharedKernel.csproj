@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Halsa.Backend.SharedKernel</RootNamespace>
+    <AssemblyName>Halsa.Backend.SharedKernel</AssemblyName>
+  </PropertyGroup>
+
+  <!-- The SharedKernel is deliberately dependency-free: it is the only assembly every
+       other layer is allowed to reference, so it must never drag infrastructure in. -->
+
+</Project>

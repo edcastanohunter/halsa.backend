@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Halsa.Backend.Application</RootNamespace>
+    <AssemblyName>Halsa.Backend.Application</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Halsa.Backend.Domain\Halsa.Backend.Domain.csproj" />
+    <ProjectReference Include="..\Halsa.Backend.Mediation\Halsa.Backend.Mediation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- EF Core is referenced for LINQ async operators over read models only.
+         No DbContext, no provider and no migration ever lives in this project. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>
