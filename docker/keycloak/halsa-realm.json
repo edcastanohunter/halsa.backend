@@ -1,0 +1,490 @@
+{
+  "id": "halsa",
+  "realm": "halsa",
+  "displayName": "Hálsa Personal",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 300,
+
+  "clientScopes": [
+    {
+      "name": "halsa-claims",
+      "description": "Mappers de atributos de usuario: tenant_id, ips_id, actor_tipo",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "ips_id mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "ips_id",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "ips_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "actor_tipo mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "actor_tipo",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "actor_tipo",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+
+  "defaultDefaultClientScopes": [
+    "role_list",
+    "profile",
+    "email",
+    "roles",
+    "web-origins",
+    "acr",
+    "halsa-claims"
+  ],
+
+  "defaultOptionalClientScopes": [
+    "offline_access",
+    "address",
+    "phone",
+    "microprofile-jwt"
+  ],
+
+  "clients": [
+    {
+      "clientId": "halsa-api",
+      "name": "Hálsa API",
+      "description": "Resource server. Bearer-only; no emite tokens.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "bearerOnly": true,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "halsa-backoffice",
+      "name": "Hálsa Backoffice",
+      "description": "SPA del equipo interno. Authorization Code + PKCE.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "bearerOnly": false,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:3000", "http://localhost:5173"],
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "halsa-dev-cli",
+      "name": "Hálsa Dev CLI",
+      "description": "Solo desarrollo. Permite direct access grants para obtener tokens con curl.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "bearerOnly": false,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "int-arl-ARL_A",
+      "name": "Integración ARL_A",
+      "description": "Service account de integración para la ARL_A.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "int-arl-ARL_A-secret",
+      "bearerOnly": false,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "actor_tipo hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "integracion",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "actor_tipo",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "tenant_id hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "ARL_A",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "int-ips-110011234501",
+      "name": "Integración IPS 110011234501",
+      "description": "Service account de integración para la IPS con código REPS 110011234501.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "int-ips-110011234501-secret",
+      "bearerOnly": false,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "actor_tipo hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "integracion",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "actor_tipo",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "ips_id hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "110011234501",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "ips_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+
+  "roles": {
+    "realm": [],
+    "client": {
+      "halsa-api": [
+        { "name": "casos:read",                "description": "Leer casos ATEL",                           "composite": false, "clientRole": true },
+        { "name": "casos:write",               "description": "Crear y modificar casos ATEL",              "composite": false, "clientRole": true },
+        { "name": "incapacidades:read",        "description": "Leer incapacidades",                        "composite": false, "clientRole": true },
+        { "name": "incapacidades:write",       "description": "Registrar y modificar incapacidades",       "composite": false, "clientRole": true },
+        { "name": "plazos:read",               "description": "Consultar plazos legales",                  "composite": false, "clientRole": true },
+        { "name": "clinico:read",              "description": "Leer expediente clínico",                   "composite": false, "clientRole": true },
+        { "name": "clinico:write",             "description": "Ingresar datos clínicos",                   "composite": false, "clientRole": true },
+        { "name": "clinico:emergencia",        "description": "Acceso de emergencia al expediente (break-the-glass)", "composite": false, "clientRole": true },
+        { "name": "pcl:dictamen:read",         "description": "Leer dictamen de PCL",                      "composite": false, "clientRole": true },
+        { "name": "pcl:dictamen:write",        "description": "Emitir y modificar dictamen de PCL",        "composite": false, "clientRole": true },
+        { "name": "auditoria:read",            "description": "Leer registros de auditoría",               "composite": false, "clientRole": true },
+        { "name": "auditoria:export",          "description": "Exportar registros de auditoría",           "composite": false, "clientRole": true },
+        { "name": "integracion:furat:write",   "description": "Enviar FURAT a través de integración",      "composite": false, "clientRole": true },
+        { "name": "integracion:furep:write",   "description": "Enviar FUREP a través de integración",      "composite": false, "clientRole": true },
+        { "name": "integracion:clinico:write", "description": "Enviar datos clínicos a través de integración", "composite": false, "clientRole": true },
+        { "name": "webhooks:manage",           "description": "Gestionar webhooks salientes",              "composite": false, "clientRole": true },
+        { "name": "work-items:read",           "description": "Leer work items (ejemplo; SPEC 02 lo elimina)", "composite": false, "clientRole": true },
+        { "name": "work-items:write",          "description": "Escribir work items (ejemplo; SPEC 02 lo elimina)", "composite": false, "clientRole": true },
+
+        {
+          "name": "analista-arl",
+          "description": "Analista de la ARL: gestión de casos e incapacidades",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": ["casos:read", "casos:write", "incapacidades:read", "plazos:read"]
+            }
+          }
+        },
+        {
+          "name": "medico-laboral",
+          "description": "Médico laboral de la ARL: analista + expediente clínico",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read", "casos:write", "incapacidades:read", "plazos:read",
+                "clinico:read", "clinico:write", "incapacidades:write"
+              ]
+            }
+          }
+        },
+        {
+          "name": "medico-calificador",
+          "description": "Médico calificador de la ARL: laboral + dictamen PCL",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read", "casos:write", "incapacidades:read", "plazos:read",
+                "clinico:read", "clinico:write", "incapacidades:write",
+                "pcl:dictamen:read", "pcl:dictamen:write"
+              ]
+            }
+          }
+        },
+        {
+          "name": "medico-ips",
+          "description": "Médico de IPS: casos remitidos + expediente clínico",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": ["casos:read", "clinico:read", "clinico:write", "incapacidades:write"]
+            }
+          }
+        },
+        {
+          "name": "oficial-privacidad",
+          "description": "Oficial de privacidad: auditoría completa",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": ["auditoria:read", "auditoria:export"]
+            }
+          }
+        },
+        {
+          "name": "integracion-arl",
+          "description": "Cuenta de integración de ARL: FURAT, FUREP y webhooks",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": ["integracion:furat:write", "integracion:furep:write", "webhooks:manage"]
+            }
+          }
+        },
+        {
+          "name": "integracion-ips",
+          "description": "Cuenta de integración de IPS: envío de datos clínicos",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": ["integracion:clinico:write", "incapacidades:write"]
+            }
+          }
+        }
+      ]
+    }
+  },
+
+  "users": [
+    {
+      "id": "01999000-0000-7000-8000-000000000a01",
+      "username": "analista.arla",
+      "email": "analista.arla@halsa.dev",
+      "firstName": "Analista",
+      "lastName": "ARL-A",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "attributes": {
+        "actor_tipo": ["arl"],
+        "tenant_id": ["ARL_A"]
+      },
+      "clientRoles": {
+        "halsa-api": ["analista-arl"]
+      }
+    },
+    {
+      "id": "01999000-0000-7000-8000-000000000a02",
+      "username": "calificador.arla",
+      "email": "calificador.arla@halsa.dev",
+      "firstName": "Calificador",
+      "lastName": "ARL-A",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "attributes": {
+        "actor_tipo": ["arl"],
+        "tenant_id": ["ARL_A"]
+      },
+      "clientRoles": {
+        "halsa-api": ["medico-calificador"]
+      }
+    },
+    {
+      "id": "01999000-0000-7000-8000-000000000a03",
+      "username": "privacidad.arla",
+      "email": "privacidad.arla@halsa.dev",
+      "firstName": "Privacidad",
+      "lastName": "ARL-A",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "attributes": {
+        "actor_tipo": ["arl"],
+        "tenant_id": ["ARL_A"]
+      },
+      "clientRoles": {
+        "halsa-api": ["oficial-privacidad"]
+      }
+    },
+    {
+      "id": "01999000-0000-7000-8000-000000000b01",
+      "username": "analista.arlb",
+      "email": "analista.arlb@halsa.dev",
+      "firstName": "Analista",
+      "lastName": "ARL-B",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "attributes": {
+        "actor_tipo": ["arl"],
+        "tenant_id": ["ARL_B"]
+      },
+      "clientRoles": {
+        "halsa-api": ["analista-arl"]
+      }
+    },
+    {
+      "id": "01999000-0000-7000-8000-000000000c01",
+      "username": "medico.ips",
+      "email": "medico.ips@halsa.dev",
+      "firstName": "Medico",
+      "lastName": "IPS",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "attributes": {
+        "actor_tipo": ["ips"],
+        "ips_id": ["110011234501"]
+      },
+      "clientRoles": {
+        "halsa-api": ["medico-ips"]
+      }
+    }
+  ],
+
+  "scopeMappings": [],
+  "clientScopeMappings": {
+    "int-arl-ARL_A": {
+      "halsa-api": ["integracion-arl"]
+    },
+    "int-ips-110011234501": {
+      "halsa-api": ["integracion-ips"]
+    }
+  }
+}

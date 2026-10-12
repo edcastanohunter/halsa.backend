@@ -1,0 +1,81 @@
+{
+  "id": "halsa-pacientes",
+  "realm": "halsa-pacientes",
+  "displayName": "Hálsa Pacientes",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 300,
+
+  "clients": [
+    {
+      "clientId": "halsa-api",
+      "name": "Hálsa API",
+      "description": "Resource server. Bearer-only; no emite tokens.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "bearerOnly": true,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "halsa-dev-cli",
+      "name": "Hálsa Dev CLI (Pacientes)",
+      "description": "Solo desarrollo. Permite direct access grants para obtener tokens de paciente con curl.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "bearerOnly": false,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "roles": {
+    "realm": [],
+    "client": {
+      "halsa-api": []
+    }
+  },
+
+  "users": [
+    {
+      "id": "01999000-0000-7000-8000-000000000d01",
+      "username": "paciente.dev",
+      "email": "paciente.dev@halsa.dev",
+      "firstName": "Paciente",
+      "lastName": "Dev",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "dev", "temporary": false }
+      ],
+      "clientRoles": {}
+    }
+  ]
+}

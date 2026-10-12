@@ -10,7 +10,7 @@ public abstract class BaseTest
 {
     protected static readonly Assembly SharedKernelAssembly = typeof(SharedKernel.Results.Result).Assembly;
     protected static readonly Assembly MediationAssembly = typeof(Mediation.ISender).Assembly;
-    protected static readonly Assembly DomainAssembly = typeof(Domain.WorkItems.WorkItem).Assembly;
+    protected static readonly Assembly DomainAssembly = typeof(Domain.DomainAssemblyMarker).Assembly;
     protected static readonly Assembly ApplicationAssembly = typeof(Application.DependencyInjection).Assembly;
     protected static readonly Assembly InfrastructureAssembly = typeof(Infrastructure.DependencyInjection).Assembly;
     protected static readonly Assembly ApiAssembly = typeof(Api.Endpoints.IEndpoint).Assembly;

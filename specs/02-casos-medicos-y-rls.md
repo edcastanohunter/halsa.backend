@@ -1,6 +1,6 @@
 # SPEC 02 — Casos médicos con aislamiento por tenant en EF Core y PostgreSQL
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** SPEC 01
 > **Fecha:** 2026-10-09
 > **Objetivo:** Introducir `CasoMedico`, con sus remisiones a IPS y su equipo asignado, de forma que ningún actor pueda leer ni escribir casos ajenos aunque falle el filtro de EF Core, porque PostgreSQL lo impide con roles y RLS.

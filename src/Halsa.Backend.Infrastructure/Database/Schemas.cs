@@ -11,4 +11,10 @@ public static class Schemas
     public const string EventStore = "event_store";
 
     public const string Outbox = "outbox";
+
+    /// <summary>
+    /// Bounded context ATEL (Atención en salud laboral / Salud laboral y riesgos).
+    /// Owns <c>caso_medico</c>, <c>remision</c> and <c>asignacion</c>.
+    /// </summary>
+    public const string Atel = "atel";
 }

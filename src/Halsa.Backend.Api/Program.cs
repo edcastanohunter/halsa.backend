@@ -1,5 +1,6 @@
 using System.Reflection;
 using Halsa.Backend.Api.Extensions;
+using Halsa.Backend.Api.Extensions.Seed;
 using Halsa.Backend.Api.Infrastructure;
 using Halsa.Backend.Api.Middleware;
 using Halsa.Backend.Application;
@@ -36,15 +37,17 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 
     await app.ApplyMigrationsAsync();
+    await app.SeedDevDataAsync();
 }
 
 app.UseSerilogRequestLogging();
 app.UseMiddleware<RequestContextLoggingMiddleware>();
 
 app.UseAuthentication();
+app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthorization();
 
-app.MapEndpoints();
+app.MapEndpoints(app.MapGroup("v1"));
 
 app.MapHealthChecks("/health", new HealthCheckOptions
 {

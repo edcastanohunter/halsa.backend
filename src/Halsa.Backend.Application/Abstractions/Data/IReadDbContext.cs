@@ -1,4 +1,4 @@
-using Halsa.Backend.Application.WorkItems.ReadModels;
+using Halsa.Backend.Domain.Casos;
 
 namespace Halsa.Backend.Application.Abstractions.Data;
 
@@ -8,5 +8,10 @@ namespace Halsa.Backend.Application.Abstractions.Data;
 /// </summary>
 public interface IReadDbContext
 {
-    IQueryable<WorkItemView> WorkItems { get; }
+    /// <summary>
+    /// All <see cref="CasoMedico"/> rows visible to the current tenant context.
+    /// An EF Core global query filter enforces tenant/IPS isolation; PostgreSQL RLS provides
+    /// a second layer of enforcement independently.
+    /// </summary>
+    IQueryable<CasoMedico> CasosMedicos { get; }
 }

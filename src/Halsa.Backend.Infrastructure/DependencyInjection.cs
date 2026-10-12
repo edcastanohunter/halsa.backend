@@ -1,13 +1,16 @@
 using Halsa.Backend.Application.Abstractions.Caching;
+using Halsa.Backend.Application.Casos;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Events;
-using Halsa.Backend.Domain.WorkItems;
+using Halsa.Backend.Application.Abstractions.Tenancy;
+using Halsa.Backend.Domain;
 using Halsa.Backend.Infrastructure.Authentication;
 using Halsa.Backend.Infrastructure.Caching;
 using Halsa.Backend.Infrastructure.Database;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Events;
 using Halsa.Backend.Infrastructure.Outbox;
+using Halsa.Backend.Infrastructure.Tenancy;
 using Halsa.Backend.Infrastructure.Time;
 using Halsa.Backend.Mediation.DependencyInjection;
 using Halsa.Backend.SharedKernel.Abstractions;
@@ -39,7 +42,8 @@ public static class DependencyInjection
             .AddCaching(configuration)
             .AddHealthChecksInternal(configuration)
             .AddAuthenticationInternal(configuration)
-            .AddAuthorizationInternal();
+            .AddAuthorizationInternal()
+            .AddTenancy();
     }
 
     private static IServiceCollection AddServices(this IServiceCollection services)
@@ -63,23 +67,27 @@ public static class DependencyInjection
         string connectionString = configuration.GetConnectionString("Database")
             ?? throw new InvalidOperationException("Connection string 'Database' is not configured.");
 
-        services.AddDbContext<ApplicationDbContext>(options => options
+        services.AddScoped<TenantSessionInterceptor>();
+
+        services.AddDbContext<ApplicationDbContext>((sp, options) => options
             .UseNpgsql(connectionString, npgsql =>
             {
                 npgsql.MigrationsHistoryTable(HistoryRepository.DefaultTableName, Schemas.Default);
                 npgsql.EnableRetryOnFailure(maxRetryCount: 3);
             })
-            .UseSnakeCaseNamingConvention());
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(sp.GetRequiredService<TenantSessionInterceptor>()));
 
         services.AddScoped<IReadDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<ICasoMedicoRepository, CasoMedicoRepository>();
 
         return services;
     }
 
     private static IServiceCollection AddEventSourcing(this IServiceCollection services)
     {
-        services.AddSingleton<IEventTypeRegistry>(_ => new EventTypeRegistry(typeof(WorkItem).Assembly));
+        services.AddSingleton<IEventTypeRegistry>(_ => new EventTypeRegistry(typeof(DomainAssemblyMarker).Assembly));
         services.AddSingleton<EventSerializer>();
 
         services.AddScoped<IEventStore, PostgresEventStore>();
@@ -164,6 +172,14 @@ public static class DependencyInjection
         {
             healthChecks.AddRedis(redis, name: "redis", failureStatus: HealthStatus.Degraded);
         }
+
+        return services;
+    }
+
+    private static IServiceCollection AddTenancy(this IServiceCollection services)
+    {
+        services.AddScoped<TenantContextResolver>();
+        services.AddScoped<ITenantContext, HttpTenantContext>();
 
         return services;
     }

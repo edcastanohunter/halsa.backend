@@ -1,6 +1,6 @@
 # SPEC 01 — Contexto de tenant e identidad multi-realm
 
-> **Estado:** Borrador
+> **Estado:** Implementado
 > **Depende de:** ARQ 01 (`docs/arquitectura/01-arquitectura-backend-atel.md`, insumo, no fuente de verdad)
 > **Fecha:** 2026-10-09
 > **Objetivo:** Que cada request autenticado llegue a la aplicación con un `ITenantContext` confiable (actor, tenant e IPS), derivado solo de tokens de los realms `halsa` y `halsa-pacientes`.

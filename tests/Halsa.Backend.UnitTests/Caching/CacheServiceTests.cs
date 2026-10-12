@@ -1,11 +1,9 @@
 using System.Collections.Concurrent;
 using Halsa.Backend.Application.Abstractions.Models;
-using Halsa.Backend.Application.WorkItems.Queries;
 using Halsa.Backend.Infrastructure.Caching;
 using Halsa.Backend.SharedKernel.Results;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Hybrid;
-
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -18,6 +16,9 @@ namespace Halsa.Backend.UnitTests.Caching;
 /// </summary>
 public sealed class CacheServiceTests
 {
+    // A simple DTO whose sole purpose is to be serialized/deserialized through the cache.
+    private sealed record CacheTestItem(string Title);
+
     // Not MemoryDistributedCache: HybridCache deliberately ignores it as L2 because it duplicates L1.
     private readonly SharedDistributedCache _sharedL2 = new();
 
@@ -36,9 +37,9 @@ public sealed class CacheServiceTests
             NullLogger<CacheService>.Instance);
     }
 
-    private static Result<PagedList<WorkItemResponse>> Page(string title) =>
-        Result.Success(new PagedList<WorkItemResponse>(
-            [new WorkItemResponse(Guid.NewGuid(), title, null, "Open", DateTime.UtcNow, null)], 1, 20, 1));
+    private static Result<PagedList<CacheTestItem>> Page(string title) =>
+        Result.Success(new PagedList<CacheTestItem>(
+            [new CacheTestItem(title)], 1, 20, 1));
 
     [Fact]
     public async Task AResultCachedByOneReplica_ShouldDeserializeOnAnother()
@@ -48,7 +49,7 @@ public sealed class CacheServiceTests
 
         await first.GetOrCreateAsync("list", _ => ValueTask.FromResult(Page("cached")), tags: ["lists"]);
 
-        Result<PagedList<WorkItemResponse>> fromL2 = await second.GetOrCreateAsync(
+        Result<PagedList<CacheTestItem>> fromL2 = await second.GetOrCreateAsync(
             "list", _ => ValueTask.FromResult(Page("recomputed")), tags: ["lists"]);
 
         fromL2.IsSuccess.ShouldBeTrue();
@@ -64,7 +65,7 @@ public sealed class CacheServiceTests
         await writer.RemoveByTagsAsync(["lists"]);
 
         CacheService reader = CreateReplica(_sharedL2);
-        Result<PagedList<WorkItemResponse>> afterEviction = await reader.GetOrCreateAsync(
+        Result<PagedList<CacheTestItem>> afterEviction = await reader.GetOrCreateAsync(
             "list", _ => ValueTask.FromResult(Page("fresh")), tags: ["lists"]);
 
         afterEviction.Value.Items[0].Title.ShouldBe("fresh");
