@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Domain.Casos;
@@ -6,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Halsa.Backend.Application.Casos.Queries.GetCasoById;
 
-internal sealed class GetCasoByIdQueryHandler(IReadDbContext db)
+internal sealed class GetCasoByIdQueryHandler(IReadDbContext db, IAuditScope auditScope)
     : IQueryHandler<GetCasoByIdQuery, CasoDetalleResponse>
 {
     public async Task<Result<CasoDetalleResponse>> Handle(
@@ -24,6 +25,8 @@ internal sealed class GetCasoByIdQueryHandler(IReadDbContext db)
         {
             return Result.Failure<CasoDetalleResponse>(CasoMedicoErrors.NoEncontrado);
         }
+
+        auditScope.TenantDelRecurso(caso.TenantId);
 
         var detalle = new CasoDetalleResponse(
             caso.ToResumen(),

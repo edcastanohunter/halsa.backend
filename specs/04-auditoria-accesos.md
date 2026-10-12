@@ -1,6 +1,6 @@
 # SPEC 04 — Auditoría inmutable de accesos
 
-> **Estado:** Borrador
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03
 > **Fecha:** 2026-10-09
 > **Objetivo:** Registrar en `auditoria.accesos` cada lectura y escritura clínica, cada escritura de casos y cada lectura del detalle de un caso, incluidos los intentos denegados, en una tabla que nadie puede modificar y que el oficial de privacidad consulta por la API.
@@ -175,22 +175,22 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria.accesos` fallan como `halsa_app`, como `halsa_clinico` y como `halsa_owner`.
-- [ ] Como `halsa_clinico`, `SELECT 1 FROM auditoria.accesos` falla con `permission denied`.
-- [ ] Después de migrar existen las particiones del mes actual y de los 3 siguientes, y llamar dos veces a `asegurar_particiones(3)` no falla.
-- [ ] Una fila con `ocurrido_en` fuera de las particiones mensuales cae en `accesos_default` sin error.
-- [ ] `RemitirCasoCommand` exitoso deja exactamente una fila `CREAR / REMISION / EXITO` con `tenant_id` igual al del caso.
-- [ ] Si el insert de auditoría de `RemitirCasoCommand` falla, la remisión no existe en `atel.remisiones`.
-- [ ] `RegistrarRegistroClinicoCommand` ejecutado por la IPS sobre un caso de `ARL_B` deja una fila con `tenant_id='ARL_B'`, `actor_tipo='ips'` y `actor_ips_id='110011234501'`.
-- [ ] `GetRegistrosClinicosQuery` exitosa deja una fila `LEER / REGISTRO_CLINICO / EXITO` antes de devolver los datos.
-- [ ] `GetRegistrosClinicosQuery` sobre un caso no visible deja una fila `LEER / REGISTRO_CLINICO / NO_ENCONTRADO`.
-- [ ] Con un escritor de auditoría que lanza, `GET /v1/casos/{id}` responde `500` con el código `Auditoria.NoRegistrada`, y el cuerpo no contiene el radicado del caso.
-- [ ] `GET /v1/casos` (el listado) no crea filas en `auditoria.accesos`.
-- [ ] `POST /v1/casos/{id}/remisiones` sin `casos:write` responde `403` y deja una fila con `resultado='DENEGADO'` y el `caso_medico_id` de la ruta.
-- [ ] `GET /v1/auditoria/accesos` como `privacidad.arla` devuelve solo filas con `tenant_id='ARL_A'`, incluidas las generadas por `medico.ips` sobre casos de `ARL_A`.
-- [ ] `GET /v1/auditoria/accesos` sin `auditoria:read` responde `403`, y con un rango de 32 días responde `400`.
-- [ ] Recalcular `hash_registro` con `CanonicalAuditHasher` sobre cualquier fila leída devuelve el mismo valor guardado.
-- [ ] El test de arquitectura falla si un handler de comando de `Application.Clinico` no depende de `IClinicalAuditTrail`.
+- [x] `UPDATE`, `DELETE` y `TRUNCATE` sobre `auditoria.accesos` fallan como `halsa_app`, como `halsa_clinico` y como `halsa_owner`.
+- [x] Como `halsa_clinico`, `SELECT 1 FROM auditoria.accesos` falla con `permission denied`.
+- [x] Después de migrar existen las particiones del mes actual y de los 3 siguientes, y llamar dos veces a `asegurar_particiones(3)` no falla.
+- [x] Una fila con `ocurrido_en` fuera de las particiones mensuales cae en `accesos_default` sin error.
+- [x] `RemitirCasoCommand` exitoso deja exactamente una fila `CREAR / REMISION / EXITO` con `tenant_id` igual al del caso.
+- [x] Si el insert de auditoría de `RemitirCasoCommand` falla, la remisión no existe en `atel.remisiones`.
+- [x] `RegistrarRegistroClinicoCommand` ejecutado por la IPS sobre un caso de `ARL_B` deja una fila con `tenant_id='ARL_B'`, `actor_tipo='ips'` y `actor_ips_id='110011234501'`.
+- [x] `GetRegistrosClinicosQuery` exitosa deja una fila `LEER / REGISTRO_CLINICO / EXITO` antes de devolver los datos.
+- [x] `GetRegistrosClinicosQuery` sobre un caso no visible deja una fila `LEER / REGISTRO_CLINICO / NO_ENCONTRADO`.
+- [x] Con un escritor de auditoría que lanza, `GET /v1/casos/{id}` responde `500` con el código `Auditoria.NoRegistrada`, y el cuerpo no contiene el radicado del caso.
+- [x] `GET /v1/casos` (el listado) no crea filas en `auditoria.accesos`.
+- [x] `POST /v1/casos/{id}/remisiones` sin `casos:write` responde `403` y deja una fila con `resultado='DENEGADO'` y el `caso_medico_id` de la ruta.
+- [x] `GET /v1/auditoria/accesos` como `privacidad.arla` devuelve solo filas con `tenant_id='ARL_A'`, incluidas las generadas por `medico.ips` sobre casos de `ARL_A`.
+- [x] `GET /v1/auditoria/accesos` sin `auditoria:read` responde `403`, y con un rango de 32 días responde `400`.
+- [x] Recalcular `hash_registro` con `CanonicalAuditHasher` sobre cualquier fila leída devuelve el mismo valor guardado.
+- [x] El test de arquitectura falla si un handler de comando de `Application.Clinico` no depende de `IClinicalAuditTrail`.
 
 ---
 

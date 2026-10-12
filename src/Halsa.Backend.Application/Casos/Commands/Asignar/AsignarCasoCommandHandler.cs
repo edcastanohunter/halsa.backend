@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
@@ -10,6 +11,7 @@ internal sealed class AsignarCasoCommandHandler(
     ICasoMedicoRepository repository,
     IUnitOfWork unitOfWork,
     ITenantContext tenantContext,
+    IAuditTrail auditTrail,
     TimeProvider time)
     : ICommandHandler<AsignarCasoCommand>
 {
@@ -29,6 +31,12 @@ internal sealed class AsignarCasoCommandHandler(
         }
 
         caso.Asignar(command.Sub, tenantContext.Sub, time.GetUtcNow());
+
+        // Audited even when the assignment already existed: the attempt is what matters.
+        auditTrail.Registrar(
+            AccionAuditoria.Crear,
+            new ObjetivoAuditoria(RecursoAuditoria.Asignacion, command.Sub, caso.Id.Value),
+            caso.TenantId);
 
         return await unitOfWork.GuardarCasoAsync(cancellationToken);
     }

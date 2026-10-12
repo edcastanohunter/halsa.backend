@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Infrastructure.Database;
 using Halsa.Backend.Infrastructure.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,7 @@ public sealed class ClinicalIsolationTests : BaseTest
     private const string ClinicoApplicationNamespace = "Halsa.Backend.Application.Clinico";
     private const string ClinicoDomainNamespace = "Halsa.Backend.Domain.Clinico";
     private const string ClinicalDbContextInterface = "Halsa.Backend.Application.Abstractions.Clinico.IClinicalDbContext";
+    private const string ClinicalAuditTrailInterface = "Halsa.Backend.Application.Abstractions.Auditoria.IClinicalAuditTrail";
 
     [Fact]
     public void Casos_ShouldNotDependOnTheClinicalDomainOrContext()
@@ -57,6 +59,35 @@ public sealed class ClinicalIsolationTests : BaseTest
 
         result.FailingTypeNames.ShouldBeNull();
     }
+
+    [Fact]
+    public void ClinicalCommandHandlers_ShouldDependOnTheClinicalAuditTrail()
+    {
+        // SPEC 04: a clinical write without its audit row in the same transaction is a compliance breach.
+        string[] handlers = [.. ApplicationAssembly.GetTypes()
+            .Where(type => type.Namespace?.StartsWith(ClinicoApplicationNamespace, StringComparison.Ordinal) == true &&
+                           type is { IsClass: true, IsAbstract: false } &&
+                           type.GetInterfaces().Any(IsCommandHandler))
+            .Select(type => type.Name)];
+
+        handlers.ShouldNotBeEmpty();
+
+        TestResult result = Types.InAssembly(ApplicationAssembly)
+            .That()
+            .ResideInNamespaceStartingWith(ClinicoApplicationNamespace)
+            .And()
+            .HaveNameMatching($"^({string.Join('|', handlers)})$")
+            .Should()
+            .HaveDependencyOn(ClinicalAuditTrailInterface)
+            .GetResult();
+
+        result.FailingTypeNames.ShouldBeNull();
+    }
+
+    private static bool IsCommandHandler(Type contract) =>
+        contract.IsGenericType &&
+        (contract.GetGenericTypeDefinition() == typeof(ICommandHandler<>) ||
+         contract.GetGenericTypeDefinition() == typeof(ICommandHandler<,>));
 
     [Fact]
     public void ApplicationDbContext_ShouldNotMapAnyEntityToTheClinicoSchema()

@@ -10,7 +10,8 @@ public static class MigrationExtensions
     /// Applies pending EF Core migrations using the <c>Migrations</c> connection string
     /// (role <c>halsa_owner</c>), which has the privileges required to create schemas,
     /// grant permissions and configure RLS. <see cref="ApplicationDbContext"/> migrates first and
-    /// <see cref="ClinicalDbContext"/> second, each with its own history table (SPEC 03).
+    /// <see cref="ClinicalDbContext"/> second, each with its own history table (SPEC 03). Then it makes
+    /// sure the monthly audit partitions exist (SPEC 04).
     ///
     /// If the <c>Migrations</c> key is absent (e.g. in integration tests where the fixture
     /// owns the schema), falls back to the contexts registered in DI.
@@ -32,9 +33,11 @@ public static class MigrationExtensions
             // Fallback: use the registered contexts (works in tests).
             await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.MigrateAsync();
             await scope.ServiceProvider.GetRequiredService<ClinicalDbContext>().Database.MigrateAsync();
+            await DatabaseMigrator.AsegurarParticionesAsync(configuration.GetConnectionString("Database")!);
             return;
         }
 
         await DatabaseMigrator.MigrateAsync(migrationsConnectionString);
+        await DatabaseMigrator.AsegurarParticionesAsync(migrationsConnectionString);
     }
 }

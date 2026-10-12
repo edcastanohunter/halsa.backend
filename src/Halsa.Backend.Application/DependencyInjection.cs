@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Behaviors;
 using Halsa.Backend.Mediation.DependencyInjection;
 using FluentValidation;
@@ -22,10 +23,16 @@ public static class DependencyInjection
             // Order matters: the first behaviour added is the outermost one.
             configuration.AddOpenBehavior(typeof(LoggingBehavior<,>));
             configuration.AddOpenBehavior(typeof(ValidationBehavior<,>));
+            // Inside validation (a rejected request read nothing) and outside caching (a cache hit is still a read).
+            configuration.AddOpenBehavior(typeof(AuditedQueryBehavior<,>));
             configuration.AddOpenBehavior(typeof(QueryCachingBehavior<,>));
             // A transaction behaviour, if added, goes after this line: eviction must run after the commit.
             configuration.AddOpenBehavior(typeof(CacheInvalidationBehavior<,>));
         });
+
+        // One per request: the handler reports the resource's tenant, the audit behaviour reads it.
+        services.AddScoped<AuditScope>();
+        services.AddScoped<IAuditScope>(sp => sp.GetRequiredService<AuditScope>());
 
         services.AddValidatorsFromAssembly(
             typeof(DependencyInjection).Assembly,

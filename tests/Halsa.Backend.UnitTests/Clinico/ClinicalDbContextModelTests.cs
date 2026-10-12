@@ -1,9 +1,12 @@
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Database;
+using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Clinico;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Halsa.Backend.UnitTests.Clinico;
 
@@ -32,14 +35,28 @@ public sealed class ClinicalDbContextModelTests
     }
 
     [Fact]
-    public void Model_ShouldMapEveryEntityToTheClinicoSchema()
+    public void Model_ShouldMapEveryEntityToTheClinicoSchema_ExceptTheAuditTrail()
     {
         using ClinicalDbContext db = Context(Actor(new TenantId("ARL_A"), null));
 
         db.Model.GetEntityTypes()
+            .Where(e => e.ClrType != typeof(AccesoAuditado))
             .Select(e => e.GetSchema())
             .Distinct()
             .ShouldBe([Schemas.Clinico]);
+    }
+
+    [Fact]
+    public void Model_ShouldMapTheAuditTrail_WithoutOwningItsMigrations()
+    {
+        using ClinicalDbContext db = Context(Actor(new TenantId("ARL_A"), null));
+
+        // Migration-only metadata lives in the design-time model.
+        IModel model = db.GetService<IDesignTimeModel>().Model;
+        IEntityType acceso = model.FindEntityType(typeof(AccesoAuditado)).ShouldNotBeNull();
+
+        acceso.GetSchema().ShouldBe(Schemas.Auditoria);
+        acceso.IsTableExcludedFromMigrations().ShouldBeTrue();
     }
 
     [Fact]

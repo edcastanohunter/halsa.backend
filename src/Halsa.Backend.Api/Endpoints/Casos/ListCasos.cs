@@ -1,5 +1,6 @@
 using Halsa.Backend.Api.Extensions;
 using Halsa.Backend.Api.Infrastructure;
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Models;
 using Halsa.Backend.Application.Casos.Queries;
 using Halsa.Backend.Application.Casos.Queries.ListCasos;
@@ -39,7 +40,8 @@ internal sealed class ListCasos : IEndpoint
         .Produces<PagedList<CasoResumenResponse>>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
-        .RequirePermission(Permissions.CasosRead);
+        .RequirePermission(Permissions.CasosRead)
+        .Auditable(RecursoAuditoria.Caso);
 
     internal sealed record ListCasosRequest(
         [property: FromQuery(Name = "page")] int? Page,

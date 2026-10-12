@@ -1,6 +1,7 @@
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.SharedKernel.Abstractions;
@@ -30,6 +31,8 @@ public sealed class ApplicationDbContext(
 
     internal DbSet<CasoMedico> CasosMedicos => Set<CasoMedico>();
 
+    internal DbSet<AccesoAuditado> AccesosAuditados => Set<AccesoAuditado>();
+
     // ── IReadDbContext ────────────────────────────────────────────────────────
 
     IQueryable<CasoMedico> IReadDbContext.CasosMedicos => CasosMedicos;
@@ -47,6 +50,9 @@ public sealed class ApplicationDbContext(
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(ApplicationDbContext).Assembly,
             type => type.Namespace == ConfigurationsNamespace);
+
+        // Shared with ClinicalDbContext, so it lives outside the scanned namespace. This context owns the table.
+        modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration());
 
         // ── Query filter: mirrors the PostgreSQL RLS policies for CasoMedico. ────
         // Fails closed: with no resolved context neither branch matches and no rows

@@ -1,5 +1,6 @@
 using Halsa.Backend.Api.Extensions;
 using Halsa.Backend.Api.Infrastructure;
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Casos.Commands.Desasignar;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Authorization;
@@ -31,5 +32,6 @@ internal sealed class DesasignarCaso : IEndpoint
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
-        .RequirePermission(Permissions.CasosWrite);
+        .RequirePermission(Permissions.CasosWrite)
+        .Auditable(RecursoAuditoria.Caso);
 }

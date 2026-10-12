@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
@@ -11,6 +12,7 @@ internal sealed class RemitirCasoCommandHandler(
     ICasoMedicoRepository repository,
     IUnitOfWork unitOfWork,
     ITenantContext tenantContext,
+    IAuditTrail auditTrail,
     TimeProvider time)
     : ICommandHandler<RemitirCasoCommand, Guid>
 {
@@ -40,6 +42,11 @@ internal sealed class RemitirCasoCommandHandler(
         {
             return Result.Failure<Guid>(result.Error);
         }
+
+        auditTrail.Registrar(
+            AccionAuditoria.Crear,
+            new ObjetivoAuditoria(RecursoAuditoria.Remision, result.Value.ToString(), caso.Id.Value),
+            caso.TenantId);
 
         Result guardado = await unitOfWork.GuardarCasoAsync(cancellationToken);
         return guardado.IsFailure

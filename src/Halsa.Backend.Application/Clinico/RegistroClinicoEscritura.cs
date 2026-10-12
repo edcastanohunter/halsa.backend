@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Authentication;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Domain.Casos;
@@ -45,14 +46,17 @@ internal static class RegistroClinicoEscritura
 
     /// <summary>
     /// Genera el id (antes de cifrar: forma parte de la AAD), cifra el contenido y el diagnóstico
-    /// principal, calcula su índice ciego y guarda.
+    /// principal, calcula su índice ciego y guarda. La fila de auditoría va en el mismo
+    /// <c>SaveChangesAsync</c>: si no se registra, el registro clínico tampoco.
     /// </summary>
     public static async Task<Result<Guid>> RegistrarAsync(
         IRegistroClinicoInput input,
         TenantId tenant,
         HistoriaClinicaDetalleId? corrigeA,
+        AccionAuditoria accion,
         IClinicalCipher cipher,
         IClinicalDbContext db,
+        IClinicalAuditTrail auditTrail,
         ICurrentUser currentUser,
         TimeProvider time,
         CancellationToken ct)
@@ -92,6 +96,10 @@ internal static class RegistroClinicoEscritura
         }
 
         db.Add(registro.Value);
+        auditTrail.Registrar(
+            accion,
+            new ObjetivoAuditoria(RecursoAuditoria.RegistroClinico, id.Value.ToString(), input.CasoId.Value),
+            tenant);
         await db.SaveChangesAsync(ct);
 
         return Result.Success(id.Value);

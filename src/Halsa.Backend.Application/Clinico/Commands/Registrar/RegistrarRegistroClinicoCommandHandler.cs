@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Authentication;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Messaging;
@@ -12,6 +13,7 @@ internal sealed class RegistrarRegistroClinicoCommandHandler(
     IClinicalCipher cipher,
     IClinicalDbContext db,
     ICurrentUser currentUser,
+    IClinicalAuditTrail auditTrail,
     TimeProvider time)
     : ICommandHandler<RegistrarRegistroClinicoCommand, Guid>
 {
@@ -27,6 +29,7 @@ internal sealed class RegistrarRegistroClinicoCommandHandler(
         }
 
         return await RegistroClinicoEscritura.RegistrarAsync(
-            command, tenant.Value, corrigeA: null, cipher, db, currentUser, time, cancellationToken);
+            command, tenant.Value, corrigeA: null, AccionAuditoria.Crear, cipher, db, auditTrail, currentUser, time,
+            cancellationToken);
     }
 }

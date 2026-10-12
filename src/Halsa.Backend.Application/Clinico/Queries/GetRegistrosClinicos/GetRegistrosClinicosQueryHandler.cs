@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Domain.Clinico;
@@ -10,7 +11,8 @@ namespace Halsa.Backend.Application.Clinico.Queries.GetRegistrosClinicos;
 internal sealed class GetRegistrosClinicosQueryHandler(
     IClinicalCaseGate gate,
     IClinicalCipher cipher,
-    IClinicalDbContext db)
+    IClinicalDbContext db,
+    IAuditScope auditScope)
     : IQueryHandler<GetRegistrosClinicosQuery, IReadOnlyList<RegistroClinicoResponse>>
 {
     public async Task<Result<IReadOnlyList<RegistroClinicoResponse>>> Handle(
@@ -22,6 +24,8 @@ internal sealed class GetRegistrosClinicosQueryHandler(
         {
             return Result.Failure<IReadOnlyList<RegistroClinicoResponse>>(ClinicoErrors.CasoNoEncontrado);
         }
+
+        auditScope.TenantDelRecurso(tenant.Value);
 
         List<HistoriaClinicaDetalle> registros = await db.Registros
             .AsNoTracking()

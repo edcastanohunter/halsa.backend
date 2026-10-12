@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
@@ -9,7 +10,8 @@ namespace Halsa.Backend.Application.Casos.Commands.Desasignar;
 internal sealed class DesasignarCasoCommandHandler(
     ICasoMedicoRepository repository,
     IUnitOfWork unitOfWork,
-    ITenantContext tenantContext)
+    ITenantContext tenantContext,
+    IAuditTrail auditTrail)
     : ICommandHandler<DesasignarCasoCommand>
 {
     public async Task<Result> Handle(
@@ -32,6 +34,11 @@ internal sealed class DesasignarCasoCommandHandler(
         {
             return result;
         }
+
+        auditTrail.Registrar(
+            AccionAuditoria.Eliminar,
+            new ObjetivoAuditoria(RecursoAuditoria.Asignacion, command.Sub, caso.Id.Value),
+            caso.TenantId);
 
         return await unitOfWork.GuardarCasoAsync(cancellationToken);
     }

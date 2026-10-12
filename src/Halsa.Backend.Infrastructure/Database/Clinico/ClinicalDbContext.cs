@@ -3,6 +3,7 @@ using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Clinico;
+using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Clinico.Crypto;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,9 @@ public sealed class ClinicalDbContext(
     internal DbSet<HistoriaClinicaDetalle> HistoriaClinica => Set<HistoriaClinicaDetalle>();
 
     internal DbSet<LlaveTenant> LlavesTenant => Set<LlaveTenant>();
+
+    /// <summary>Solo para insertar la auditoría de las escrituras clínicas en su misma transacción (SPEC 04).</summary>
+    internal DbSet<AccesoAuditado> AccesosAuditados => Set<AccesoAuditado>();
 
     // ── IClinicalDbContext ────────────────────────────────────────────────────
 
@@ -68,6 +72,9 @@ public sealed class ClinicalDbContext(
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(ClinicalDbContext).Assembly,
             type => type.Namespace == ConfigurationsNamespace);
+
+        // auditoria.accesos belongs to ApplicationDbContext's migrations; this context only inserts into it.
+        modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration(excluirDeMigraciones: true));
 
         modelBuilder.HasDbFunction(TenantDelCasoRemitidoMethod)
             .HasSchema(Schemas.Clinico)

@@ -2,6 +2,7 @@ using Halsa.Backend.Infrastructure.Database.Clinico;
 using Halsa.Backend.Infrastructure.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 
 namespace Halsa.Backend.Infrastructure.Database;
@@ -37,6 +38,26 @@ public static class DatabaseMigrator
 
         await using var clinical = new ClinicalDbContext(clinicalOptions, NullTenantContext.Instance);
         await clinical.Database.MigrateAsync(cancellationToken);
+    }
+
+    /// <summary>Monthly partitions of <c>auditoria.accesos</c> kept ahead of time after migrating (SPEC 04).</summary>
+    public const int MesesDeParticionesAdelante = 3;
+
+    /// <summary>
+    /// Runs <c>auditoria.asegurar_particiones</c> as <c>halsa_owner</c>: the current month and the next
+    /// <see cref="MesesDeParticionesAdelante"/>. Idempotent. Until the SPEC 09 job exists, only migrating calls it.
+    /// </summary>
+    public static async Task AsegurarParticionesAsync(string ownerConnectionString, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerConnectionString);
+
+        await using var connection = new NpgsqlConnection(ownerConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT auditoria.asegurar_particiones(@meses)";
+        command.Parameters.AddWithValue("meses", MesesDeParticionesAdelante);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     internal static void ConfigureApplication(NpgsqlDbContextOptionsBuilder npgsql) =>

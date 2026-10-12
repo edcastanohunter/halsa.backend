@@ -1,15 +1,19 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Caching;
 using Halsa.Backend.Application.Abstractions.Clinico;
+using Halsa.Backend.Application.Auditoria;
 using Halsa.Backend.Application.Casos;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain;
+using Halsa.Backend.Infrastructure.Auditoria;
 using Halsa.Backend.Infrastructure.Authentication;
 using Halsa.Backend.Infrastructure.Caching;
 using Halsa.Backend.Infrastructure.Clinico;
 using Halsa.Backend.Infrastructure.Clinico.Crypto;
 using Halsa.Backend.Infrastructure.Database;
+using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Clinico;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Events;
@@ -45,6 +49,7 @@ public static class DependencyInjection
             .AddServices()
             .AddPersistence(configuration)
             .AddClinico(configuration)
+            .AddAuditoria()
             .AddEventSourcing()
             .AddOutbox(configuration)
             .AddCaching(configuration)
@@ -130,6 +135,22 @@ public static class DependencyInjection
             sp.GetRequiredService<IKeyEncryptionProvider>(),
             sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IClinicalCipher, AesGcmClinicalCipher>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Auditoría de accesos (SPEC 04): una trail por contexto, para que la fila caiga en la transacción
+    /// de la escritura, y un writer con contexto propio para lecturas y denegados.
+    /// </summary>
+    private static IServiceCollection AddAuditoria(this IServiceCollection services)
+    {
+        services.AddScoped<IAuditActorProvider, HttpAuditActorProvider>();
+        services.AddScoped<AccesoAuditadoFactory>();
+        services.AddScoped<IAuditTrail, AuditTrail>();
+        services.AddScoped<IClinicalAuditTrail, ClinicalAuditTrail>();
+        services.AddScoped<IAuditWriter, AuditWriter>();
+        services.AddScoped<IAccesosAuditadosReader, AccesosAuditadosReader>();
 
         return services;
     }

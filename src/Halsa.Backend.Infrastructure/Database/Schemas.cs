@@ -23,4 +23,10 @@ public static class Schemas
     /// <c>halsa_clinico</c>; <c>halsa_app</c> no tiene <c>USAGE</c> sobre el esquema.
     /// </summary>
     public const string Clinico = "clinico";
+
+    /// <summary>
+    /// Auditoría inmutable de accesos (SPEC 04). <c>halsa_app</c> inserta y lee (RLS por tenant),
+    /// <c>halsa_clinico</c> solo inserta, y nadie actualiza ni borra.
+    /// </summary>
+    public const string Auditoria = "auditoria";
 }

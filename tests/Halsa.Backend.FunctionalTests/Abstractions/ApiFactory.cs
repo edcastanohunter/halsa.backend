@@ -31,6 +31,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     /// <summary>Connection string using <c>halsa_owner</c> — tests seed their own rows with it.</summary>
     public string OwnerConnectionString => _ownerConnectionString;
 
+    /// <summary>
+    /// Connection string using the <c>postgres</c> superuser, which bypasses RLS. Only for asserting on
+    /// rows no application role can read, such as audit rows with <c>tenant_id = null</c>.
+    /// </summary>
+    public string SuperuserConnectionString => _container.GetConnectionString();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -85,10 +91,11 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         _clinicalConnectionString = $"Host={host};Port={port};Database={database};" +
                                     "Username=halsa_clinico;Password=halsa_clinico_dev;Include Error Detail=true";
 
-        // ── Step 3: apply the migrations of both contexts as halsa_owner ──────
+        // ── Step 3: apply the migrations of both contexts, then the audit partitions ──
         // ConfigureWebHost hasn't run yet (it runs on first Services access), so we
         // apply migrations before the factory boots the app.
         await DatabaseMigrator.MigrateAsync(_ownerConnectionString);
+        await DatabaseMigrator.AsegurarParticionesAsync(_ownerConnectionString);
     }
 
     // Explicit implementation: WebApplicationFactory already exposes ValueTask DisposeAsync(),

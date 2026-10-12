@@ -25,7 +25,7 @@ namespace Halsa.Backend.IntegrationTests.Abstractions;
 /// 2. Run <c>01-roles.sql</c> to create <c>halsa_owner</c>, <c>halsa_app</c> and
 ///    <c>halsa_clinico</c> and grant CREATE on the database to <c>halsa_owner</c>.
 /// 3. Apply the EF Core migrations of both contexts as <c>halsa_owner</c> (creates schemas, tables,
-///    grants and RLS).
+///    grants and RLS), then <c>auditoria.asegurar_particiones(3)</c>.
 /// 4. Register all application services connected as <c>halsa_app</c> (and <c>halsa_clinico</c> for the
 ///    clinical context), with a random in-memory KEK.
 ///
@@ -53,6 +53,12 @@ public sealed class DatabaseFixture : IAsyncLifetime
     /// <summary>Connection string using <c>halsa_clinico</c> — the role of the clinical context (SPEC 03).</summary>
     public string ClinicalConnectionString { get; private set; } = null!;
 
+    /// <summary>
+    /// Connection string using the <c>postgres</c> superuser, which bypasses RLS. Only for asserting on
+    /// rows no application role can read, such as audit rows with <c>tenant_id = null</c>.
+    /// </summary>
+    public string SuperuserConnectionString => _container.GetConnectionString();
+
     /// <summary>The KEK of this run: 32 random bytes, never written anywhere.</summary>
     public string KekBase64 { get; } = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
@@ -78,8 +84,9 @@ public sealed class DatabaseFixture : IAsyncLifetime
         ClinicalConnectionString = $"Host={host};Port={port};Database={database};" +
                                    "Username=halsa_clinico;Password=halsa_clinico_dev;Include Error Detail=true";
 
-        // ── Step 3: apply the migrations of both contexts as halsa_owner ─────
+        // ── Step 3: apply the migrations of both contexts as halsa_owner, then the audit partitions ─
         await DatabaseMigrator.MigrateAsync(OwnerConnectionString);
+        await DatabaseMigrator.AsegurarParticionesAsync(OwnerConnectionString);
 
         // ── Step 4: register services connected as halsa_app ─────────────────
         IConfiguration configuration = new ConfigurationBuilder()

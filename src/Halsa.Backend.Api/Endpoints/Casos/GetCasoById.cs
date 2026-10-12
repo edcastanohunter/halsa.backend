@@ -1,5 +1,6 @@
 using Halsa.Backend.Api.Extensions;
 using Halsa.Backend.Api.Infrastructure;
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Casos.Queries;
 using Halsa.Backend.Application.Casos.Queries.GetCasoById;
 using Halsa.Backend.Domain.Casos;
@@ -32,5 +33,6 @@ internal sealed class GetCasoById : IEndpoint
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
-        .RequirePermission(Permissions.CasosRead);
+        .RequirePermission(Permissions.CasosRead)
+        .Auditable(RecursoAuditoria.Caso);
 }

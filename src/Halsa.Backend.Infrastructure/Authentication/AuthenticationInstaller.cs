@@ -1,4 +1,5 @@
 using Halsa.Backend.Application.Abstractions.Authentication;
+using Halsa.Backend.Infrastructure.Auditoria;
 using Halsa.Backend.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -125,6 +126,9 @@ internal static class AuthenticationInstaller
 
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+
+        // Records policy denials on .Auditable routes (SPEC 04), then answers as the default handler would.
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuditingAuthorizationResultHandler>();
 
         return services;
     }

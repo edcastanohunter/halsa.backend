@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
@@ -10,6 +11,7 @@ internal sealed class RevocarRemisionCommandHandler(
     ICasoMedicoRepository repository,
     IUnitOfWork unitOfWork,
     ITenantContext tenantContext,
+    IAuditTrail auditTrail,
     TimeProvider time)
     : ICommandHandler<RevocarRemisionCommand>
 {
@@ -33,6 +35,11 @@ internal sealed class RevocarRemisionCommandHandler(
         {
             return result;
         }
+
+        auditTrail.Registrar(
+            AccionAuditoria.Actualizar,
+            new ObjetivoAuditoria(RecursoAuditoria.Remision, command.RemisionId.ToString(), caso.Id.Value),
+            caso.TenantId);
 
         return await unitOfWork.GuardarCasoAsync(cancellationToken);
     }
