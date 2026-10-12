@@ -1,6 +1,6 @@
 # SPEC 03 — Aislamiento y cifrado del detalle clínico
 
-> **Estado:** Aprobado 
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02
 > **Fecha:** 2026-10-09
 > **Objetivo:** Guardar el detalle clínico de cada caso en un esquema `clinico` cifrado por tenant, al que solo llega un `DbContext` y un rol de PostgreSQL propios, de modo que ni el código administrativo ni un volcado de la base puedan leerlo.
@@ -29,6 +29,7 @@ Ningún acceso clínico sale por la API hasta que existan la auditoría (SPEC 04
 - `ClinicalDbContext`, con su cadena de conexión `Clinical` (rol `halsa_clinico`) y su propio historial de migraciones.
 - El esquema `clinico`, con las tablas `historia_clinica_detalle` y `llaves_tenant`, sus permisos, la RLS y un trigger de inmutabilidad.
 - La función `atel.tenant_del_caso_remitido`, `SECURITY DEFINER`, que sirve a la RLS clínica de la IPS.
+- El envoltorio `clinico.tenant_del_caso_remitido`, que usa el query filter de `ClinicalDbContext` (ver Decisiones).
 - El cifrado de campo con AES-256-GCM: `IClinicalCipher`, `IKeyEncryptionProvider` y `LocalFileKeyEncryptionProvider`.
 - Las DEK por tenant y por propósito, envueltas con la KEK y generadas en el primer uso.
 - El índice ciego HMAC del diagnóstico principal.
@@ -81,7 +82,7 @@ public sealed class HistoriaClinicaDetalle : AggregateRoot<HistoriaClinicaDetall
     HistoriaClinicaDetalleId? CorrigeA;
     CampoCifrado Contenido; CampoCifrado? DiagnosticoPrincipal; byte[]? DiagnosticoIndiceCiego;
 
-    static HistoriaClinicaDetalle Registrar(HistoriaClinicaDetalleId id, TenantId, CasoMedicoId, TipoRegistroClinico,
+    static Result<HistoriaClinicaDetalle> Registrar(HistoriaClinicaDetalleId id, TenantId, CasoMedicoId, TipoRegistroClinico,
         ProfesionalRef, DateTimeOffset atendidoEn, CampoCifrado contenido, CampoCifrado? diagnostico, byte[]? indiceCiego,
         HistoriaClinicaDetalleId? corrigeA, DateTimeOffset ahora);
 }
@@ -90,6 +91,7 @@ public sealed class HistoriaClinicaDetalle : AggregateRoot<HistoriaClinicaDetall
 - El `id` se genera **antes** de cifrar, porque forma parte de la AAD.
 - No hay setters públicos ni métodos de cambio. Una corrección es un registro nuevo con `CorrigeA`.
 - `RetenerHasta` se calcula en la fábrica.
+- La fábrica devuelve `Result`: falla con `Clinico.AtendidoEnFuturo` o con `Clinico.RethusRequerido` (sin RETHUS fuera de `ReporteInicial`).
 
 ### Abstracciones (`Halsa.Backend.Application.Abstractions.Clinico`)
 
@@ -161,7 +163,7 @@ public interface IKeyEncryptionProvider   // Infrastructure: la aplicación nunc
 | Rol | `clinico` |
 | --- | --- |
 | `halsa_app` | **Sin `USAGE`.** Ni siquiera un `FromSqlRaw` llega. |
-| `halsa_clinico` | `USAGE`. `SELECT, INSERT` en las dos tablas. Sin `UPDATE`, `DELETE` ni `TRUNCATE`. `EXECUTE` sobre `atel.tenant_del_caso_remitido`. Sin `USAGE` en `atel`. |
+| `halsa_clinico` | `USAGE`. `SELECT, INSERT` en las dos tablas. Sin `UPDATE`, `DELETE` ni `TRUNCATE`. `EXECUTE` sobre `atel.tenant_del_caso_remitido` y `clinico.tenant_del_caso_remitido`. Sin `USAGE` en `atel`. |
 | `halsa_owner` | Dueño. Sujeto a `FORCE ROW LEVEL SECURITY` y al trigger. |
 
 ```sql
@@ -185,11 +187,19 @@ CREATE TRIGGER t_hc_inmutable BEFORE UPDATE OR DELETE ON clinico.historia_clinic
 
 `WITH CHECK` impide que una IPS inserte un registro con un `tenant_id` distinto al del caso remitido.
 
+```sql
+-- Dueño: halsa_owner. Lo llama el query filter de ClinicalDbContext.
+-- Cuerpo SQL estándar: PostgreSQL lo resuelve al crearlo, así que llamarlo solo exige EXECUTE, no USAGE en atel.
+CREATE FUNCTION clinico.tenant_del_caso_remitido(p_caso uuid, p_ips text) RETURNS text
+    LANGUAGE sql STABLE
+    RETURN atel.tenant_del_caso_remitido(p_caso, p_ips);
+```
+
 ### `ClinicalDbContext`
 
 - Usa la cadena de conexión `Clinical` (`halsa_clinico`) y el mismo `TenantSessionInterceptor` de la SPEC 02.
 - Las configuraciones viven en el namespace `Halsa.Backend.Infrastructure.Database.Clinico`. `ApplyConfigurationsFromAssembly` se filtra por namespace en ambos contextos.
-- El query filter es: tenant del actor, o, si el actor es IPS, la función `atel.tenant_del_caso_remitido` mapeada con `HasDbFunction`.
+- El query filter es: tenant del actor, o, si el actor es IPS, la función `clinico.tenant_del_caso_remitido` (envoltorio de `atel.tenant_del_caso_remitido`) mapeada con `HasDbFunction`. `TenantId` y `CasoMedicoId` se mapean en la función con `DefaultTypeMapping`.
 - El historial de migraciones es propio (`clinico.__ef_migrations_history`) y las migraciones viven en `Database/Migrations/Clinico`. `ApplyMigrationsAsync` migra primero `ApplicationDbContext` y después `ClinicalDbContext`, siempre con la cadena `Migrations`.
 
 ### Aplicación (`Halsa.Backend.Application.Clinico`)
@@ -221,22 +231,22 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] Como `halsa_app`, `SELECT 1 FROM clinico.historia_clinica_detalle` falla con `permission denied for schema clinico`.
-- [ ] Como `halsa_clinico`, `SELECT 1 FROM atel.casos_medicos` falla con `permission denied for schema atel`.
-- [ ] Después de registrar un contenido con el texto `"FRACTURA-MARCADOR-7731"`, `SELECT count(*) FROM clinico.historia_clinica_detalle WHERE position('FRACTURA-MARCADOR-7731'::bytea in contenido_ct) > 0` devuelve `0`.
-- [ ] Copiar `contenido_*` de un registro a otro (como dueño, en un test que desactiva el trigger) hace que el descifrado del segundo falle con una excepción de autenticación de GCM.
-- [ ] `UPDATE` y `DELETE` sobre `clinico.historia_clinica_detalle` fallan como `halsa_clinico` (por permiso) y como `halsa_owner` (por el trigger).
-- [ ] Con el contexto de `ARL_A`, `GetRegistrosClinicosQuery` sobre un caso de `ARL_B` devuelve `Clinico.CasoNoEncontrado`, y una consulta cruda como `halsa_clinico` con `app.tenant_id='ARL_A'` no ve registros de `ARL_B`.
-- [ ] Un actor IPS `110011234501` con una remisión vigente registra y lee la HC del caso. Después de revocar la remisión, la consulta devuelve `Clinico.CasoNoEncontrado` y la RLS no devuelve filas.
-- [ ] Un `INSERT` crudo como `halsa_clinico` con `app.ips_id` informado y un `tenant_id` distinto al del caso remitido falla por la política.
-- [ ] `CorregirRegistroClinicoCommand` deja dos filas. La consulta devuelve las dos, y la original lleva `CorregidoPor` apuntando a la nueva.
-- [ ] Dos registros con el diagnóstico `S62.6` del mismo tenant tienen el mismo `diagnostico_indice_ciego`. En otro tenant, el valor es distinto.
-- [ ] `clinico.llaves_tenant` tiene exactamente una fila activa por `(tenant, proposito)` después de 20 registros concurrentes del mismo tenant.
-- [ ] Al arrancar la API en `Production` con `Clinico:KekBase64` informado, el proceso termina con un error de validación de opciones.
-- [ ] El test de arquitectura falla si un tipo de `Halsa.Backend.Application.Casos` referencia `Halsa.Backend.Domain.Clinico` o `IClinicalDbContext`.
-- [ ] El test de arquitectura falla si un tipo fuera de `Halsa.Backend.Application.Clinico` (y de Infrastructure) referencia `IClinicalDbContext`.
-- [ ] El modelo de `ApplicationDbContext` no contiene ninguna entidad con esquema `clinico`.
-- [ ] No existe ningún endpoint que lea o escriba datos clínicos (`/openapi/v1.json` no tiene rutas con `clinic` ni `registros`).
+- [x] Como `halsa_app`, `SELECT 1 FROM clinico.historia_clinica_detalle` falla con `permission denied for schema clinico`.
+- [x] Como `halsa_clinico`, `SELECT 1 FROM atel.casos_medicos` falla con `permission denied for schema atel`.
+- [x] Después de registrar un contenido con el texto `"FRACTURA-MARCADOR-7731"`, `SELECT count(*) FROM clinico.historia_clinica_detalle WHERE position('FRACTURA-MARCADOR-7731'::bytea in contenido_ct) > 0` devuelve `0`.
+- [x] Copiar `contenido_*` de un registro a otro (como dueño, en un test que desactiva el trigger) hace que el descifrado del segundo falle con una excepción de autenticación de GCM.
+- [x] `UPDATE` y `DELETE` sobre `clinico.historia_clinica_detalle` fallan como `halsa_clinico` (por permiso) y como `halsa_owner` (por el trigger).
+- [x] Con el contexto de `ARL_A`, `GetRegistrosClinicosQuery` sobre un caso de `ARL_B` devuelve `Clinico.CasoNoEncontrado`, y una consulta cruda como `halsa_clinico` con `app.tenant_id='ARL_A'` no ve registros de `ARL_B`.
+- [x] Un actor IPS `110011234501` con una remisión vigente registra y lee la HC del caso. Después de revocar la remisión, la consulta devuelve `Clinico.CasoNoEncontrado` y la RLS no devuelve filas.
+- [x] Un `INSERT` crudo como `halsa_clinico` con `app.ips_id` informado y un `tenant_id` distinto al del caso remitido falla por la política.
+- [x] `CorregirRegistroClinicoCommand` deja dos filas. La consulta devuelve las dos, y la original lleva `CorregidoPor` apuntando a la nueva.
+- [x] Dos registros con el diagnóstico `S62.6` del mismo tenant tienen el mismo `diagnostico_indice_ciego`. En otro tenant, el valor es distinto.
+- [x] `clinico.llaves_tenant` tiene exactamente una fila activa por `(tenant, proposito)` después de 20 registros concurrentes del mismo tenant.
+- [x] Al arrancar la API en `Production` con `Clinico:KekBase64` informado, el proceso termina con un error de validación de opciones.
+- [x] El test de arquitectura falla si un tipo de `Halsa.Backend.Application.Casos` referencia `Halsa.Backend.Domain.Clinico` o `IClinicalDbContext`.
+- [x] El test de arquitectura falla si un tipo fuera de `Halsa.Backend.Application.Clinico` (y de Infrastructure) referencia `IClinicalDbContext`.
+- [x] El modelo de `ApplicationDbContext` no contiene ninguna entidad con esquema `clinico`.
+- [x] No existe ningún endpoint que lea o escriba datos clínicos (`/openapi/v1.json` no tiene rutas con `clinic` ni `registros`).
 
 ---
 
@@ -253,6 +263,7 @@ Cada paso deja la solución compilando y con los tests en verde.
 - **No:** `pgcrypto`, porque la llave viajaría a la base de datos.
 - **Sí:** la caché de DEK sin envolver es solo en memoria. **No:** en Redis, porque pondría llaves en claro en otro proceso.
 - **Sí:** la RLS clínica de la IPS usa una función `SECURITY DEFINER` con `search_path` fijo. `halsa_clinico` no recibe `USAGE` sobre `atel` (se respeta ARQ §5.3).
+- **Sí:** un envoltorio `clinico.tenant_del_caso_remitido` para el query filter de EF. El SQL que genera EF nombra la función en tiempo de ejecución, y sin `USAGE` sobre `atel` fallaría con `permission denied for schema atel`. La política, en cambio, llama a la función de `atel` directamente, porque se resuelve al crearla. **No:** dar `USAGE` sobre `atel` a `halsa_clinico`, porque rompe la barrera de esquema.
 - **Sí:** un trigger de inmutabilidad en la HC, además del `REVOKE`. Así el dueño tampoco puede enmendar (Res. 1995/1999).
 - **Sí:** un `ContenidoClinico` tipado y único para todos los tipos de registro. Es validable y se puede mapear a FHIR `Composition`. Los modelos específicos por tipo se difieren.
 - **Sí:** un historial de migraciones propio para `ClinicalDbContext`. Los dos contextos evolucionan sin pisarse.
