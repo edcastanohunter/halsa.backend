@@ -289,8 +289,6 @@
         { "name": "integracion:furep:write",   "description": "Enviar FUREP a través de integración",      "composite": false, "clientRole": true },
         { "name": "integracion:clinico:write", "description": "Enviar datos clínicos a través de integración", "composite": false, "clientRole": true },
         { "name": "webhooks:manage",           "description": "Gestionar webhooks salientes",              "composite": false, "clientRole": true },
-        { "name": "work-items:read",           "description": "Leer work items (ejemplo; SPEC 02 lo elimina)", "composite": false, "clientRole": true },
-        { "name": "work-items:write",          "description": "Escribir work items (ejemplo; SPEC 02 lo elimina)", "composite": false, "clientRole": true },
 
         {
           "name": "analista-arl",

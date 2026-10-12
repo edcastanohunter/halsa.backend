@@ -66,7 +66,7 @@ public sealed class TestAggregateRepositoryTests(DatabaseFixture fixture)
                 .GetRequiredService<IEventSourcedRepository<TestAggregate, TestAggregateId>>();
 
             TestAggregate aggregate = (await repository.LoadAsync(id))!;
-            aggregate.Rename("After Rename").Value.ShouldBe(default); // Result.Success() has default value
+            aggregate.Rename("After Rename").IsSuccess.ShouldBeTrue();
             await repository.SaveAsync(aggregate);
         }
 

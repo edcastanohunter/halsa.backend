@@ -12,8 +12,8 @@ public static class SeedExtensions
 
     /// <summary>
     /// Executes <c>casos-dev.sql</c> against the database using the
-    /// <c>Migrations</c> connection string (role <c>halsa_owner</c>) so that
-    /// the INSERT statements are not blocked by RLS.
+    /// <c>Migrations</c> connection string (role <c>halsa_owner</c>). RLS is forced, so it
+    /// applies to the owner too: the script sets <c>app.tenant_id</c> before each tenant's block.
     ///
     /// Only runs when <c>IWebHostEnvironment.IsDevelopment()</c> is <c>true</c>.
     /// Idempotent: the SQL uses <c>ON CONFLICT DO NOTHING</c>.

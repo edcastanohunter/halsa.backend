@@ -9,10 +9,10 @@ internal sealed class RemisionConfiguration : IEntityTypeConfiguration<Remision>
 {
     public void Configure(EntityTypeBuilder<Remision> builder)
     {
-        builder.ToTable("remision", Schemas.Atel);
+        builder.ToTable("remisiones", Schemas.Atel);
 
         builder.HasKey(r => r.Id)
-            .HasName("pk_remision");
+            .HasName("pk_remisiones");
 
         builder.Property(r => r.Id)
             .HasColumnName("id")
@@ -23,6 +23,12 @@ internal sealed class RemisionConfiguration : IEntityTypeConfiguration<Remision>
             .HasColumnName("caso_medico_id")
             .HasColumnType("uuid")
             .HasConversion(v => v.Value, v => new CasoMedicoId(v));
+
+        builder.Property(r => r.TenantId)
+            .HasColumnName("tenant_id")
+            .HasMaxLength(20)
+            .IsRequired()
+            .HasConversion(v => v.Value, v => new TenantId(v));
 
         builder.Property(r => r.IpsId)
             .HasColumnName("ips_id")
@@ -51,9 +57,11 @@ internal sealed class RemisionConfiguration : IEntityTypeConfiguration<Remision>
         builder.Ignore(r => r.Vigente);
 
         builder.HasIndex(r => r.CasoMedicoId)
-            .HasDatabaseName("ix_remision_caso_medico_id");
+            .HasDatabaseName("ix_remisiones_caso_medico_id");
 
-        builder.HasIndex(r => r.IpsId)
-            .HasDatabaseName("ix_remision_ips_id");
+        // Sirve a la subconsulta EXISTS de la política RLS de la IPS.
+        builder.HasIndex(r => new { r.IpsId, r.CasoMedicoId })
+            .HasFilter("revocada_en IS NULL")
+            .HasDatabaseName("ix_remisiones_ips_vigentes");
     }
 }

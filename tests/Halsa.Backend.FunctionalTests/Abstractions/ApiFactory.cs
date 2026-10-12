@@ -25,6 +25,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     private string _ownerConnectionString = null!;
     private string _appConnectionString = null!;
 
+    /// <summary>Connection string using <c>halsa_owner</c> — tests seed their own rows with it.</summary>
+    public string OwnerConnectionString => _ownerConnectionString;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);

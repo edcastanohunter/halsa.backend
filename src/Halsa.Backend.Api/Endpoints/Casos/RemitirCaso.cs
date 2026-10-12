@@ -1,16 +1,17 @@
+using Halsa.Backend.Api.Extensions;
+using Halsa.Backend.Api.Infrastructure;
 using Halsa.Backend.Application.Casos.Commands.Remitir;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Authorization;
 using Halsa.Backend.Mediation;
-using Halsa.Backend.SharedKernel.Results;
 
 namespace Halsa.Backend.Api.Endpoints.Casos;
 
 /// <summary>
 /// <c>POST /v1/casos/{casoId}/remisiones</c> — Remite el caso a una IPS.
 ///
-/// Devuelve 201 Created con el ID de la nueva remisión.
-/// Retorna 409 si ya existe una remisión vigente a la misma IPS.
+/// Devuelve 201 con el id de la nueva remisión, 409 si ya hay una remisión vigente
+/// a la misma IPS y 403 si el actor no es una ARL.
 /// </summary>
 internal sealed class RemitirCaso : IEndpoint
 {
@@ -23,25 +24,20 @@ internal sealed class RemitirCaso : IEndpoint
                 ISender sender,
                 CancellationToken ct) =>
             {
-                var command = new RemitirCasoCommand(new CasoMedicoId(casoId), request.IpsId);
-                var result = await sender.Send(command, ct);
+                var result = await sender.Send(
+                    new RemitirCasoCommand(new CasoMedicoId(casoId), request.IpsId), ct);
 
-                return result.Match(
-                    remisionId => Results.Created(
-                        $"/v1/casos/{casoId}/remisiones/{remisionId}",
-                        new { id = remisionId }),
-                    error => error.Type switch
-                    {
-                        ErrorType.NotFound => Results.NotFound(),
-                        ErrorType.Conflict => Results.Conflict(new { error.Code, error.Description }),
-                        ErrorType.Problem => Results.UnprocessableEntity(new { error.Code, error.Description }),
-                        _ => Results.Problem(error.Description)
-                    });
+                return result.IsSuccess
+                    ? Results.Created(
+                        $"/v1/casos/{casoId}/remisiones/{result.Value}",
+                        new { remisionId = result.Value })
+                    : CustomResults.Problem(result);
             })
         .WithTags(Tags.Casos)
         .WithName("RemitirCaso")
         .WithSummary("Remite el caso a una IPS.")
         .Produces<object>(StatusCodes.Status201Created)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict)
         .ProducesProblem(StatusCodes.Status401Unauthorized)

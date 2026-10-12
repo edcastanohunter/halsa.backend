@@ -13,7 +13,8 @@ namespace Halsa.Backend.FunctionalTests.Abstractions;
 /// Reemplaza Keycloak en tests. Emite un principal con claims predeterminados de ARL analista.
 ///
 /// Para escenarios específicos, incluye el header <b>X-Test-Claims</b> con un JSON de claims
-/// (diccionario <c>string → string</c>) que sobrescribe completamente los predeterminados.
+/// (diccionario <c>string → string</c>, o <c>string → string[]</c> para claims repetidos como
+/// <c>permissions</c>) que sobrescribe completamente los predeterminados.
 /// Ejemplo: <c>{ "actor_tipo": "ips", "ips_id": "110011234501", "iss": "http://..." }</c>
 ///
 /// Para simular un request sin autenticación, incluye el header <b>X-Unauthenticated: true</b>.
@@ -51,9 +52,13 @@ internal sealed class TestAuthenticationHandler(
         if (Request.Headers.TryGetValue("X-Test-Claims", out var testClaimsHeader))
         {
             string json = testClaimsHeader.ToString();
-            Dictionary<string, string>? claimsDict = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            Dictionary<string, JsonElement>? claimsDict =
+                JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
 
-            claims = claimsDict?.Select(kv => new Claim(kv.Key, kv.Value))
+            // An array value (e.g. "permissions") becomes one claim per element, like Keycloak roles.
+            claims = claimsDict?.SelectMany(kv => kv.Value.ValueKind == JsonValueKind.Array
+                    ? kv.Value.EnumerateArray().Select(item => new Claim(kv.Key, item.ToString()))
+                    : [new Claim(kv.Key, kv.Value.ToString())])
                 ?? Enumerable.Empty<Claim>();
         }
         else

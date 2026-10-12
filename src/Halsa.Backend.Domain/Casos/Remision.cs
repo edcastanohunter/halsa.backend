@@ -12,16 +12,26 @@ public sealed class Remision : Entity<RemisionId>
     // Parameterless constructor required by EF Core materializer.
     private Remision() { }
 
-    internal Remision(RemisionId id, CasoMedicoId casoId, IpsId ipsId, string remitidoPor, DateTimeOffset remitidoEn)
+    internal Remision(
+        RemisionId id,
+        CasoMedicoId casoId,
+        TenantId tenantId,
+        IpsId ipsId,
+        string remitidoPor,
+        DateTimeOffset remitidoEn)
         : base(id)
     {
         CasoMedicoId = casoId;
+        TenantId = tenantId;
         IpsId = ipsId;
         RemitidoPor = remitidoPor;
         RemitidoEn = remitidoEn;
     }
 
     public CasoMedicoId CasoMedicoId { get; private set; }
+
+    /// <summary>Copia del tenant del caso, para que la política RLS de la tabla no necesite un join.</summary>
+    public TenantId TenantId { get; private set; }
 
     public IpsId IpsId { get; private set; }
 

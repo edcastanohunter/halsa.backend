@@ -4,6 +4,7 @@ using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.SharedKernel.Abstractions;
+using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Halsa.Backend.Infrastructure.Database;
@@ -40,17 +41,23 @@ public sealed class ApplicationDbContext(
         modelBuilder.HasDefaultSchema(Schemas.Default);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
 
-        // ── Query filter: mirrors the PostgreSQL RLS policy for CasoMedico. ────
-        // When Resuelto is false (no HTTP context: migrations, seeds, integration
-        // tests without an active scope) the filter passes all rows through.
-        // At runtime, ARL actors filter by TenantId; IPS actors have no TenantId
-        // but their RLS policy is enforced by the database, so we let all rows
-        // through at the app level when only an IpsId is present.
+        // ── Query filter: mirrors the PostgreSQL RLS policies for CasoMedico. ────
+        // Fails closed: with no resolved context neither branch matches and no rows
+        // come back, exactly like RLS with empty app.* variables.
         modelBuilder.Entity<CasoMedico>().HasQueryFilter(c =>
-            !tenantContext.Resuelto ||
-            (tenantContext.TenantId != null && c.TenantId == tenantContext.TenantId.Value) ||
-            (tenantContext.TenantId == null && tenantContext.IpsId != null));
+            (TieneTenant && c.TenantId == CurrentTenant) ||
+            (TieneIps && c.Remisiones.Any(r => r.IpsId == CurrentIps && r.RevocadaEn == null)));
 
         base.OnModelCreating(modelBuilder);
     }
+
+    // EF evaluates these per query as parameters. The flags guard the comparisons so the
+    // default (null-valued) ids never have to match anything.
+    private bool TieneTenant => tenantContext.Resuelto && tenantContext.TenantId is not null;
+
+    private TenantId CurrentTenant => TieneTenant ? tenantContext.TenantId!.Value : default;
+
+    private bool TieneIps => tenantContext.Resuelto && tenantContext.IpsId is not null;
+
+    private IpsId CurrentIps => TieneIps ? tenantContext.IpsId!.Value : default;
 }

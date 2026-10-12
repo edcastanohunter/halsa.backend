@@ -17,24 +17,23 @@ internal sealed class RevocarRemisionCommandHandler(
         RevocarRemisionCommand command,
         CancellationToken cancellationToken)
     {
-        CasoMedico? caso = await repository.GetByIdAsync(command.CasoId, cancellationToken);
+        if (!tenantContext.PuedeEscribir())
+        {
+            return Result.Failure(CasoMedicoErrors.ActorNoAutorizado);
+        }
 
+        CasoMedico? caso = await repository.GetByIdAsync(command.CasoId, cancellationToken);
         if (caso is null)
         {
             return Result.Failure(CasoMedicoErrors.NoEncontrado);
         }
 
-        DateTimeOffset ahora = time.GetUtcNow();
-        string revocadoPor = tenantContext.Resuelto ? tenantContext.Sub : "sistema";
-
-        var result = caso.RevocarRemision(command.RemisionId, revocadoPor, ahora);
-
+        Result result = caso.RevocarRemision(command.RemisionId, tenantContext.Sub, time.GetUtcNow());
         if (result.IsFailure)
         {
             return result;
         }
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return await unitOfWork.GuardarCasoAsync(cancellationToken);
     }
 }

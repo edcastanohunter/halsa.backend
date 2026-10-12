@@ -123,7 +123,7 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
         }
 
         RemisionId remisionId = RemisionId.New();
-        _remisiones.Add(new Remision(remisionId, Id, ips, remitidoPor, ahora));
+        _remisiones.Add(new Remision(remisionId, Id, TenantId, ips, remitidoPor, ahora));
 
         return Result.Success(remisionId);
     }
@@ -160,7 +160,7 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
             return;
         }
 
-        _asignaciones.Add(new Asignacion(Id, sub, asignadoPor, ahora));
+        _asignaciones.Add(new Asignacion(Id, TenantId, sub, asignadoPor, ahora));
     }
 
     /// <summary>

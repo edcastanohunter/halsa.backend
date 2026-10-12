@@ -14,7 +14,7 @@ public static class Schemas
 
     /// <summary>
     /// Bounded context ATEL (Atención en salud laboral / Salud laboral y riesgos).
-    /// Owns <c>caso_medico</c>, <c>remision</c> and <c>asignacion</c>.
+    /// Owns <c>casos_medicos</c>, <c>remisiones</c> and <c>asignaciones</c>.
     /// </summary>
     public const string Atel = "atel";
 }

@@ -12,4 +12,4 @@ public sealed record CasoRadicadoDomainEvent(
     string Radicado,
     TipoEvento TipoEvento,
     DateTimeOffset FechaEvento,
-    DateTimeOffset RadicadoEn) : IDomainEvent;
+    DateTimeOffset RadicadoEn) : DomainEvent;

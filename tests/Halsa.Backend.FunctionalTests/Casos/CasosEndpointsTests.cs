@@ -2,451 +2,299 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.FunctionalTests.Abstractions;
-using Halsa.Backend.Infrastructure.Authentication;
+using Npgsql;
 
 namespace Halsa.Backend.FunctionalTests.Casos;
 
+/// <summary>
+/// Acceptance criteria of SPEC 02 for <c>/v1/casos</c>. The API runs as <c>halsa_app</c>, so both
+/// barriers (EF query filter and RLS) are active. Every test seeds its own cases as
+/// <c>halsa_owner</c> and asserts only on them, so tests are independent of each other.
+/// </summary>
 [Collection(nameof(ApiCollection))]
 public sealed class CasosEndpointsTests(ApiFactory factory)
 {
-    private static readonly JsonSerializerOptions JsonOptions =
-        new(JsonSerializerDefaults.Web);
+    private const string ArlA = "ARL_A";
+    private const string ArlB = "ARL_B";
+    private const string Ips = "110011234501";
 
-    // ── IDs que coinciden con casos-dev.sql ──────────────────────────────────
-    private static readonly Guid CasoSura1Id = Guid.Parse("00000000-0000-7000-8001-000000000001");
-    private static readonly Guid CasoSura2Id = Guid.Parse("00000000-0000-7000-8001-000000000002");
-    private static readonly Guid CasoPositivaId = Guid.Parse("00000000-0000-7000-8001-000000000003");
-    private static readonly Guid RemisionSura1Id = Guid.Parse("00000000-0000-7000-8002-000000000001");
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private HttpClient CreateClient() => factory.CreateClient();
-
-    /// <summary>
-    /// Crea un cliente con claims de analista ARL para el tenant indicado.
-    /// Por defecto usa "ARL_A" (tenant_id del TestAuthenticationHandler por defecto).
-    /// </summary>
-    private HttpClient ArlClient(string tenantId = "ARL_A") =>
-        factory.CreateClientWithHeaders(new Dictionary<string, string>
-        {
-            ["X-Test-Claims"] = JsonSerializer.Serialize(new
-            {
-                sub = TestAuthenticationHandler.TestUserId.ToString(),
-                email = "analista@halsa.dev",
-                iss = TestAuthenticationHandler.DefaultIssuer,
-                actor_tipo = "arl",
-                tenant_id = tenantId,
-                permissions = new[] { "casos:read", "casos:write" }
-            })
-        });
-
-    /// <summary>
-    /// El cliente por defecto del factory ya tiene permisos ARL_A — sólo un alias legible.
-    /// </summary>
-    private HttpClient DefaultArlClient() => CreateClient();
-
-    // ── GET /v1/casos ────────────────────────────────────────────────────────
+    // ── Lectura ───────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ListCasos_ShouldReturn200_WithItems_ForArlActorWithCasos()
+    public async Task ListCasos_AsArlA_ShouldNotIncludeArlBCases()
     {
-        HttpClient client = DefaultArlClient();
+        Guid casoA = await SeedCasoAsync(ArlA);
+        Guid casoB = await SeedCasoAsync(ArlB);
 
-        HttpResponseMessage response = await client.GetAsync("v1/casos");
+        List<Guid> ids = await ListIdsAsync(ArlClient(ArlA));
+
+        ids.ShouldContain(casoA);
+        ids.ShouldNotContain(casoB);
+    }
+
+    [Fact]
+    public async Task GetCasoById_OfArlBCase_AsArlA_ShouldReturn404()
+    {
+        Guid casoB = await SeedCasoAsync(ArlB);
+
+        HttpResponseMessage response = await ArlClient(ArlA).GetAsync($"v1/casos/{casoB}");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ListCasos_AsIps_ShouldReturnOnlyCasesWithVigenteRemision_FromBothTenants()
+    {
+        Guid remitidoA = await SeedCasoAsync(ArlA, remitirA: Ips);
+        Guid remitidoB = await SeedCasoAsync(ArlB, remitirA: Ips);
+        Guid sinRemitir = await SeedCasoAsync(ArlA);
+
+        List<Guid> ids = await ListIdsAsync(IpsClient());
+
+        ids.ShouldContain(remitidoA);
+        ids.ShouldContain(remitidoB);
+        ids.ShouldNotContain(sinRemitir);
+    }
+
+    [Fact]
+    public async Task GetCasoById_ShouldReturnDetalle_WithRemisionesVigentesAndEquipo()
+    {
+        Guid caso = await SeedCasoAsync(ArlA, remitirA: Ips);
+        HttpClient client = ArlClient(ArlA);
+        (await client.PostAsJsonAsync($"v1/casos/{caso}/asignaciones", new { sub = "sub-equipo" }))
+            .StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        HttpResponseMessage response = await client.GetAsync($"v1/casos/{caso}");
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-
-        JsonObject? body = await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        body.ShouldNotBeNull();
-        body["items"].ShouldNotBeNull();
-        body["totalCount"]!.GetValue<int>().ShouldBeGreaterThanOrEqualTo(0);
+        JsonObject body = (await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions))!;
+        body["resumen"]!["id"]!.GetValue<Guid>().ShouldBe(caso);
+        body["resumen"]!["estado"]!.GetValue<string>().ShouldBe("Radicado");
+        body["remisionesVigentes"]!.AsArray().Single()!["ipsId"]!.GetValue<string>().ShouldBe(Ips);
+        body["equipoAsignado"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["sub-equipo"]);
     }
 
     [Fact]
     public async Task ListCasos_ShouldReturn401_WhenUnauthenticated()
     {
-        HttpClient client = CreateClient();
-
-        HttpRequestMessage request = new(HttpMethod.Get, "v1/casos");
+        using HttpRequestMessage request = new(HttpMethod.Get, "v1/casos");
         request.Headers.Add("X-Unauthenticated", "true");
 
-        HttpResponseMessage response = await client.SendAsync(request);
+        HttpResponseMessage response = await factory.CreateClient().SendAsync(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
-    [Fact]
-    public async Task ListCasos_ShouldReturn200WithPagination_WhenPageSizeIsSpecified()
-    {
-        HttpClient client = DefaultArlClient();
-
-        HttpResponseMessage response = await client.GetAsync("v1/casos?page=1&pageSize=1");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-
-        JsonObject? body = await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        body.ShouldNotBeNull();
-
-        var items = body["items"]?.AsArray();
-        items.ShouldNotBeNull();
-        items.Count.ShouldBeLessThanOrEqualTo(1);
-    }
-
-    // ── GET /v1/casos/{id} ───────────────────────────────────────────────────
+    // ── Remisiones ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetCasoById_ShouldReturn200_WhenCasoExistsForArl()
+    public async Task RemitirCaso_TwiceToSameIps_ShouldReturn201ThenConflict()
     {
-        // El default test user tiene tenant_id = ARL_A; los casos dev usan "arl-sura"
-        // Ajustamos a un tenant que coincida con el seed.
-        HttpClient client = ArlClient("arl-sura");
+        Guid caso = await SeedCasoAsync(ArlA);
+        HttpClient client = ArlClient(ArlA);
 
-        HttpResponseMessage response = await client.GetAsync($"v1/casos/{CasoSura1Id}");
+        HttpResponseMessage primera = await client.PostAsJsonAsync($"v1/casos/{caso}/remisiones", new { ipsId = Ips });
+        HttpResponseMessage segunda = await client.PostAsJsonAsync($"v1/casos/{caso}/remisiones", new { ipsId = Ips });
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-
-        JsonObject? body = await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        body.ShouldNotBeNull();
-        body["id"]!.GetValue<string>().ShouldBe(CasoSura1Id.ToString());
-        body["radicado"]!.GetValue<string>().ShouldBe("ARL-SURA-2026-001");
-        body["tenantId"]!.GetValue<string>().ShouldBe("arl-sura");
+        primera.StatusCode.ShouldBe(HttpStatusCode.Created);
+        segunda.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ErrorCodeAsync(segunda)).ShouldBe("Caso.RemisionDuplicada");
     }
 
     [Fact]
-    public async Task GetCasoById_ShouldReturn404_WhenCasoDoesNotExistForArl()
+    public async Task RemitirCaso_AsIpsWithCasosWrite_ShouldReturn403()
     {
-        HttpClient client = DefaultArlClient(); // tenant ARL_A ≠ arl-sura
+        Guid caso = await SeedCasoAsync(ArlA, remitirA: Ips);
 
-        HttpResponseMessage response = await client.GetAsync($"v1/casos/{CasoSura1Id}");
-
-        // RLS + query filter ocultan el caso — handler retorna NotFound
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task GetCasoById_ShouldReturn404_ForNonExistentId()
-    {
-        HttpClient client = DefaultArlClient();
-
-        HttpResponseMessage response = await client.GetAsync($"v1/casos/{Guid.NewGuid()}");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task GetCasoById_ShouldIncludeRemisionesAndAsignaciones_WhenPresent()
-    {
-        HttpClient client = ArlClient("arl-sura");
-
-        HttpResponseMessage response = await client.GetAsync($"v1/casos/{CasoSura1Id}");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-
-        JsonObject? body = await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        body.ShouldNotBeNull();
-
-        var remisiones = body["remisiones"]?.AsArray();
-        remisiones.ShouldNotBeNull();
-        remisiones.Count.ShouldBe(1);
-
-        var asignaciones = body["asignaciones"]?.AsArray();
-        asignaciones.ShouldNotBeNull();
-        asignaciones.Count.ShouldBe(1);
-    }
-
-    // ── POST /v1/casos (Radicar) ─────────────────────────────────────────────
-
-    [Fact]
-    public async Task RadicarCaso_ShouldReturn201_WithLocationHeader_ForArlActor()
-    {
-        HttpClient client = ArlClient("arl-sura");
-
-        var payload = new
-        {
-            radicado = $"ARL-SURA-TEST-{Guid.NewGuid():N}",
-            tipoEvento = (int)TipoEvento.AccidenteTrabajo,
-            trabajadorTipo = "CC",
-            trabajadorNumero = "11223344",
-            empleadorTipo = "NIT",
-            empleadorNumero = "9009009001",
-            fechaEvento = DateTimeOffset.UtcNow.AddDays(-1),
-            municipioDivipola = "11001",
-            esGraveOMortal = false
-        };
-
-        HttpResponseMessage response = await client.PostAsJsonAsync("v1/casos", payload);
-
-        response.StatusCode.ShouldBe(HttpStatusCode.Created);
-        response.Headers.Location.ShouldNotBeNull();
-        response.Headers.Location.ToString().ShouldStartWith("/v1/casos/");
-
-        JsonObject? body = await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        body.ShouldNotBeNull();
-        body["id"].ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task RadicarCaso_ShouldReturn401_WhenUnauthenticated()
-    {
-        HttpClient client = CreateClient();
-
-        var payload = new
-        {
-            radicado = "TEST-UNAUTH",
-            tipoEvento = (int)TipoEvento.AccidenteTrabajo,
-            trabajadorTipo = "CC",
-            trabajadorNumero = "11223344",
-            empleadorTipo = "NIT",
-            empleadorNumero = "9009009001",
-            fechaEvento = DateTimeOffset.UtcNow.AddDays(-1),
-            municipioDivipola = "11001",
-            esGraveOMortal = false
-        };
-
-        HttpRequestMessage request = new(HttpMethod.Post, "v1/casos");
-        request.Content = JsonContent.Create(payload);
-        request.Headers.Add("X-Unauthenticated", "true");
-
-        HttpResponseMessage response = await client.SendAsync(request);
-
-        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task RadicarCaso_ShouldReturn403_ForIpsActor()
-    {
-        // IPS no tiene tenant_id → TenantId será null → command handler retorna Forbidden
-        HttpClient client = factory.CreateClientWithHeaders(new Dictionary<string, string>
-        {
-            ["X-Test-Claims"] = JsonSerializer.Serialize(new
-            {
-                sub = "01999000-0000-7000-8000-000000000c01",
-                email = "medico@ips.dev",
-                iss = TestAuthenticationHandler.DefaultIssuer,
-                actor_tipo = "ips",
-                ips_id = "110011234501",
-                permissions = new[] { "casos:read", "casos:write" }
-            })
-        });
-
-        var payload = new
-        {
-            radicado = "TEST-IPS-RADICAR",
-            tipoEvento = (int)TipoEvento.AccidenteTrabajo,
-            trabajadorTipo = "CC",
-            trabajadorNumero = "11223344",
-            empleadorTipo = "NIT",
-            empleadorNumero = "9009009001",
-            fechaEvento = DateTimeOffset.UtcNow.AddDays(-1),
-            municipioDivipola = "11001",
-            esGraveOMortal = false
-        };
-
-        HttpResponseMessage response = await client.PostAsJsonAsync("v1/casos", payload);
+        HttpResponseMessage response = await IpsClient()
+            .PostAsJsonAsync($"v1/casos/{caso}/remisiones", new { ipsId = "110011234502" });
 
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await ErrorCodeAsync(response)).ShouldBe("Caso.ActorNoAutorizado");
     }
 
-    // ── POST /v1/casos/{id}/remisiones (Remitir) ─────────────────────────────
+    [Fact]
+    public async Task RemitirCaso_WithInvalidIpsId_ShouldReturn400()
+    {
+        Guid caso = await SeedCasoAsync(ArlA);
+
+        HttpResponseMessage response = await ArlClient(ArlA)
+            .PostAsJsonAsync($"v1/casos/{caso}/remisiones", new { ipsId = "123" });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
 
     [Fact]
-    public async Task RemitirCaso_ShouldReturn201_WhenCasoExistsAndIpsEsNueva()
+    public async Task RemitirCaso_OfInvisibleCase_ShouldReturn404()
     {
-        HttpClient client = ArlClient("arl-sura");
+        Guid casoB = await SeedCasoAsync(ArlB);
 
-        // Primero crear un caso nuevo para tener control total
-        string radicado = $"ARL-SURA-REMITIR-{Guid.NewGuid():N}";
-        var casoPayload = new
+        HttpResponseMessage response = await ArlClient(ArlA)
+            .PostAsJsonAsync($"v1/casos/{casoB}/remisiones", new { ipsId = Ips });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task RevocarRemision_ShouldReturn204_ThenConflictOnSecondRevocation()
+    {
+        Guid caso = await SeedCasoAsync(ArlA);
+        HttpClient client = ArlClient(ArlA);
+        HttpResponseMessage remitir = await client.PostAsJsonAsync($"v1/casos/{caso}/remisiones", new { ipsId = Ips });
+        Guid remisionId = (await remitir.Content.ReadFromJsonAsync<JsonObject>(JsonOptions))!["remisionId"]!.GetValue<Guid>();
+
+        HttpResponseMessage primera = await client.PostAsync($"v1/casos/{caso}/remisiones/{remisionId}/revocar", null);
+        HttpResponseMessage segunda = await client.PostAsync($"v1/casos/{caso}/remisiones/{remisionId}/revocar", null);
+
+        primera.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        segunda.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ErrorCodeAsync(segunda)).ShouldBe("Caso.RemisionYaRevocada");
+
+        // Revoked: the IPS no longer sees the case.
+        (await ListIdsAsync(IpsClient())).ShouldNotContain(caso);
+    }
+
+    // ── Asignaciones ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AsignarCaso_Twice_ShouldReturn204BothTimes_AndKeepOneRow()
+    {
+        Guid caso = await SeedCasoAsync(ArlA);
+        HttpClient client = ArlClient(ArlA);
+
+        HttpResponseMessage primera = await client.PostAsJsonAsync($"v1/casos/{caso}/asignaciones", new { sub = "sub-idem" });
+        HttpResponseMessage segunda = await client.PostAsJsonAsync($"v1/casos/{caso}/asignaciones", new { sub = "sub-idem" });
+
+        primera.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        segunda.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await CountAsignacionesAsync(caso, ArlA, "sub-idem")).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task DesasignarCaso_ShouldReturn204_Then404WhenNotAssigned()
+    {
+        Guid caso = await SeedCasoAsync(ArlA);
+        HttpClient client = ArlClient(ArlA);
+        (await client.PostAsJsonAsync($"v1/casos/{caso}/asignaciones", new { sub = "sub-fuera" }))
+            .StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        HttpResponseMessage primera = await client.DeleteAsync($"v1/casos/{caso}/asignaciones/sub-fuera");
+        HttpResponseMessage segunda = await client.DeleteAsync($"v1/casos/{caso}/asignaciones/sub-fuera");
+
+        primera.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        segunda.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await ErrorCodeAsync(segunda)).ShouldBe("Caso.AsignacionNoEncontrada");
+    }
+
+    // ── Clients ───────────────────────────────────────────────────────────────
+
+    private HttpClient ArlClient(string tenantId) =>
+        ClientWithClaims(new
         {
-            radicado,
-            tipoEvento = (int)TipoEvento.AccidenteTrabajo,
-            trabajadorTipo = "CC",
-            trabajadorNumero = "55667788",
-            empleadorTipo = "NIT",
-            empleadorNumero = "9001230001",
-            fechaEvento = DateTimeOffset.UtcNow.AddDays(-2),
-            municipioDivipola = "05001",
-            esGraveOMortal = false
-        };
+            sub = TestAuthenticationHandler.TestUserId.ToString(),
+            iss = TestAuthenticationHandler.DefaultIssuer,
+            actor_tipo = "arl",
+            tenant_id = tenantId,
+            permissions = new[] { "casos:read", "casos:write" }
+        });
 
-        HttpResponseMessage createResponse = await client.PostAsJsonAsync("v1/casos", casoPayload);
-        createResponse.StatusCode.ShouldBe(HttpStatusCode.Created);
-
-        JsonObject? createBody = await createResponse.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        string casoId = createBody!["id"]!.GetValue<string>();
-
-        // Remitir
-        HttpResponseMessage response = await client.PostAsJsonAsync(
-            $"v1/casos/{casoId}/remisiones",
-            new { ipsId = "990099900001" });
-
-        response.StatusCode.ShouldBe(HttpStatusCode.Created);
-        response.Headers.Location.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task RemitirCaso_ShouldReturn404_WhenCasoNoExiste()
-    {
-        HttpClient client = ArlClient("arl-sura");
-
-        HttpResponseMessage response = await client.PostAsJsonAsync(
-            $"v1/casos/{Guid.NewGuid()}/remisiones",
-            new { ipsId = "110011234501" });
-
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task RemitirCaso_ShouldReturn409_WhenYaExisteRemisionVigenteAlaMismaIps()
-    {
-        HttpClient client = ArlClient("arl-sura");
-
-        // Caso 1 de seed ya tiene una remisión vigente a "110011234501"
-        HttpResponseMessage response = await client.PostAsJsonAsync(
-            $"v1/casos/{CasoSura1Id}/remisiones",
-            new { ipsId = "110011234501" });
-
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-    }
-
-    // ── DELETE /v1/casos/{id}/remisiones/{remisionId} (Revocar) ─────────────
-
-    [Fact]
-    public async Task RevocarRemision_ShouldReturn204_WhenRemisionVigenteExiste()
-    {
-        // Crear un caso + remisión frescos para poder revocarla sin afectar otros tests
-        HttpClient client = ArlClient("arl-sura");
-
-        string radicado = $"ARL-SURA-REVOCAR-{Guid.NewGuid():N}";
-        var casoPayload = new
+    /// <summary>An IPS actor that (wrongly) holds <c>casos:write</c>: the handler must still refuse writes.</summary>
+    private HttpClient IpsClient() =>
+        ClientWithClaims(new
         {
-            radicado,
-            tipoEvento = (int)TipoEvento.AccidenteTrabajo,
-            trabajadorTipo = "CC",
-            trabajadorNumero = "99887766",
-            empleadorTipo = "NIT",
-            empleadorNumero = "9002340001",
-            fechaEvento = DateTimeOffset.UtcNow.AddDays(-3),
-            municipioDivipola = "76001",
-            esGraveOMortal = false
-        };
+            sub = "01999000-0000-7000-8000-000000000c01",
+            iss = TestAuthenticationHandler.DefaultIssuer,
+            actor_tipo = "ips",
+            ips_id = Ips,
+            permissions = new[] { "casos:read", "casos:write" }
+        });
 
-        HttpResponseMessage createCaso = await client.PostAsJsonAsync("v1/casos", casoPayload);
-        createCaso.StatusCode.ShouldBe(HttpStatusCode.Created);
-        JsonObject? casoBody = await createCaso.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        string casoId = casoBody!["id"]!.GetValue<string>();
+    private HttpClient ClientWithClaims(object claims) =>
+        factory.CreateClientWithHeaders(new Dictionary<string, string>
+        {
+            ["X-Test-Claims"] = JsonSerializer.Serialize(claims)
+        });
 
-        HttpResponseMessage createRemision = await client.PostAsJsonAsync(
-            $"v1/casos/{casoId}/remisiones",
-            new { ipsId = "770077700001" });
-        createRemision.StatusCode.ShouldBe(HttpStatusCode.Created);
-        JsonObject? remisionBody = await createRemision.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
-        string remisionId = remisionBody!["id"]!.GetValue<string>();
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
-        // Revocar
-        HttpResponseMessage response = await client.DeleteAsync(
-            $"v1/casos/{casoId}/remisiones/{remisionId}");
+    private static async Task<List<Guid>> ListIdsAsync(HttpClient client)
+    {
+        HttpResponseMessage response = await client.GetAsync("v1/casos?page=1&pageSize=1000");
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        JsonObject body = (await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions))!;
+        return body["items"]!.AsArray().Select(item => item!["id"]!.GetValue<Guid>()).ToList();
     }
 
-    [Fact]
-    public async Task RevocarRemision_ShouldReturn404_WhenCasoNoExiste()
+    private static async Task<string?> ErrorCodeAsync(HttpResponseMessage response)
     {
-        HttpClient client = ArlClient("arl-sura");
-
-        HttpResponseMessage response = await client.DeleteAsync(
-            $"v1/casos/{Guid.NewGuid()}/remisiones/{Guid.NewGuid()}");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        JsonObject? body = await response.Content.ReadFromJsonAsync<JsonObject>(JsonOptions);
+        return body?["errorCode"]?.GetValue<string>();
     }
 
-    // ── PUT /v1/casos/{id}/asignaciones/{sub} (Asignar) ─────────────────────
-
-    [Fact]
-    public async Task AsignarCaso_ShouldReturn204_WhenCasoExiste()
+    /// <summary>
+    /// Seeds a case as <c>halsa_owner</c>. RLS is forced, so the owner sets the tenant first.
+    /// </summary>
+    private async Task<Guid> SeedCasoAsync(string tenantId, string? remitirA = null)
     {
-        HttpClient client = ArlClient("arl-sura");
+        Guid id = Guid.CreateVersion7();
 
-        HttpResponseMessage response = await client.PutAsync(
-            $"v1/casos/{CasoSura2Id}/asignaciones/sub-medico-nuevo",
-            null);
+        await using NpgsqlConnection conn = await OpenOwnerAsync(tenantId);
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO atel.casos_medicos
+              (id, tenant_id, radicado, tipo_evento, fecha_evento,
+               trabajador_tipo, trabajador_numero, empleador_tipo, empleador_numero,
+               municipio_divipola, estado, es_grave_o_mortal, radicado_en)
+            VALUES
+              (@id, @tid, @rad, 'AccidenteTrabajo', now() - interval '1 day', 'CC', '123456', 'NIT', '9001',
+               '11001', 'Radicado', false, now());
+            """;
+        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("tid", tenantId);
+        cmd.Parameters.AddWithValue("rad", $"FT-{id:N}");
+        await cmd.ExecuteNonQueryAsync();
 
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        if (remitirA is not null)
+        {
+            await using NpgsqlCommand remision = conn.CreateCommand();
+            remision.CommandText = """
+                INSERT INTO atel.remisiones (id, caso_medico_id, tenant_id, ips_id, remitido_en, remitido_por)
+                VALUES (@rid, @id, @tid, @ips, now(), 'sub-seed');
+                """;
+            remision.Parameters.AddWithValue("rid", Guid.CreateVersion7());
+            remision.Parameters.AddWithValue("id", id);
+            remision.Parameters.AddWithValue("tid", tenantId);
+            remision.Parameters.AddWithValue("ips", remitirA);
+            await remision.ExecuteNonQueryAsync();
+        }
+
+        return id;
     }
 
-    [Fact]
-    public async Task AsignarCaso_ShouldReturn204_WhenAsignacionYaExiste_Idempotent()
+    private async Task<long> CountAsignacionesAsync(Guid casoId, string tenantId, string sub)
     {
-        HttpClient client = ArlClient("arl-sura");
-
-        // Primera asignación
-        HttpResponseMessage r1 = await client.PutAsync(
-            $"v1/casos/{CasoSura2Id}/asignaciones/sub-idem-test",
-            null);
-        r1.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-
-        // Segunda asignación — idempotente
-        HttpResponseMessage r2 = await client.PutAsync(
-            $"v1/casos/{CasoSura2Id}/asignaciones/sub-idem-test",
-            null);
-        r2.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await using NpgsqlConnection conn = await OpenOwnerAsync(tenantId);
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT count(*) FROM atel.asignaciones WHERE caso_medico_id = @id AND sub = @sub";
+        cmd.Parameters.AddWithValue("id", casoId);
+        cmd.Parameters.AddWithValue("sub", sub);
+        return (long)(await cmd.ExecuteScalarAsync())!;
     }
 
-    [Fact]
-    public async Task AsignarCaso_ShouldReturn404_WhenCasoNoExiste()
+    private async Task<NpgsqlConnection> OpenOwnerAsync(string tenantId)
     {
-        HttpClient client = ArlClient("arl-sura");
+        var conn = new NpgsqlConnection(factory.OwnerConnectionString);
+        await conn.OpenAsync();
 
-        HttpResponseMessage response = await client.PutAsync(
-            $"v1/casos/{Guid.NewGuid()}/asignaciones/sub-nobody",
-            null);
+        await using NpgsqlCommand set = conn.CreateCommand();
+        set.CommandText = "SELECT set_config('app.tenant_id', @tid, false)";
+        set.Parameters.AddWithValue("tid", tenantId);
+        await set.ExecuteNonQueryAsync();
 
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-    }
-
-    // ── DELETE /v1/casos/{id}/asignaciones/{sub} (Desasignar) ───────────────
-
-    [Fact]
-    public async Task DesasignarCaso_ShouldReturn204_WhenAsignacionExiste()
-    {
-        HttpClient client = ArlClient("arl-sura");
-
-        // Asignar primero
-        string sub = $"sub-desasignar-{Guid.NewGuid():N}";
-        HttpResponseMessage assign = await client.PutAsync(
-            $"v1/casos/{CasoSura2Id}/asignaciones/{sub}",
-            null);
-        assign.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-
-        // Luego desasignar
-        HttpResponseMessage response = await client.DeleteAsync(
-            $"v1/casos/{CasoSura2Id}/asignaciones/{sub}");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-    }
-
-    [Fact]
-    public async Task DesasignarCaso_ShouldReturn404_WhenCasoNoExiste()
-    {
-        HttpClient client = ArlClient("arl-sura");
-
-        HttpResponseMessage response = await client.DeleteAsync(
-            $"v1/casos/{Guid.NewGuid()}/asignaciones/sub-nobody");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
-    public async Task DesasignarCaso_ShouldReturn404_WhenSubNoEstaAsignado()
-    {
-        HttpClient client = ArlClient("arl-sura");
-
-        HttpResponseMessage response = await client.DeleteAsync(
-            $"v1/casos/{CasoSura1Id}/asignaciones/sub-inexistente-xyz");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        return conn;
     }
 }

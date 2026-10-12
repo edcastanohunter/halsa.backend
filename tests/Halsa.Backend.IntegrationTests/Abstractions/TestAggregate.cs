@@ -7,10 +7,10 @@ namespace Halsa.Backend.IntegrationTests.Abstractions;
 // ── Events ────────────────────────────────────────────────────────────────────
 
 [EventName("TestAggregate.Created")]
-public sealed record TestAggregateCreated(Guid AggregateId, string Name) : IPersistedEvent;
+public sealed record TestAggregateCreated(Guid AggregateId, string Name) : DomainEvent, IPersistedEvent;
 
 [EventName("TestAggregate.Renamed")]
-public sealed record TestAggregateRenamed(Guid AggregateId, string NewName) : IPersistedEvent;
+public sealed record TestAggregateRenamed(Guid AggregateId, string NewName) : DomainEvent, IPersistedEvent;
 
 // ── Value object ──────────────────────────────────────────────────────────────
 

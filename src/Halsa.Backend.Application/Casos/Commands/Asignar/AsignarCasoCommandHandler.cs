@@ -17,19 +17,19 @@ internal sealed class AsignarCasoCommandHandler(
         AsignarCasoCommand command,
         CancellationToken cancellationToken)
     {
-        CasoMedico? caso = await repository.GetByIdAsync(command.CasoId, cancellationToken);
+        if (!tenantContext.PuedeEscribir())
+        {
+            return Result.Failure(CasoMedicoErrors.ActorNoAutorizado);
+        }
 
+        CasoMedico? caso = await repository.GetByIdAsync(command.CasoId, cancellationToken);
         if (caso is null)
         {
             return Result.Failure(CasoMedicoErrors.NoEncontrado);
         }
 
-        DateTimeOffset ahora = time.GetUtcNow();
-        string asignadoPor = tenantContext.Resuelto ? tenantContext.Sub : "sistema";
+        caso.Asignar(command.Sub, tenantContext.Sub, time.GetUtcNow());
 
-        caso.Asignar(command.Sub, asignadoPor, ahora);
-
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        return await unitOfWork.GuardarCasoAsync(cancellationToken);
     }
 }

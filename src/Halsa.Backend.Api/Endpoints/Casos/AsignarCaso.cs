@@ -1,36 +1,38 @@
+using Halsa.Backend.Api.Extensions;
+using Halsa.Backend.Api.Infrastructure;
 using Halsa.Backend.Application.Casos.Commands.Asignar;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Authorization;
 using Halsa.Backend.Mediation;
-using Halsa.Backend.SharedKernel.Results;
 
 namespace Halsa.Backend.Api.Endpoints.Casos;
 
 /// <summary>
-/// <c>PUT /v1/casos/{casoId}/asignaciones/{sub}</c> — Asigna un usuario al caso (idempotente).
+/// <c>POST /v1/casos/{casoId}/asignaciones</c> — Asigna un usuario al equipo del caso.
+///
+/// Idempotente: repetir la misma asignación responde 204 y deja una sola fila.
 /// </summary>
 internal sealed class AsignarCaso : IEndpoint
 {
+    internal sealed record Request(string Sub);
+
     public void MapEndpoint(IEndpointRouteBuilder app) =>
-        app.MapPut("casos/{casoId:guid}/asignaciones/{sub}", async (
+        app.MapPost("casos/{casoId:guid}/asignaciones", async (
                 Guid casoId,
-                string sub,
+                Request request,
                 ISender sender,
                 CancellationToken ct) =>
             {
-                var command = new AsignarCasoCommand(new CasoMedicoId(casoId), sub);
-                var result = await sender.Send(command, ct);
+                var result = await sender.Send(
+                    new AsignarCasoCommand(new CasoMedicoId(casoId), request.Sub), ct);
 
-                return result.Match(
-                    () => Results.NoContent(),
-                    error => error.Type == ErrorType.NotFound
-                        ? Results.NotFound()
-                        : Results.Problem(error.Description));
+                return result.IsSuccess ? Results.NoContent() : CustomResults.Problem(result);
             })
         .WithTags(Tags.Casos)
         .WithName("AsignarCaso")
         .WithSummary("Asigna un usuario al caso (idempotente).")
         .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)

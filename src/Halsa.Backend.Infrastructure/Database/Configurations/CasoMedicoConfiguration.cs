@@ -9,10 +9,10 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
 {
     public void Configure(EntityTypeBuilder<CasoMedico> builder)
     {
-        builder.ToTable("caso_medico", Schemas.Atel);
+        builder.ToTable("casos_medicos", Schemas.Atel);
 
         builder.HasKey(c => c.Id)
-            .HasName("pk_caso_medico");
+            .HasName("pk_casos_medicos");
 
         builder.Property(c => c.Id)
             .HasColumnName("id")
@@ -21,18 +21,19 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
 
         builder.Property(c => c.TenantId)
             .HasColumnName("tenant_id")
-            .HasMaxLength(100)
+            .HasMaxLength(20)
             .IsRequired()
             .HasConversion(v => v.Value, v => new TenantId(v));
 
         builder.Property(c => c.Radicado)
             .HasColumnName("radicado")
-            .HasMaxLength(100)
+            .HasMaxLength(40)
             .IsRequired();
 
         builder.Property(c => c.TipoEvento)
             .HasColumnName("tipo_evento")
-            .HasConversion<int>();
+            .HasMaxLength(20)
+            .HasConversion<string>();
 
         builder.Property(c => c.FechaEvento)
             .HasColumnName("fecha_evento")
@@ -40,12 +41,13 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
 
         builder.Property(c => c.MunicipioDivipola)
             .HasColumnName("municipio_divipola")
-            .HasMaxLength(10)
+            .HasColumnType("char(5)")
             .IsRequired();
 
         builder.Property(c => c.Estado)
             .HasColumnName("estado")
-            .HasConversion<int>();
+            .HasMaxLength(30)
+            .HasConversion<string>();
 
         builder.Property(c => c.EsGraveOMortal)
             .HasColumnName("es_grave_o_mortal");
@@ -57,11 +59,9 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
         // ── xmin concurrency token ─────────────────────────────────────────────
         // PostgreSQL increments xmin on every UPDATE so EF Core can detect concurrent
         // modifications without a separate version column.
+        // Npgsql maps a uint row version to the xmin system column; migrations never create it.
         builder.Property(c => c.Version)
-            .HasColumnName("xmin")
-            .HasColumnType("xid")
-            .ValueGeneratedOnAddOrUpdate()
-            .IsConcurrencyToken();
+            .IsRowVersion();
 
         // ── Owned types ────────────────────────────────────────────────────────
 
@@ -105,7 +105,7 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
         builder.HasMany(c => c.Remisiones)
             .WithOne()
             .HasForeignKey(r => r.CasoMedicoId)
-            .HasConstraintName("fk_remision_caso_medico")
+            .HasConstraintName("fk_remisiones_casos_medicos")
             .OnDelete(DeleteBehavior.Cascade);
 
         // EF Core needs access to the private backing field.
@@ -117,7 +117,7 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
         builder.HasMany(c => c.Asignaciones)
             .WithOne()
             .HasForeignKey(a => a.CasoMedicoId)
-            .HasConstraintName("fk_asignacion_caso_medico")
+            .HasConstraintName("fk_asignaciones_casos_medicos")
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Navigation(c => c.Asignaciones)
@@ -126,10 +126,12 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
 
         // ── Indexes ────────────────────────────────────────────────────────────
 
-        builder.HasIndex(c => c.TenantId)
-            .HasDatabaseName("ix_caso_medico_tenant_id");
+        builder.HasIndex(c => new { c.TenantId, c.Radicado })
+            .IsUnique()
+            .HasDatabaseName("ux_casos_medicos_tenant_radicado");
 
-        builder.HasIndex(c => new { c.TenantId, c.Estado })
-            .HasDatabaseName("ix_caso_medico_tenant_estado");
+        builder.HasIndex(c => new { c.TenantId, c.Estado, c.RadicadoEn })
+            .IsDescending(false, false, true)
+            .HasDatabaseName("ix_casos_medicos_tenant_estado_radicado_en");
     }
 }

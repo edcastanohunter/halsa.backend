@@ -104,8 +104,8 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
         // In integration tests there is no HTTP context, so HttpTenantContext (registered by
         // AddInfrastructure) would fail to resolve IHttpContextAccessor.
-        // Replace it with NullTenantContext, which returns Resuelto = false so the EF query
-        // filter passes all rows through during test set-up and event-store tests.
+        // Replace it with NullTenantContext (Resuelto = false). The event store does not depend
+        // on it; atel tables stay invisible, so RLS tests use CreateDbContext instead.
         services.RemoveAll<ITenantContext>();
         services.AddScoped<ITenantContext>(_ => NullTenantContext.Instance);
 
@@ -129,6 +129,21 @@ public sealed class DatabaseFixture : IAsyncLifetime
     }
 
     public AsyncServiceScope CreateScope() => Services.CreateAsyncScope();
+
+    /// <summary>
+    /// Builds an <see cref="ApplicationDbContext"/> connected as <c>halsa_app</c> with the real
+    /// <see cref="TenantSessionInterceptor"/>, as the API does for a request of <paramref name="tenantContext"/>.
+    /// </summary>
+    public ApplicationDbContext CreateDbContext(ITenantContext tenantContext, string? connectionString = null)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(connectionString ?? AppConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(new TenantSessionInterceptor(tenantContext))
+            .Options;
+
+        return new ApplicationDbContext(options, tenantContext);
+    }
 
     // ── Embedded init script ──────────────────────────────────────────────────
     // Mirrors docker/postgres/init/01-roles.sql so Testcontainers does not need

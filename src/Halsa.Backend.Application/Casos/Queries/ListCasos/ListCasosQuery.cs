@@ -1,6 +1,7 @@
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Models;
 using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Application.Casos.Queries;
 
 namespace Halsa.Backend.Application.Casos.Queries.ListCasos;
 
@@ -8,4 +9,4 @@ namespace Halsa.Backend.Application.Casos.Queries.ListCasos;
 public sealed record ListCasosQuery(
     int Page = 1,
     int PageSize = 20,
-    EstadoCaso? Estado = null) : IQuery<PagedList<CasoResumen>>;
+    EstadoCaso? Estado = null) : IQuery<PagedList<CasoResumenResponse>>;

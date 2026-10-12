@@ -8,8 +8,8 @@ namespace Halsa.Backend.Infrastructure.Tenancy;
 /// in scope — for example, inside migration or seed contexts where the DbContext is
 /// instantiated directly rather than via the DI container.
 ///
-/// <see cref="Resuelto"/> is always <c>false</c>, so EF Core query filters that guard
-/// on <c>!tenantContext.Resuelto</c> will let all rows through.
+/// <see cref="Resuelto"/> is always <c>false</c>, so the tenant query filters and the RLS
+/// policies both fail closed: no <c>atel</c> rows are visible through this context.
 /// </summary>
 public sealed class NullTenantContext : ITenantContext
 {

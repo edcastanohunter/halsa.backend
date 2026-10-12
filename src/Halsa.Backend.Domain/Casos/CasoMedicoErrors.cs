@@ -35,6 +35,10 @@ public static class CasoMedicoErrors
         Error.Conflict("Caso.ConflictoConcurrencia",
             "Otro proceso modificó el caso al mismo tiempo. Reintenta la operación.");
 
+    public static readonly Error IpsIdInvalido =
+        Error.Problem("Caso.IpsIdInvalido",
+            "El código REPS de la IPS debe tener 12 dígitos.");
+
     public static readonly Error NoEncontrado =
         Error.NotFound("Caso.NoEncontrado",
             "El caso no existe o no pertenece al contexto de tenant actual.");

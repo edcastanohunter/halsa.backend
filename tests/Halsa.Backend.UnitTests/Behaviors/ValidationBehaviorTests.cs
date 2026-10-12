@@ -42,7 +42,7 @@ public sealed class ValidationBehaviorTests
             .ValidateAsync(Arg.Any<ValidationContext<SampleCommand>>(), Arg.Any<CancellationToken>())
             .Returns(new ValidationResult(
             [
-                new ValidationFailure("Title", "Title is required") { ErrorCode = "WorkItems.TitleRequired" }
+                new ValidationFailure("Title", "Title is required") { ErrorCode = "Test.TitleRequired" }
             ]));
 
         var behavior = new ValidationBehavior<SampleCommand, Result<Guid>>([validator]);
@@ -61,7 +61,7 @@ public sealed class ValidationBehaviorTests
         result.IsFailure.ShouldBeTrue();
         result.Error.ShouldBeOfType<ValidationError>()
             .Errors.ShouldHaveSingleItem()
-            .Code.ShouldBe("WorkItems.TitleRequired");
+            .Code.ShouldBe("Test.TitleRequired");
     }
 
     [Fact]

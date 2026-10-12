@@ -18,32 +18,32 @@ internal sealed class RemitirCasoCommandHandler(
         RemitirCasoCommand command,
         CancellationToken cancellationToken)
     {
-        CasoMedico? caso = await repository.GetByIdAsync(command.CasoId, cancellationToken);
+        if (!tenantContext.PuedeEscribir())
+        {
+            return Result.Failure<Guid>(CasoMedicoErrors.ActorNoAutorizado);
+        }
 
+        CasoMedico? caso = await repository.GetByIdAsync(command.CasoId, cancellationToken);
         if (caso is null)
         {
             return Result.Failure<Guid>(CasoMedicoErrors.NoEncontrado);
         }
 
+        // El validador ya exige 12 dígitos; esto solo construye el value object.
         if (!IpsId.TryCreate(command.IpsId, out IpsId ipsId))
         {
-            return Result.Failure<Guid>(Error.Problem(
-                "Caso.IpsIdInvalido",
-                $"El código REPS '{command.IpsId}' no es válido (debe tener 12 dígitos)."));
+            return Result.Failure<Guid>(CasoMedicoErrors.IpsIdInvalido);
         }
 
-        DateTimeOffset ahora = time.GetUtcNow();
-        string remitidoPor = tenantContext.Resuelto ? tenantContext.Sub : "sistema";
-
-        var result = caso.Remitir(ipsId, remitidoPor, ahora);
-
+        Result<RemisionId> result = caso.Remitir(ipsId, tenantContext.Sub, time.GetUtcNow());
         if (result.IsFailure)
         {
             return Result.Failure<Guid>(result.Error);
         }
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return Result.Success(result.Value.Value);
+        Result guardado = await unitOfWork.GuardarCasoAsync(cancellationToken);
+        return guardado.IsFailure
+            ? Result.Failure<Guid>(guardado.Error)
+            : Result.Success(result.Value.Value);
     }
 }

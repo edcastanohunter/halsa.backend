@@ -13,6 +13,7 @@
   <ItemGroup>
     <!-- EF Core is referenced for LINQ async operators over read models only.
          No DbContext, no provider and no migration ever lives in this project. -->
+    <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />

@@ -1,97 +1,76 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- casos-dev.sql  –  Datos de desarrollo para el contexto ATEL (SPEC 02)
 --
--- Se ejecuta ÚNICAMENTE en el entorno Development, después de las migraciones,
--- usando la cadena de conexión "Migrations" (halsa_owner) para poder escribir
--- en la tabla sin que RLS bloquee la inserción.
+-- Se ejecuta ÚNICAMENTE en Development, después de las migraciones, con la
+-- cadena "Migrations" (halsa_owner).
 --
--- El script es idempotente: usa ON CONFLICT DO NOTHING para no duplicar filas
--- si se ejecuta varias veces (ej. hot-reload del servidor).
+-- La RLS está forzada, así que también aplica al dueño: cada bloque fija
+-- app.tenant_id antes de insertar las filas de su tenant.
+--
+-- Idempotente: ON CONFLICT DO NOTHING en todas las inserciones.
+-- Los radicados usan el formato de ejemplo del contrato; el definitivo llega en SPEC 05.
+--
+-- Usuarios (sub de docker/keycloak/halsa-realm.json):
+--   calificador.arla  01999000-0000-7000-8000-000000000a02
+--   medico.ips        01999000-0000-7000-8000-000000000c01
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Caso 1: Accidente de trabajo para ARL Sura, en atención
-INSERT INTO atel.caso_medico (
-    id, tenant_id, radicado, tipo_evento, fecha_evento,
-    trabajador_tipo, trabajador_numero,
-    empleador_tipo, empleador_numero,
-    municipio_divipola, estado, es_grave_o_mortal, radicado_en
-)
-VALUES (
-    '00000000-0000-7000-8001-000000000001',
-    'arl-sura',
-    'ARL-SURA-2026-001',
-    1,  -- AccidenteTrabajo
-    '2026-09-10 08:30:00+00',
-    'CC', '12345678',
-    'NIT', '9001234567',
-    '11001',
-    2,  -- EnAtencion
-    false,
-    '2026-09-10 09:00:00+00'
-)
-ON CONFLICT (id) DO NOTHING;
+-- ── ARL_A: 3 casos, 1 remitido a la IPS 110011234501 ────────────────────────
+SELECT set_config('app.tenant_id', 'ARL_A', false);
 
--- Caso 2: Enfermedad laboral para ARL Sura, recién radicado
-INSERT INTO atel.caso_medico (
+INSERT INTO atel.casos_medicos (
     id, tenant_id, radicado, tipo_evento, fecha_evento,
-    trabajador_tipo, trabajador_numero,
-    empleador_tipo, empleador_numero,
-    municipio_divipola, estado, es_grave_o_mortal, radicado_en
-)
-VALUES (
-    '00000000-0000-7000-8001-000000000002',
-    'arl-sura',
-    'ARL-SURA-2026-002',
-    2,  -- EnfermedadLaboral
-    '2026-10-01 00:00:00+00',
-    'CC', '98765432',
-    'NIT', '8001234001',
-    '05001',
-    0,  -- Radicado
-    false,
-    '2026-10-01 10:15:00+00'
-)
-ON CONFLICT (id) DO NOTHING;
-
--- Caso 3: Accidente grave para ARL Positiva
-INSERT INTO atel.caso_medico (
-    id, tenant_id, radicado, tipo_evento, fecha_evento,
-    trabajador_tipo, trabajador_numero,
-    empleador_tipo, empleador_numero,
-    municipio_divipola, estado, es_grave_o_mortal, radicado_en
-)
-VALUES (
-    '00000000-0000-7000-8001-000000000003',
-    'arl-positiva',
-    'ARL-POSITIVA-2026-001',
-    1,  -- AccidenteTrabajo
-    '2026-09-25 14:00:00+00',
-    'CE', '1234567',
-    'NIT', '9001110001',
-    '76001',
-    1,  -- Validado
-    true,
-    '2026-09-25 15:00:00+00'
-)
-ON CONFLICT (id) DO NOTHING;
-
--- Remisión del Caso 1 a la IPS Clínica Las Américas (código ficticio)
-INSERT INTO atel.remision (id, caso_medico_id, ips_id, remitido_por, remitido_en)
-VALUES (
-    '00000000-0000-7000-8002-000000000001',
-    '00000000-0000-7000-8001-000000000001',
-    '110011234501',
-    'sub-analista-sura',
-    '2026-09-11 08:00:00+00'
-)
+    trabajador_tipo, trabajador_numero, empleador_tipo, empleador_numero,
+    municipio_divipola, estado, es_grave_o_mortal, radicado_en)
+VALUES
+    ('01999000-0000-7000-8001-00000000a001', 'ARL_A', 'ATEL-DEV-2026-000001', 'AccidenteTrabajo',
+     '2026-09-10 08:30:00+00', 'CC', '12345678', 'NIT', '9001234567', '11001', 'Radicado', false,
+     '2026-09-10 09:00:00+00'),
+    ('01999000-0000-7000-8001-00000000a002', 'ARL_A', 'ATEL-DEV-2026-000002', 'EnfermedadLaboral',
+     '2026-09-15 00:00:00+00', 'CC', '23456789', 'NIT', '9001234567', '05001', 'Radicado', false,
+     '2026-09-16 10:00:00+00'),
+    ('01999000-0000-7000-8001-00000000a003', 'ARL_A', 'ATEL-DEV-2026-000003', 'AccidenteTrabajo',
+     '2026-10-01 14:10:00+00', 'CE', '345678', 'NIT', '9007654321', '76001', 'Radicado', true,
+     '2026-10-01 15:00:00+00')
 ON CONFLICT DO NOTHING;
 
--- Asignación del Caso 1 al médico laboral
-INSERT INTO atel.asignacion (caso_medico_id, sub, asignado_por, asignado_en)
-VALUES (
-    '00000000-0000-7000-8001-000000000001',
-    'sub-medico-laboral',
-    'sub-analista-sura',
-    '2026-09-11 09:00:00+00'
-)
+INSERT INTO atel.remisiones (id, caso_medico_id, tenant_id, ips_id, remitido_en, remitido_por)
+VALUES ('01999000-0000-7000-8002-00000000a001', '01999000-0000-7000-8001-00000000a001', 'ARL_A',
+        '110011234501', '2026-09-11 08:00:00+00', '01999000-0000-7000-8000-000000000a01')
 ON CONFLICT DO NOTHING;
+
+INSERT INTO atel.asignaciones (caso_medico_id, sub, tenant_id, asignado_en, asignado_por)
+VALUES
+    ('01999000-0000-7000-8001-00000000a001', '01999000-0000-7000-8000-000000000a02', 'ARL_A',
+     '2026-09-11 08:05:00+00', '01999000-0000-7000-8000-000000000a01'),
+    ('01999000-0000-7000-8001-00000000a001', '01999000-0000-7000-8000-000000000c01', 'ARL_A',
+     '2026-09-11 08:05:00+00', '01999000-0000-7000-8000-000000000a01')
+ON CONFLICT DO NOTHING;
+
+-- ── ARL_B: 2 casos, 1 remitido a la IPS 110011234501 ────────────────────────
+SELECT set_config('app.tenant_id', 'ARL_B', false);
+
+INSERT INTO atel.casos_medicos (
+    id, tenant_id, radicado, tipo_evento, fecha_evento,
+    trabajador_tipo, trabajador_numero, empleador_tipo, empleador_numero,
+    municipio_divipola, estado, es_grave_o_mortal, radicado_en)
+VALUES
+    ('01999000-0000-7000-8001-00000000b001', 'ARL_B', 'ATEL-DEV-2026-000001', 'AccidenteTrabajo',
+     '2026-09-20 07:45:00+00', 'CC', '45678901', 'NIT', '8001112223', '11001', 'Radicado', false,
+     '2026-09-20 08:30:00+00'),
+    ('01999000-0000-7000-8001-00000000b002', 'ARL_B', 'ATEL-DEV-2026-000002', 'EnfermedadLaboral',
+     '2026-09-25 00:00:00+00', 'TI', '1012345678', 'NIT', '8001112223', '08001', 'Radicado', false,
+     '2026-09-26 11:00:00+00')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO atel.remisiones (id, caso_medico_id, tenant_id, ips_id, remitido_en, remitido_por)
+VALUES ('01999000-0000-7000-8002-00000000b001', '01999000-0000-7000-8001-00000000b001', 'ARL_B',
+        '110011234501', '2026-09-21 09:00:00+00', '01999000-0000-7000-8000-000000000b01')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO atel.asignaciones (caso_medico_id, sub, tenant_id, asignado_en, asignado_por)
+VALUES ('01999000-0000-7000-8001-00000000b001', '01999000-0000-7000-8000-000000000c01', 'ARL_B',
+        '2026-09-21 09:05:00+00', '01999000-0000-7000-8000-000000000b01')
+ON CONFLICT DO NOTHING;
+
+SELECT set_config('app.tenant_id', '', false);

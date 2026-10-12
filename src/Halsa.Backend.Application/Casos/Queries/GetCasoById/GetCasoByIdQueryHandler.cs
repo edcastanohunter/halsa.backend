@@ -7,9 +7,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Halsa.Backend.Application.Casos.Queries.GetCasoById;
 
 internal sealed class GetCasoByIdQueryHandler(IReadDbContext db)
-    : IQueryHandler<GetCasoByIdQuery, CasoDetalle>
+    : IQueryHandler<GetCasoByIdQuery, CasoDetalleResponse>
 {
-    public async Task<Result<CasoDetalle>> Handle(
+    public async Task<Result<CasoDetalleResponse>> Handle(
         GetCasoByIdQuery query,
         CancellationToken cancellationToken)
     {
@@ -19,39 +19,22 @@ internal sealed class GetCasoByIdQueryHandler(IReadDbContext db)
             .Include(c => c.Asignaciones)
             .FirstOrDefaultAsync(c => c.Id == query.CasoId, cancellationToken);
 
+        // Invisible y ausente responden igual: 404, nunca 403.
         if (caso is null)
         {
-            return Result.Failure<CasoDetalle>(CasoMedicoErrors.NoEncontrado);
+            return Result.Failure<CasoDetalleResponse>(CasoMedicoErrors.NoEncontrado);
         }
 
-        var detalle = new CasoDetalle(
-            caso.Id.Value,
-            caso.Radicado,
-            caso.TenantId.Value,
-            caso.TipoEvento,
-            caso.Estado,
-            caso.FechaEvento,
-            caso.RadicadoEn,
-            caso.EsGraveOMortal,
+        var detalle = new CasoDetalleResponse(
+            caso.ToResumen(),
+            CasoResponseMapping.Documento(caso.Empleador),
             caso.MunicipioDivipola,
-            new IdentificacionDto(caso.Trabajador.Tipo, caso.Trabajador.Numero),
-            new IdentificacionDto(caso.Empleador.Tipo, caso.Empleador.Numero),
-            caso.Calificacion is null ? null : new CalificacionDto(
-                caso.Calificacion.PorcentajePcl,
-                caso.Calificacion.FechaEstructuracion,
-                caso.Calificacion.Origen),
-            caso.Remisiones.Select(r => new RemisionDto(
-                r.Id.Value,
-                r.IpsId.Value,
-                r.RemitidoPor,
-                r.RemitidoEn,
-                r.Vigente,
-                r.RevocadaEn,
-                r.RevocadaPor)).ToList(),
-            caso.Asignaciones.Select(a => new AsignacionDto(
-                a.Sub,
-                a.AsignadoPor,
-                a.AsignadoEn)).ToList());
+            caso.EsGraveOMortal,
+            caso.Remisiones
+                .Where(r => r.Vigente)
+                .Select(r => new RemisionResponse(r.Id.Value, r.IpsId.Value, r.RemitidoEn))
+                .ToList(),
+            caso.Asignaciones.Select(a => a.Sub).ToList());
 
         return Result.Success(detalle);
     }

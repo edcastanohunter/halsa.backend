@@ -1,13 +1,14 @@
+using Halsa.Backend.Api.Extensions;
+using Halsa.Backend.Api.Infrastructure;
 using Halsa.Backend.Application.Casos.Commands.Desasignar;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Authorization;
 using Halsa.Backend.Mediation;
-using Halsa.Backend.SharedKernel.Results;
 
 namespace Halsa.Backend.Api.Endpoints.Casos;
 
 /// <summary>
-/// <c>DELETE /v1/casos/{casoId}/asignaciones/{sub}</c> — Elimina la asignación de un usuario.
+/// <c>DELETE /v1/casos/{casoId}/asignaciones/{sub}</c> — Quita un usuario del equipo del caso.
 /// </summary>
 internal sealed class DesasignarCaso : IEndpoint
 {
@@ -18,16 +19,10 @@ internal sealed class DesasignarCaso : IEndpoint
                 ISender sender,
                 CancellationToken ct) =>
             {
-                var command = new DesasignarCasoCommand(new CasoMedicoId(casoId), sub);
-                var result = await sender.Send(command, ct);
+                var result = await sender.Send(
+                    new DesasignarCasoCommand(new CasoMedicoId(casoId), sub), ct);
 
-                return result.Match(
-                    () => Results.NoContent(),
-                    error => error.Type switch
-                    {
-                        ErrorType.NotFound => Results.NotFound(),
-                        _ => Results.Problem(error.Description)
-                    });
+                return result.IsSuccess ? Results.NoContent() : CustomResults.Problem(result);
             })
         .WithTags(Tags.Casos)
         .WithName("DesasignarCaso")

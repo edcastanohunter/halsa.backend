@@ -5,7 +5,7 @@ namespace Halsa.Backend.Infrastructure.Authorization;
 
 /// <summary>
 /// Turns any policy name into a permission policy on demand, so endpoints can call
-/// <c>RequireAuthorization("work-items:write")</c> without a registration ceremony per permission.
+/// <c>RequireAuthorization("casos:write")</c> without a registration ceremony per permission.
 /// </summary>
 internal sealed class PermissionAuthorizationPolicyProvider(IOptions<AuthorizationOptions> options)
     : DefaultAuthorizationPolicyProvider(options)

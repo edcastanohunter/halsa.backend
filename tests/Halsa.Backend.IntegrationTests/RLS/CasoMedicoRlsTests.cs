@@ -1,216 +1,259 @@
+using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Infrastructure.Database;
+using Halsa.Backend.Infrastructure.Tenancy;
 using Halsa.Backend.IntegrationTests.Abstractions;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 namespace Halsa.Backend.IntegrationTests.RLS;
 
 /// <summary>
-/// Verifies that the PostgreSQL RLS policies on <c>atel.caso_medico</c> isolate rows
-/// by tenant and IPS without relying on any EF Core query filter.
+/// Acceptance criteria of SPEC 02 for the database barriers: roles, grants and RLS on
+/// <c>atel.casos_medicos</c>. Raw <see cref="NpgsqlConnection"/>s prove the database enforces
+/// isolation on its own; the last two tests go through EF with the real interceptor.
 ///
-/// Tests open a raw <see cref="NpgsqlConnection"/> as <c>halsa_app</c>, set
-/// <c>app.tenant_id</c> / <c>app.ips_id</c> directly via <c>set_config</c>, and
-/// execute plain SQL. This proves the database-level enforcement is correct
-/// independently of the application layer.
+/// Every test seeds its own rows (fresh ids and radicados), so assertions are scoped to them
+/// and the tests can share the container in any order.
 /// </summary>
 [Collection(nameof(DatabaseCollection))]
 public sealed class CasoMedicoRlsTests(DatabaseFixture db)
 {
-    private static readonly Guid CasoId1  = Guid.NewGuid();
-    private static readonly Guid CasoId2  = Guid.NewGuid();
-    private static readonly Guid RemisionId1 = Guid.NewGuid();
+    private const string ArlA = "ARL_A";
+    private const string ArlB = "ARL_B";
+    private const string Ips = "110011234501";
+    private const string OtraIps = "110011234599";
+
+    // ── Criteria ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task App_WithTenantA_ShouldNotSeeTenantBRows()
+    {
+        await InsertCasoAsync(ArlB);
+
+        await using NpgsqlConnection conn = await OpenAsync(db.AppConnectionString, tenantId: ArlA);
+
+        long count = await ScalarAsync(conn, "SELECT count(*) FROM atel.casos_medicos WHERE tenant_id = 'ARL_B'");
+
+        count.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task App_WithoutSessionVariables_ShouldSeeNoRows()
+    {
+        await InsertCasoAsync(ArlA);
+
+        await using NpgsqlConnection conn = await OpenAsync(db.AppConnectionString);
+
+        long count = await ScalarAsync(conn, "SELECT count(*) FROM atel.casos_medicos");
+
+        count.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task App_WithIps_ShouldSeeOnlyCasesWithVigenteRemision_FromBothTenants()
+    {
+        Guid remitidoA = await InsertCasoAsync(ArlA);
+        Guid sinRemitirA = await InsertCasoAsync(ArlA);
+        Guid remitidoB = await InsertCasoAsync(ArlB);
+        Guid remitidoOtraIpsB = await InsertCasoAsync(ArlB);
+
+        Guid remisionA = await InsertRemisionAsync(remitidoA, ArlA, Ips);
+        await InsertRemisionAsync(remitidoB, ArlB, Ips);
+        await InsertRemisionAsync(remitidoOtraIpsB, ArlB, OtraIps);
+
+        Guid[] mios = [remitidoA, sinRemitirA, remitidoB, remitidoOtraIpsB];
+
+        (await VisibleToIpsAsync(mios)).ShouldBe([remitidoA, remitidoB], ignoreOrder: true);
+
+        await RevocarRemisionAsync(remisionA, ArlA);
+
+        (await VisibleToIpsAsync(mios)).ShouldBe([remitidoB]);
+    }
+
+    [Fact]
+    public async Task App_InsertingForAnotherTenant_ShouldViolateThePolicy()
+    {
+        await using NpgsqlConnection conn = await OpenAsync(db.AppConnectionString, tenantId: ArlA);
+
+        PostgresException ex = await Should.ThrowAsync<PostgresException>(
+            () => InsertCasoAsync(conn, Guid.CreateVersion7(), ArlB));
+
+        ex.MessageText.ShouldContain("new row violates row-level security policy");
+    }
+
+    [Fact]
+    public async Task App_Delete_ShouldBePermissionDenied()
+    {
+        await using NpgsqlConnection conn = await OpenAsync(db.AppConnectionString, tenantId: ArlA);
+
+        PostgresException ex = await Should.ThrowAsync<PostgresException>(
+            () => ScalarAsync(conn, "DELETE FROM atel.casos_medicos"));
+
+        ex.SqlState.ShouldBe(PostgresErrorCodes.InsufficientPrivilege);
+        ex.MessageText.ShouldContain("permission denied");
+    }
+
+    [Fact]
+    public async Task Owner_WithoutSessionVariables_ShouldSeeNoRows()
+    {
+        await InsertCasoAsync(ArlA);
+
+        await using (NpgsqlConnection withTenant = await OpenAsync(db.OwnerConnectionString, tenantId: ArlA))
+        {
+            // The rows exist: the owner sees them once the tenant is set.
+            (await ScalarAsync(withTenant, "SELECT count(*) FROM atel.casos_medicos")).ShouldBeGreaterThan(0);
+        }
+
+        await using NpgsqlConnection conn = await OpenAsync(db.OwnerConnectionString);
+
+        long count = await ScalarAsync(conn, "SELECT count(*) FROM atel.casos_medicos");
+
+        count.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task PooledConnection_ReusedWithoutContext_ShouldSeeNoRows()
+    {
+        Guid casoA = await InsertCasoAsync(ArlA);
+
+        // A pool of one guarantees the second context gets the same physical connection.
+        string pooled = $"{db.AppConnectionString};Pooling=true;Max Pool Size=1;Application Name=rls-pool-test";
+
+        int firstPid;
+        await using (ApplicationDbContext arl = db.CreateDbContext(FakeTenantContext.Arl(ArlA), pooled))
+        {
+            await arl.Database.OpenConnectionAsync();
+            firstPid = (int)await ScalarAsync((NpgsqlConnection)arl.Database.GetDbConnection(), "SELECT pg_backend_pid()");
+
+            (await arl.CasosMedicos.CountAsync(c => c.Id == new CasoMedicoId(casoA))).ShouldBe(1);
+
+            await arl.Database.CloseConnectionAsync();
+        }
+
+        await using ApplicationDbContext anonimo = db.CreateDbContext(NullTenantContext.Instance, pooled);
+        await anonimo.Database.OpenConnectionAsync();
+        var conn = (NpgsqlConnection)anonimo.Database.GetDbConnection();
+
+        ((int)await ScalarAsync(conn, "SELECT pg_backend_pid()")).ShouldBe(firstPid);
+        (await ScalarAsync(conn, "SELECT count(*) FROM atel.casos_medicos")).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task IgnoreQueryFilters_WithTenantA_ShouldStillHideTenantB()
+    {
+        Guid casoB = await InsertCasoAsync(ArlB);
+
+        await using ApplicationDbContext arl = db.CreateDbContext(FakeTenantContext.Arl(ArlA));
+
+        bool visible = await arl.CasosMedicos
+            .IgnoreQueryFilters()
+            .AnyAsync(c => c.Id == new CasoMedicoId(casoB));
+
+        visible.ShouldBeFalse();
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private NpgsqlConnection OpenAppConnection() =>
-        new(db.AppConnectionString);
-
-    private NpgsqlConnection OpenOwnerConnection() =>
-        new(db.OwnerConnectionString);
-
-    /// <summary>Seeds two caso_medico rows belonging to different tenants.</summary>
-    private async Task SeedAsync()
+    private async Task<Guid[]> VisibleToIpsAsync(Guid[] ids)
     {
-        await using NpgsqlConnection conn = OpenOwnerConnection();
-        await conn.OpenAsync();
+        await using NpgsqlConnection conn = await OpenAsync(db.AppConnectionString, ipsId: Ips);
 
-        // Delete any rows left from previous test runs (xUnit may reuse containers).
-        await using (var del = conn.CreateCommand())
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id FROM atel.casos_medicos WHERE id = ANY(@ids)";
+        cmd.Parameters.AddWithValue("ids", ids);
+
+        var visibles = new List<Guid>();
+        await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
         {
-            del.CommandText = "DELETE FROM atel.caso_medico WHERE id IN (@id1, @id2)";
-            del.Parameters.AddWithValue("id1", CasoId1);
-            del.Parameters.AddWithValue("id2", CasoId2);
-            await del.ExecuteNonQueryAsync();
+            visibles.Add(reader.GetGuid(0));
         }
 
-        const string insertCaso = """
-            INSERT INTO atel.caso_medico
+        return [.. visibles];
+    }
+
+    /// <summary>Seeds a case as <c>halsa_owner</c>. RLS is forced, so the owner sets the tenant first.</summary>
+    private async Task<Guid> InsertCasoAsync(string tenantId)
+    {
+        await using NpgsqlConnection conn = await OpenAsync(db.OwnerConnectionString, tenantId: tenantId);
+        Guid id = Guid.CreateVersion7();
+        await InsertCasoAsync(conn, id, tenantId);
+        return id;
+    }
+
+    private static async Task InsertCasoAsync(NpgsqlConnection conn, Guid id, string tenantId)
+    {
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO atel.casos_medicos
               (id, tenant_id, radicado, tipo_evento, fecha_evento,
                trabajador_tipo, trabajador_numero, empleador_tipo, empleador_numero,
                municipio_divipola, estado, es_grave_o_mortal, radicado_en)
             VALUES
-              (@id, @tid, @rad, 1, NOW(), 'CC', '123456', 'NIT', '9001', '11001', 0, false, NOW())
+              (@id, @tid, @rad, 'AccidenteTrabajo', now(), 'CC', '123456', 'NIT', '9001', '11001',
+               'Radicado', false, now())
             """;
+        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("tid", tenantId);
+        cmd.Parameters.AddWithValue("rad", $"RLS-{id:N}");
+        await cmd.ExecuteNonQueryAsync();
+    }
 
-        await using (var cmd = conn.CreateCommand())
+    private async Task<Guid> InsertRemisionAsync(Guid casoId, string tenantId, string ipsId)
+    {
+        await using NpgsqlConnection conn = await OpenAsync(db.OwnerConnectionString, tenantId: tenantId);
+
+        Guid id = Guid.CreateVersion7();
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO atel.remisiones (id, caso_medico_id, tenant_id, ips_id, remitido_en, remitido_por)
+            VALUES (@id, @caso, @tid, @ips, now(), 'sub-test')
+            """;
+        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("caso", casoId);
+        cmd.Parameters.AddWithValue("tid", tenantId);
+        cmd.Parameters.AddWithValue("ips", ipsId);
+        await cmd.ExecuteNonQueryAsync();
+
+        return id;
+    }
+
+    private async Task RevocarRemisionAsync(Guid remisionId, string tenantId)
+    {
+        await using NpgsqlConnection conn = await OpenAsync(db.OwnerConnectionString, tenantId: tenantId);
+
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE atel.remisiones SET revocada_en = now(), revocada_por = 'sub-test' WHERE id = @id";
+        cmd.Parameters.AddWithValue("id", remisionId);
+        (await cmd.ExecuteNonQueryAsync()).ShouldBe(1);
+    }
+
+    /// <summary>Opens a connection and, if given, sets the session variables the policies read.</summary>
+    private static async Task<NpgsqlConnection> OpenAsync(
+        string connectionString,
+        string? tenantId = null,
+        string? ipsId = null)
+    {
+        var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        if (tenantId is not null || ipsId is not null)
         {
-            cmd.CommandText = insertCaso;
-            cmd.Parameters.AddWithValue("id",  CasoId1);
-            cmd.Parameters.AddWithValue("tid", "arl-sura");
-            cmd.Parameters.AddWithValue("rad", "RAD-RLS-001");
+            await using NpgsqlCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT set_config('app.tenant_id', @tid, false), set_config('app.ips_id', @ips, false)";
+            cmd.Parameters.AddWithValue("tid", tenantId ?? string.Empty);
+            cmd.Parameters.AddWithValue("ips", ipsId ?? string.Empty);
             await cmd.ExecuteNonQueryAsync();
         }
 
-        await using (var cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = insertCaso;
-            cmd.Parameters.AddWithValue("id",  CasoId2);
-            cmd.Parameters.AddWithValue("tid", "arl-positiva");
-            cmd.Parameters.AddWithValue("rad", "RAD-RLS-002");
-            await cmd.ExecuteNonQueryAsync();
-        }
-
-        // Add a vigente remision to Ips 110011234501 for CasoId2 (so an IPS actor can see it).
-        await using (var cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = """
-                INSERT INTO atel.remision
-                  (id, caso_medico_id, ips_id, remitido_por, remitido_en)
-                VALUES
-                  (@rid, @cid, '110011234501', 'sub-test', NOW())
-                ON CONFLICT DO NOTHING
-                """;
-            cmd.Parameters.AddWithValue("rid", RemisionId1);
-            cmd.Parameters.AddWithValue("cid", CasoId2);
-            await cmd.ExecuteNonQueryAsync();
-        }
+        return conn;
     }
 
-    // ── Tests ─────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task ArlActor_ShouldSeeOnlyOwnTenantCasos()
+    private static async Task<long> ScalarAsync(NpgsqlConnection conn, string sql)
     {
-        await SeedAsync();
-
-        await using NpgsqlConnection conn = OpenAppConnection();
-        await conn.OpenAsync();
-
-        // Identify as arl-sura.
-        await using (var setCmd = conn.CreateCommand())
-        {
-            setCmd.CommandText = "SELECT set_config('app.tenant_id', 'arl-sura', false), set_config('app.ips_id', '', false)";
-            await setCmd.ExecuteNonQueryAsync();
-        }
-
-        await using var query = conn.CreateCommand();
-        query.CommandText = "SELECT id FROM atel.caso_medico WHERE id IN (@id1, @id2)";
-        query.Parameters.AddWithValue("id1", CasoId1);
-        query.Parameters.AddWithValue("id2", CasoId2);
-
-        var visible = new List<Guid>();
-        await using var reader = await query.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            visible.Add(reader.GetGuid(0));
-        }
-
-        visible.ShouldContain(CasoId1);       // own tenant
-        visible.ShouldNotContain(CasoId2);    // different tenant — hidden by RLS
-    }
-
-    [Fact]
-    public async Task ArlActor_ShouldNotSeeOtherTenantCasos()
-    {
-        await SeedAsync();
-
-        await using NpgsqlConnection conn = OpenAppConnection();
-        await conn.OpenAsync();
-
-        await using (var setCmd = conn.CreateCommand())
-        {
-            setCmd.CommandText = "SELECT set_config('app.tenant_id', 'arl-positiva', false), set_config('app.ips_id', '', false)";
-            await setCmd.ExecuteNonQueryAsync();
-        }
-
-        await using var query = conn.CreateCommand();
-        query.CommandText = "SELECT id FROM atel.caso_medico WHERE id = @id1";
-        query.Parameters.AddWithValue("id1", CasoId1);
-
-        await using var reader = await query.ExecuteReaderAsync();
-        bool found = await reader.ReadAsync();
-
-        found.ShouldBeFalse("arl-positiva should not see arl-sura's case");
-    }
-
-    [Fact]
-    public async Task IpsActor_ShouldSeeCasoWithVigenteRemision()
-    {
-        await SeedAsync();
-
-        await using NpgsqlConnection conn = OpenAppConnection();
-        await conn.OpenAsync();
-
-        // IPS actor: no tenant_id, only ips_id.
-        await using (var setCmd = conn.CreateCommand())
-        {
-            setCmd.CommandText = "SELECT set_config('app.tenant_id', '', false), set_config('app.ips_id', '110011234501', false)";
-            await setCmd.ExecuteNonQueryAsync();
-        }
-
-        await using var query = conn.CreateCommand();
-        query.CommandText = "SELECT id FROM atel.caso_medico WHERE id = @id";
-        query.Parameters.AddWithValue("id", CasoId2);
-
-        await using var reader = await query.ExecuteReaderAsync();
-        bool found = await reader.ReadAsync();
-
-        found.ShouldBeTrue("IPS with vigente remisión should see the case");
-    }
-
-    [Fact]
-    public async Task IpsActor_ShouldNotSeeCasoWithoutRemision()
-    {
-        await SeedAsync();
-
-        await using NpgsqlConnection conn = OpenAppConnection();
-        await conn.OpenAsync();
-
-        // IPS 110011234502 has no remision to CasoId1.
-        await using (var setCmd = conn.CreateCommand())
-        {
-            setCmd.CommandText = "SELECT set_config('app.tenant_id', '', false), set_config('app.ips_id', '110011234502', false)";
-            await setCmd.ExecuteNonQueryAsync();
-        }
-
-        await using var query = conn.CreateCommand();
-        query.CommandText = "SELECT id FROM atel.caso_medico WHERE id IN (@id1, @id2)";
-        query.Parameters.AddWithValue("id1", CasoId1);
-        query.Parameters.AddWithValue("id2", CasoId2);
-
-        await using var reader = await query.ExecuteReaderAsync();
-        bool found = await reader.ReadAsync();
-
-        found.ShouldBeFalse("IPS without remisión should not see any case");
-    }
-
-    [Fact]
-    public async Task NoSessionVars_ShouldSeeNoCasos()
-    {
-        await SeedAsync();
-
-        await using NpgsqlConnection conn = OpenAppConnection();
-        await conn.OpenAsync();
-
-        // No set_config call — both vars are empty string by default.
-        // RLS: tenant_id = '' matches nothing; IPS EXISTS subquery returns false.
-        await using var query = conn.CreateCommand();
-        query.CommandText = "SELECT id FROM atel.caso_medico WHERE id IN (@id1, @id2)";
-        query.Parameters.AddWithValue("id1", CasoId1);
-        query.Parameters.AddWithValue("id2", CasoId2);
-
-        await using var reader = await query.ExecuteReaderAsync();
-        bool found = await reader.ReadAsync();
-
-        found.ShouldBeFalse("with no session vars, no case should be visible");
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        object? result = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
     }
 }

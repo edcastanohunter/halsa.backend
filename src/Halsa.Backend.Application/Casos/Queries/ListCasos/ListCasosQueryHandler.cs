@@ -1,19 +1,20 @@
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Models;
+using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.SharedKernel.Results;
 using Microsoft.EntityFrameworkCore;
 
 namespace Halsa.Backend.Application.Casos.Queries.ListCasos;
 
 internal sealed class ListCasosQueryHandler(IReadDbContext db)
-    : IQueryHandler<ListCasosQuery, PagedList<CasoResumen>>
+    : IQueryHandler<ListCasosQuery, PagedList<CasoResumenResponse>>
 {
-    public async Task<Result<PagedList<CasoResumen>>> Handle(
+    public async Task<Result<PagedList<CasoResumenResponse>>> Handle(
         ListCasosQuery query,
         CancellationToken cancellationToken)
     {
-        var q = db.CasosMedicos.AsNoTracking();
+        IQueryable<CasoMedico> q = db.CasosMedicos.AsNoTracking();
 
         if (query.Estado.HasValue)
         {
@@ -22,23 +23,14 @@ internal sealed class ListCasosQueryHandler(IReadDbContext db)
 
         int total = await q.CountAsync(cancellationToken);
 
-        List<CasoResumen> items = await q
+        List<CasoMedico> pagina = await q
             .OrderByDescending(c => c.RadicadoEn)
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(c => new CasoResumen(
-                c.Id.Value,
-                c.Radicado,
-                c.TenantId.Value,
-                c.TipoEvento,
-                c.Estado,
-                c.FechaEvento,
-                c.RadicadoEn,
-                c.EsGraveOMortal,
-                c.Trabajador.Tipo,
-                c.Trabajador.Numero))
             .ToListAsync(cancellationToken);
 
-        return Result.Success(new PagedList<CasoResumen>(items, query.Page, query.PageSize, total));
+        List<CasoResumenResponse> items = pagina.Select(c => c.ToResumen()).ToList();
+
+        return Result.Success(new PagedList<CasoResumenResponse>(items, query.Page, query.PageSize, total));
     }
 }

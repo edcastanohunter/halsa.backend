@@ -27,22 +27,24 @@ The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain 
 ## Getting started
 
 ```bash
-docker compose up -d                      # PostgreSQL, Keycloak, Seq (+ Redis if enabled)
-
-# The template ships without migrations so the first one carries your own model.
-dotnet ef migrations add Initial \
-  --project src/Halsa.Backend.Infrastructure \
-  --startup-project src/Halsa.Backend.Api
+# -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico)
+# only runs on an empty volume. Without those roles the API fails to authenticate at startup.
+docker compose down -v && docker compose up -d   # PostgreSQL, Keycloak, Seq (+ Redis if enabled)
 
 dotnet run --project src/Halsa.Backend.Api    # http://localhost:5600/scalar/v1
 ```
 
-Keycloak comes preloaded with the `halsa.backend` realm, the `halsa.backend-api` client and a `dev` / `dev`
-user holding `work-items:read` and `work-items:write`. Get a token with:
+On startup the API applies migrations as `halsa_owner` (connection string `Migrations`) and, in
+`Development`, loads `Extensions/Seed/casos-dev.sql`: 3 cases for `ARL_A` and 2 for `ARL_B`. At
+runtime it connects as `halsa_app` (connection string `Database`), which has no `BYPASSRLS` and no
+`DELETE` on cases, so PostgreSQL row-level security isolates tenants even if an EF filter is wrong.
+
+Keycloak comes preloaded with the `halsa` and `halsa-pacientes` realms. Get a token for a dev user
+(`analista.arla`, `analista.arlb`, `medico.ips`, ... password `dev`) with the `halsa-dev-cli` client:
 
 ```bash
-curl -s -X POST http://localhost:8080/realms/halsa.backend/protocol/openid-connect/token \
-  -d grant_type=password -d client_id=halsa.backend-api -d username=dev -d password=dev
+curl -s -X POST http://localhost:8080/realms/halsa/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=halsa-dev-cli -d username=analista.arla -d password=dev
 ```
 
 ## The mediator
@@ -75,10 +77,11 @@ never travel as exceptions and `CustomResults.Problem` is the single place that 
 
 ## Event sourcing, deliberately partial
 
-`WorkItem` is event sourced: its stream in `event_store.events` is the source of truth, and
-`WorkItemView` is a projection rebuilt from it. Not every aggregate should be - reach for it when
-the history *is* the business value (audit, clinical records, ledgers) and stay state-based
-otherwise. Both styles coexist in the same DbContext and the same transaction.
+The event store infrastructure is kept, but no production aggregate uses it yet: `CasoMedico` is
+state-based with `xmin` concurrency, and the store is exercised by a test-only `TestAggregate` in
+`Halsa.Backend.IntegrationTests`. Reach for event sourcing when the history *is* the business value
+(audit, clinical records, ledgers) and stay state-based otherwise. Both styles coexist in the same
+DbContext and the same transaction.
 
 Guarantees:
 
@@ -96,9 +99,8 @@ else changes.
 
 ## Before production
 
-- [ ] Create the initial EF Core migration and apply migrations from your pipeline, not from `Program`.
+- [ ] Apply migrations from your pipeline, not from `Program`.
 - [ ] Replace `LoggingEventBus` with a real broker.
 - [ ] Point `OpenTelemetry:OtlpEndpoint` at your collector.
 - [ ] Turn `TreatWarningsAsErrors` on in `Directory.Build.props` once the solution is warning-clean.
 - [ ] Set `Keycloak:RequireHttpsMetadata` back to `true`.
-- [ ] Delete the `WorkItems` sample slices once your own domain is in place.

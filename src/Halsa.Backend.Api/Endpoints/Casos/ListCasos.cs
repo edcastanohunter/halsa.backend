@@ -1,8 +1,12 @@
+using Halsa.Backend.Api.Extensions;
+using Halsa.Backend.Api.Infrastructure;
 using Halsa.Backend.Application.Abstractions.Models;
+using Halsa.Backend.Application.Casos.Queries;
 using Halsa.Backend.Application.Casos.Queries.ListCasos;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Authorization;
 using Halsa.Backend.Mediation;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Halsa.Backend.Api.Endpoints.Casos;
 
@@ -27,17 +31,12 @@ internal sealed class ListCasos : IEndpoint
 
                 var result = await sender.Send(query, ct);
 
-                return result.IsSuccess
-                    ? Results.Ok(result.Value)
-                    : Results.Problem(
-                        title: result.Error.Code,
-                        detail: result.Error.Description,
-                        statusCode: StatusCodes.Status500InternalServerError);
+                return result.IsSuccess ? Results.Ok(result.Value) : CustomResults.Problem(result);
             })
         .WithTags(Tags.Casos)
         .WithName("ListCasos")
         .WithSummary("Lista paginada de casos visibles para el actor autenticado.")
-        .Produces<PagedList<CasoResumen>>(StatusCodes.Status200OK)
+        .Produces<PagedList<CasoResumenResponse>>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .RequirePermission(Permissions.CasosRead);
