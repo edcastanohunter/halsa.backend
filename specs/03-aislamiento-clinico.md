@@ -1,6 +1,6 @@
 # SPEC 03 — Aislamiento y cifrado del detalle clínico
 
-> **Estado:** Borrador
+> **Estado:** Aprobado 
 > **Depende de:** SPEC 01, SPEC 02
 > **Fecha:** 2026-10-09
 > **Objetivo:** Guardar el detalle clínico de cada caso en un esquema `clinico` cifrado por tenant, al que solo llega un `DbContext` y un rol de PostgreSQL propios, de modo que ni el código administrativo ni un volcado de la base puedan leerlo.
