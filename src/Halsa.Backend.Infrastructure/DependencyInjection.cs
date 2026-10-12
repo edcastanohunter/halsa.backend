@@ -1,4 +1,5 @@
 using Halsa.Backend.Application.Abstractions.Caching;
+using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Casos;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Events;
@@ -6,7 +7,10 @@ using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain;
 using Halsa.Backend.Infrastructure.Authentication;
 using Halsa.Backend.Infrastructure.Caching;
+using Halsa.Backend.Infrastructure.Clinico;
+using Halsa.Backend.Infrastructure.Clinico.Crypto;
 using Halsa.Backend.Infrastructure.Database;
+using Halsa.Backend.Infrastructure.Database.Clinico;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Events;
 using Halsa.Backend.Infrastructure.Outbox;
@@ -16,17 +20,20 @@ using Halsa.Backend.Mediation.DependencyInjection;
 using Halsa.Backend.SharedKernel.Abstractions;
 using Halsa.Backend.SharedKernel.EventSourcing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Halsa.Backend.Infrastructure;
 
 public static class DependencyInjection
 {
+    public const string ClinicalConnectionStringName = "Clinical";
+
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -37,6 +44,7 @@ public static class DependencyInjection
         return services
             .AddServices()
             .AddPersistence(configuration)
+            .AddClinico(configuration)
             .AddEventSourcing()
             .AddOutbox(configuration)
             .AddCaching(configuration)
@@ -72,7 +80,7 @@ public static class DependencyInjection
         services.AddDbContext<ApplicationDbContext>((sp, options) => options
             .UseNpgsql(connectionString, npgsql =>
             {
-                npgsql.MigrationsHistoryTable(HistoryRepository.DefaultTableName, Schemas.Default);
+                DatabaseMigrator.ConfigureApplication(npgsql);
                 npgsql.EnableRetryOnFailure(maxRetryCount: 3);
             })
             .UseSnakeCaseNamingConvention()
@@ -81,6 +89,47 @@ public static class DependencyInjection
         services.AddScoped<IReadDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<ICasoMedicoRepository, CasoMedicoRepository>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// The clinical side (SPEC 03): its own context on the <c>Clinical</c> connection string
+    /// (role <c>halsa_clinico</c>), the KEK, the per-tenant DEKs and the field cipher.
+    /// </summary>
+    private static IServiceCollection AddClinico(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        string connectionString = configuration.GetConnectionString(ClinicalConnectionStringName)
+            ?? throw new InvalidOperationException($"Connection string '{ClinicalConnectionStringName}' is not configured.");
+
+        services.AddDbContext<ClinicalDbContext>((sp, options) => options
+            .UseNpgsql(connectionString, npgsql =>
+            {
+                DatabaseMigrator.ConfigureClinical(npgsql);
+                npgsql.EnableRetryOnFailure(maxRetryCount: 3);
+            })
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(sp.GetRequiredService<TenantSessionInterceptor>()));
+
+        services.AddScoped<IClinicalDbContext>(sp => sp.GetRequiredService<ClinicalDbContext>());
+        services.AddScoped<IClinicalCaseGate, ClinicalCaseGate>();
+
+        // Fails at startup, not at the first clinical write, when the KEK is missing or misplaced.
+        services
+            .AddOptions<ClinicoOptions>()
+            .Bind(configuration.GetSection(ClinicoOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<ClinicoOptions>>(sp =>
+            new ClinicoOptionsValidator(sp.GetService<IHostEnvironment>()?.EnvironmentName));
+
+        services.AddSingleton<IKeyEncryptionProvider, LocalFileKeyEncryptionProvider>();
+        services.AddSingleton<IDekStore>(sp => new DekStore(
+            connectionString,
+            sp.GetRequiredService<IKeyEncryptionProvider>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<IClinicalCipher, AesGcmClinicalCipher>();
 
         return services;
     }

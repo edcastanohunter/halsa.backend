@@ -1,0 +1,19 @@
+using Halsa.Backend.Domain.Clinico;
+
+namespace Halsa.Backend.Application.Abstractions.Clinico;
+
+/// <summary>
+/// El único acceso al esquema <c>clinico</c>. Lo implementa un <c>DbContext</c> propio, conectado
+/// como <c>halsa_clinico</c>. Solo lo usa <c>Halsa.Backend.Application.Clinico</c> (test de arquitectura).
+///
+/// Append-only: se puede leer y dar de alta, pero no hay forma de modificar ni de borrar.
+/// </summary>
+public interface IClinicalDbContext
+{
+    /// <summary>Registros visibles para el actor actual (query filter y RLS clínica).</summary>
+    IQueryable<HistoriaClinicaDetalle> Registros { get; }
+
+    void Add(HistoriaClinicaDetalle registro);
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}

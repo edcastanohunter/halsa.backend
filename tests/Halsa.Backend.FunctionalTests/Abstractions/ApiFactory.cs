@@ -1,10 +1,9 @@
+using System.Security.Cryptography;
 using Halsa.Backend.Infrastructure.Database;
-using Halsa.Backend.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -24,6 +23,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     private string _ownerConnectionString = null!;
     private string _appConnectionString = null!;
+    private string _clinicalConnectionString = null!;
+
+    // A random KEK per run (SPEC 03): never written anywhere.
+    private readonly string _kekBase64 = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
     /// <summary>Connection string using <c>halsa_owner</c> — tests seed their own rows with it.</summary>
     public string OwnerConnectionString => _ownerConnectionString;
@@ -38,6 +41,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("ConnectionStrings:Database",   _appConnectionString);
         // MigrationExtensions uses this string if present; in tests we apply migrations ourselves.
         builder.UseSetting("ConnectionStrings:Migrations", _ownerConnectionString);
+        // The clinical context connects as halsa_clinico.
+        builder.UseSetting("ConnectionStrings:Clinical",   _clinicalConnectionString);
+        builder.UseSetting("Clinico:KekBase64",            _kekBase64);
 
         // Opciones de Keycloak necesarias para que TenantContextResolver compare el iss.
         builder.UseSetting("Keycloak:PersonalAuthority",   TestAuthenticationHandler.DefaultIssuer);
@@ -76,22 +82,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                                  "Username=halsa_owner;Password=halsa_owner_dev;Include Error Detail=true";
         _appConnectionString   = $"Host={host};Port={port};Database={database};" +
                                  "Username=halsa_app;Password=halsa_app_dev;Include Error Detail=true";
+        _clinicalConnectionString = $"Host={host};Port={port};Database={database};" +
+                                    "Username=halsa_clinico;Password=halsa_clinico_dev;Include Error Detail=true";
 
-        // ── Step 3: apply migrations as halsa_owner ───────────────────────────
+        // ── Step 3: apply the migrations of both contexts as halsa_owner ──────
         // ConfigureWebHost hasn't run yet (it runs on first Services access), so we
         // apply migrations before the factory boots the app.
-        var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
-        optionsBuilder
-            .UseNpgsql(_ownerConnectionString, npgsql =>
-            {
-                npgsql.MigrationsHistoryTable(
-                    Microsoft.EntityFrameworkCore.Migrations.HistoryRepository.DefaultTableName,
-                    Schemas.Default);
-            })
-            .UseSnakeCaseNamingConvention();
-
-        await using ApplicationDbContext migrationContext = new(optionsBuilder.Options, NullTenantContext.Instance);
-        await migrationContext.Database.MigrateAsync();
+        await DatabaseMigrator.MigrateAsync(_ownerConnectionString);
     }
 
     // Explicit implementation: WebApplicationFactory already exposes ValueTask DisposeAsync(),

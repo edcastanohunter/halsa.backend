@@ -17,4 +17,10 @@ public static class Schemas
     /// Owns <c>casos_medicos</c>, <c>remisiones</c> and <c>asignaciones</c>.
     /// </summary>
     public const string Atel = "atel";
+
+    /// <summary>
+    /// Detalle clínico cifrado (SPEC 03). Solo lo alcanza <c>ClinicalDbContext</c>, conectado como
+    /// <c>halsa_clinico</c>; <c>halsa_app</c> no tiene <c>USAGE</c> sobre el esquema.
+    /// </summary>
+    public const string Clinico = "clinico";
 }

@@ -29,7 +29,9 @@ BEGIN
 END$$;
 
 -- ── halsa_clinico ─────────────────────────────────────────────────────────────
--- Rol reservado para el esquema clínico (SPEC 03).  Sin permisos en esta spec.
+-- Rol del esquema clínico (SPEC 03).  Lo usa solo ClinicalDbContext.  Sus permisos
+-- (USAGE sobre clinico, SELECT/INSERT, EXECUTE de la función de remisión) los da
+-- la migración ClinicoInicial; nunca recibe USAGE sobre atel.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_clinico') THEN

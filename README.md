@@ -31,6 +31,10 @@ The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain 
 # only runs on an empty volume. Without those roles the API fails to authenticate at startup.
 docker compose down -v && docker compose up -d   # PostgreSQL, Keycloak, Seq (+ Redis if enabled)
 
+# The clinical KEK (SPEC 03): 32 random bytes, in user-secrets and never in appsettings.
+# Without it the API refuses to start. Keep it: losing it makes existing clinical data unreadable.
+dotnet user-secrets --project src/Halsa.Backend.Api set "Clinico:KekBase64" "$(openssl rand -base64 32)"
+
 dotnet run --project src/Halsa.Backend.Api    # http://localhost:5600/scalar/v1
 ```
 
@@ -38,6 +42,8 @@ On startup the API applies migrations as `halsa_owner` (connection string `Migra
 `Development`, loads `Extensions/Seed/casos-dev.sql`: 3 cases for `ARL_A` and 2 for `ARL_B`. At
 runtime it connects as `halsa_app` (connection string `Database`), which has no `BYPASSRLS` and no
 `DELETE` on cases, so PostgreSQL row-level security isolates tenants even if an EF filter is wrong.
+The clinical detail lives apart, in the encrypted `clinico` schema: only `ClinicalDbContext` reaches
+it, as `halsa_clinico` (connection string `Clinical`); `halsa_app` has no access to the schema at all.
 
 Keycloak comes preloaded with the `halsa` and `halsa-pacientes` realms. Get a token for a dev user
 (`analista.arla`, `analista.arlb`, `medico.ips`, ... password `dev`) with the `halsa-dev-cli` client:

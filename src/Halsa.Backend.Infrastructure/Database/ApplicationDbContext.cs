@@ -22,6 +22,8 @@ public sealed class ApplicationDbContext(
     ITenantContext tenantContext)
     : DbContext(options), IReadDbContext, IUnitOfWork
 {
+    private static readonly string? ConfigurationsNamespace = typeof(Configurations.CasoMedicoConfiguration).Namespace;
+
     internal DbSet<StoredEvent> Events => Set<StoredEvent>();
 
     internal DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
@@ -39,7 +41,12 @@ public sealed class ApplicationDbContext(
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
         modelBuilder.HasDefaultSchema(Schemas.Default);
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
+        // Only this context's namespace: the clinical configurations live in the same assembly and
+        // must never reach a model that connects as halsa_app (SPEC 03).
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(ApplicationDbContext).Assembly,
+            type => type.Namespace == ConfigurationsNamespace);
 
         // ── Query filter: mirrors the PostgreSQL RLS policies for CasoMedico. ────
         // Fails closed: with no resolved context neither branch matches and no rows

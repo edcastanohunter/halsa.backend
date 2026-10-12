@@ -1,8 +1,11 @@
+using System.Security.Cryptography;
 using Halsa.Backend.Application;
+using Halsa.Backend.Application.Abstractions.Authentication;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain;
 using Halsa.Backend.Infrastructure;
 using Halsa.Backend.Infrastructure.Database;
+using Halsa.Backend.Infrastructure.Database.Clinico;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Tenancy;
 using Halsa.Backend.SharedKernel.EventSourcing;
@@ -21,8 +24,10 @@ namespace Halsa.Backend.IntegrationTests.Abstractions;
 /// 1. Start the container as the <c>postgres</c> superuser.
 /// 2. Run <c>01-roles.sql</c> to create <c>halsa_owner</c>, <c>halsa_app</c> and
 ///    <c>halsa_clinico</c> and grant CREATE on the database to <c>halsa_owner</c>.
-/// 3. Apply EF Core migrations as <c>halsa_owner</c> (creates schemas, tables, grants and RLS).
-/// 4. Register all application services connected as <c>halsa_app</c>.
+/// 3. Apply the EF Core migrations of both contexts as <c>halsa_owner</c> (creates schemas, tables,
+///    grants and RLS).
+/// 4. Register all application services connected as <c>halsa_app</c> (and <c>halsa_clinico</c> for the
+///    clinical context), with a random in-memory KEK.
 ///
 /// Integration tests that matter — concurrency, jsonb, partial indexes, SKIP LOCKED, RLS — cannot
 /// be written against an in-memory provider.
@@ -45,6 +50,12 @@ public sealed class DatabaseFixture : IAsyncLifetime
     /// <summary>Connection string using <c>halsa_app</c> — for tests that verify RLS behaviour.</summary>
     public string AppConnectionString { get; private set; } = null!;
 
+    /// <summary>Connection string using <c>halsa_clinico</c> — the role of the clinical context (SPEC 03).</summary>
+    public string ClinicalConnectionString { get; private set; } = null!;
+
+    /// <summary>The KEK of this run: 32 random bytes, never written anywhere.</summary>
+    public string KekBase64 { get; } = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();
@@ -64,22 +75,11 @@ public sealed class DatabaseFixture : IAsyncLifetime
                                 "Username=halsa_owner;Password=halsa_owner_dev;Include Error Detail=true";
         AppConnectionString   = $"Host={host};Port={port};Database={database};" +
                                 "Username=halsa_app;Password=halsa_app_dev;Include Error Detail=true";
+        ClinicalConnectionString = $"Host={host};Port={port};Database={database};" +
+                                   "Username=halsa_clinico;Password=halsa_clinico_dev;Include Error Detail=true";
 
-        // ── Step 3: apply EF Core migrations as halsa_owner ──────────────────
-        {
-            var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
-            optionsBuilder
-                .UseNpgsql(OwnerConnectionString, npgsql =>
-                {
-                    npgsql.MigrationsHistoryTable(
-                        Microsoft.EntityFrameworkCore.Migrations.HistoryRepository.DefaultTableName,
-                        Schemas.Default);
-                })
-                .UseSnakeCaseNamingConvention();
-
-            await using ApplicationDbContext migrationContext = new(optionsBuilder.Options, NullTenantContext.Instance);
-            await migrationContext.Database.MigrateAsync();
-        }
+        // ── Step 3: apply the migrations of both contexts as halsa_owner ─────
+        await DatabaseMigrator.MigrateAsync(OwnerConnectionString);
 
         // ── Step 4: register services connected as halsa_app ─────────────────
         IConfiguration configuration = new ConfigurationBuilder()
@@ -87,6 +87,8 @@ public sealed class DatabaseFixture : IAsyncLifetime
             {
                 ["ConnectionStrings:Database"]   = AppConnectionString,
                 ["ConnectionStrings:Migrations"] = OwnerConnectionString,
+                ["ConnectionStrings:Clinical"]   = ClinicalConnectionString,
+                ["Clinico:KekBase64"]            = KekBase64,
                 ["Keycloak:PersonalAuthority"]   = "http://localhost:8080/realms/halsa",
                 ["Keycloak:PacientesAuthority"]  = "http://localhost:8080/realms/halsa-pacientes",
                 ["Keycloak:Audience"]            = "halsa-api",
@@ -102,12 +104,15 @@ public sealed class DatabaseFixture : IAsyncLifetime
         services.AddApplication();
         services.AddInfrastructure(configuration);
 
-        // In integration tests there is no HTTP context, so HttpTenantContext (registered by
-        // AddInfrastructure) would fail to resolve IHttpContextAccessor.
-        // Replace it with NullTenantContext (Resuelto = false). The event store does not depend
-        // on it; atel tables stay invisible, so RLS tests use CreateDbContext instead.
+        // In integration tests there is no HTTP context, so HttpTenantContext and CurrentUser
+        // (registered by AddInfrastructure) would never resolve an actor. Both read the scope's
+        // TestActor instead: NullTenantContext (Resuelto = false) unless CreateScope(actor) set one.
+        // The event store does not depend on it; RLS tests use CreateDbContext instead.
+        services.AddScoped<TestActor>();
         services.RemoveAll<ITenantContext>();
-        services.AddScoped<ITenantContext>(_ => NullTenantContext.Instance);
+        services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TestActor>().Tenant);
+        services.RemoveAll<ICurrentUser>();
+        services.AddScoped<ICurrentUser, TestCurrentUser>();
 
         // Override EventTypeRegistry to include test aggregate events alongside domain events.
         // The last registration wins when resolving IEventTypeRegistry as a single service.
@@ -131,6 +136,17 @@ public sealed class DatabaseFixture : IAsyncLifetime
     public AsyncServiceScope CreateScope() => Services.CreateAsyncScope();
 
     /// <summary>
+    /// A scope whose <see cref="ITenantContext"/> and <see cref="ICurrentUser"/> are <paramref name="actor"/>,
+    /// as for an authenticated request. Set before anything else resolves them.
+    /// </summary>
+    public AsyncServiceScope CreateScope(ITenantContext actor)
+    {
+        AsyncServiceScope scope = Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<TestActor>().Tenant = actor;
+        return scope;
+    }
+
+    /// <summary>
     /// Builds an <see cref="ApplicationDbContext"/> connected as <c>halsa_app</c> with the real
     /// <see cref="TenantSessionInterceptor"/>, as the API does for a request of <paramref name="tenantContext"/>.
     /// </summary>
@@ -143,6 +159,21 @@ public sealed class DatabaseFixture : IAsyncLifetime
             .Options;
 
         return new ApplicationDbContext(options, tenantContext);
+    }
+
+    /// <summary>
+    /// Builds a <see cref="ClinicalDbContext"/> connected as <c>halsa_clinico</c> with the real
+    /// <see cref="TenantSessionInterceptor"/>.
+    /// </summary>
+    public ClinicalDbContext CreateClinicalDbContext(ITenantContext tenantContext)
+    {
+        var options = new DbContextOptionsBuilder<ClinicalDbContext>()
+            .UseNpgsql(ClinicalConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(new TenantSessionInterceptor(tenantContext))
+            .Options;
+
+        return new ClinicalDbContext(options, tenantContext);
     }
 
     // ── Embedded init script ──────────────────────────────────────────────────
