@@ -30,3 +30,16 @@ public interface IClinicalAuditTrail
         TenantId tenant,
         ResultadoAuditoria resultado = ResultadoAuditoria.Exito);
 }
+
+/// <summary>
+/// Auditoría de la radicación de una integración (SPEC 05). Igual que <see cref="IAuditTrail"/>, sobre el
+/// contexto de la ingesta: las filas caen en la transacción que crea el caso y su reporte clínico.
+/// </summary>
+public interface IIngestaAuditTrail
+{
+    void Registrar(
+        AccionAuditoria accion,
+        ObjetivoAuditoria objetivo,
+        TenantId tenant,
+        ResultadoAuditoria resultado = ResultadoAuditoria.Exito);
+}

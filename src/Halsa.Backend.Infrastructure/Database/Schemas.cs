@@ -29,4 +29,10 @@ public static class Schemas
     /// <c>halsa_clinico</c> solo inserta, y nadie actualiza ni borra.
     /// </summary>
     public const string Auditoria = "auditoria";
+
+    /// <summary>
+    /// Entrada desde los cores de las ARL (SPEC 05): solicitudes, idempotencia y mensajes crudos cifrados.
+    /// Lo escribe <c>halsa_ingesta</c>; <c>halsa_app</c> solo lee <c>solicitudes</c>.
+    /// </summary>
+    public const string Integracion = "integracion";
 }

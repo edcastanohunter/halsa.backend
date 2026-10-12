@@ -1,0 +1,127 @@
+using Halsa.Backend.Application.Abstractions.Integraciones;
+using Halsa.Backend.Application.Abstractions.Tenancy;
+using Halsa.Backend.Application.Integraciones.Canonico;
+using Halsa.Backend.Application.Integraciones.Registros;
+using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Domain.Clinico;
+using Halsa.Backend.Infrastructure.Database.Auditoria;
+using Halsa.Backend.Infrastructure.Database.Clinico;
+using Halsa.Backend.Infrastructure.Database.Configurations;
+using Halsa.Backend.Infrastructure.Outbox;
+using Halsa.Backend.SharedKernel.Primitives;
+using Halsa.Backend.SharedKernel.Tenancy;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
+
+namespace Halsa.Backend.Infrastructure.Database.Integraciones;
+
+/// <summary>
+/// El contexto de la ingesta (SPEC 05), conectado con la cadena <c>Ingesta</c> (rol <c>halsa_ingesta</c>) y el
+/// <see cref="TenantSessionInterceptor"/>. Escribe en <c>atel</c>, <c>integracion</c>, <c>clinico</c>,
+/// <c>outbox</c> y <c>auditoria</c> en una sola transacción, pero sobre la historia clínica el rol solo tiene
+/// <c>INSERT</c>: nada aquí la lee.
+///
+/// Mapea solo lo que escribe, y no tiene migraciones: las tablas son de <see cref="ApplicationDbContext"/> y de
+/// <see cref="ClinicalDbContext"/>. Sin reintentos automáticos: la transacción es explícita y no se repite.
+/// </summary>
+public sealed class IngestaDbContext(
+    DbContextOptions<IngestaDbContext> options,
+    ITenantContext tenantContext)
+    : DbContext(options), IIngestaDbContext
+{
+    internal DbSet<CasoMedico> CasosMedicos => Set<CasoMedico>();
+
+    internal DbSet<ReporteEvento> ReportesEvento => Set<ReporteEvento>();
+
+    internal DbSet<SolicitudIntegracion> Solicitudes => Set<SolicitudIntegracion>();
+
+    internal DbSet<SolicitudIdempotente> SolicitudesIdempotentes => Set<SolicitudIdempotente>();
+
+    internal DbSet<MensajeEntrante> MensajesEntrantes => Set<MensajeEntrante>();
+
+    internal DbSet<HistoriaClinicaDetalle> HistoriaClinica => Set<HistoriaClinicaDetalle>();
+
+    internal DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    internal DbSet<AccesoAuditado> AccesosAuditados => Set<AccesoAuditado>();
+
+    // ── IIngestaDbContext ─────────────────────────────────────────────────────
+
+    void IIngestaDbContext.Add(CasoMedico caso) => CasosMedicos.Add(caso);
+
+    void IIngestaDbContext.Add(ReporteEvento reporte) => ReportesEvento.Add(reporte);
+
+    void IIngestaDbContext.Add(SolicitudIntegracion solicitud) => Solicitudes.Add(solicitud);
+
+    void IIngestaDbContext.Add(MensajeEntrante mensaje) => MensajesEntrantes.Add(mensaje);
+
+    void IIngestaDbContext.Add(HistoriaClinicaDetalle registro) => HistoriaClinica.Add(registro);
+
+    void IIngestaDbContext.Encolar(IIntegrationEvent evento) => OutboxMessages.Add(OutboxMessage.Desde(evento));
+
+    Task<IDbContextTransaction> IIngestaDbContext.BeginTransactionAsync(CancellationToken ct) =>
+        Database.BeginTransactionAsync(ct);
+
+    async Task<ResultadoGuardado> IIngestaDbContext.GuardarAsync(CancellationToken ct)
+    {
+        try
+        {
+            await SaveChangesAsync(ct);
+            return ResultadoGuardado.Guardado;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: IntegracionConstraints.ReporteYaRadicado
+        })
+        {
+            // Nothing of this attempt may be saved later by accident.
+            ChangeTracker.Clear();
+            return ResultadoGuardado.ReporteYaRadicado;
+        }
+    }
+
+    async Task<string?> IIngestaDbContext.RadicadoDelReporteAsync(
+        TipoReporte tipo, string numeroReporteOrigen, CancellationToken ct)
+    {
+        TenantId tenant = tenantContext.TenantId
+            ?? throw new InvalidOperationException("La ingesta necesita un tenant en el contexto.");
+
+        // Through the request, not casos_medicos: the case's SELECT policy reads atel.remisiones (see above).
+        return await ReportesEvento
+            .AsNoTracking()
+            .Where(r => r.TenantId == tenant && r.Tipo == tipo && r.NumeroReporteOrigen == numeroReporteOrigen)
+            .Join(Solicitudes, r => r.CasoMedicoId, s => s.CasoMedicoId, (_, s) => s.Radicado)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    // ── Model ─────────────────────────────────────────────────────────────────
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        modelBuilder.HasDefaultSchema(Schemas.Atel);
+
+        // CasoMedico brings its owned collections; the ingestion never writes them.
+        modelBuilder.ApplyConfiguration(new CasoMedicoConfiguration());
+        modelBuilder.ApplyConfiguration(new RemisionConfiguration());
+        modelBuilder.ApplyConfiguration(new AsignacionConfiguration());
+
+        // Nothing generated by the database, so no INSERT ... RETURNING: returning xmin would evaluate the
+        // SELECT policy of casos_medicos, which reads atel.remisiones, and halsa_ingesta has no grant there.
+        // The ingestion only inserts the case, so it never needs the concurrency token.
+        modelBuilder.Entity<CasoMedico>().Ignore(c => c.Version);
+
+        modelBuilder.ApplyConfiguration(new ReporteEventoConfiguration());
+        modelBuilder.ApplyConfiguration(new SolicitudIntegracionConfiguration());
+        modelBuilder.ApplyConfiguration(new SolicitudIdempotenteConfiguration());
+        modelBuilder.ApplyConfiguration(new MensajeEntranteConfiguration());
+        modelBuilder.ApplyConfiguration(new HistoriaClinicaDetalleConfiguration());
+        modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
+        modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration(excluirDeMigraciones: true));
+
+        base.OnModelCreating(modelBuilder);
+    }
+}

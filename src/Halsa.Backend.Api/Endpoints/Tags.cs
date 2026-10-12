@@ -5,4 +5,5 @@ internal static class Tags
     internal const string Identidad = "Identidad";
     internal const string Casos = "Casos";
     internal const string Auditoria = "Auditoria";
+    internal const string Integraciones = "Integraciones";
 }

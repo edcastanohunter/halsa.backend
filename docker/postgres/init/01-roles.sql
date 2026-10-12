@@ -39,6 +39,18 @@ BEGIN
     END IF;
 END$$;
 
+-- ── halsa_ingesta ─────────────────────────────────────────────────────────────
+-- Rol de la ingesta de FURAT/FUREP (SPEC 05). Lo usa solo IngestaDbContext. Escribe
+-- en atel, integracion y clinico en una sola transacción, pero NO lee la historia
+-- clínica: sobre clinico.historia_clinica_detalle solo tiene INSERT. Sus permisos
+-- los da la migración IntegracionEsquema.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_ingesta') THEN
+        CREATE ROLE halsa_ingesta LOGIN PASSWORD 'halsa_ingesta_dev';
+    END IF;
+END$$;
+
 -- ── Propiedad de la base de datos ─────────────────────────────────────────────
 -- halsa_owner necesita CREATE en la base para que EF Core pueda crear esquemas
 -- en las migraciones.

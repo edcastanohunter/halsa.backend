@@ -67,6 +67,12 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
 
     public DateTimeOffset RadicadoEn { get; private set; }
 
+    /// <summary>Solo en un caso <see cref="EstadoCaso.Rechazado"/>.</summary>
+    public MotivoRechazo? MotivoRechazo { get; private set; }
+
+    /// <summary>El caso anterior del que este es duplicado. Solo con <see cref="Casos.MotivoRechazo.Duplicado"/>.</summary>
+    public CasoMedicoId? DuplicadoDe { get; private set; }
+
     /// <summary>
     /// Token de concurrencia optimista: PostgreSQL incrementa <c>xmin</c> en cada UPDATE.
     /// EF Core lo compara en el WHERE de las actualizaciones.
@@ -109,6 +115,42 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
     }
 
     // ── Commands ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// La validación asíncrona de la radicación pasó: ni duplicado ni sin afiliación (SPEC 05).
+    /// Solo desde <see cref="EstadoCaso.Radicado"/>.
+    /// </summary>
+    public Result Validar(DateTimeOffset ahora)
+    {
+        if (Estado != EstadoCaso.Radicado)
+        {
+            return Result.Failure(CasoMedicoErrors.TransicionInvalida);
+        }
+
+        Estado = EstadoCaso.Validado;
+        Raise(new CasoValidadoDomainEvent(Id, TenantId.Value, Radicado, ahora));
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// La validación asíncrona rechazó la radicación (SPEC 05). <paramref name="duplicadoDe"/> es el caso
+    /// anterior cuando el motivo es <see cref="Casos.MotivoRechazo.Duplicado"/>. Solo desde <see cref="EstadoCaso.Radicado"/>.
+    /// </summary>
+    public Result Rechazar(MotivoRechazo motivo, CasoMedicoId? duplicadoDe, DateTimeOffset ahora)
+    {
+        if (Estado != EstadoCaso.Radicado)
+        {
+            return Result.Failure(CasoMedicoErrors.TransicionInvalida);
+        }
+
+        Estado = EstadoCaso.Rechazado;
+        MotivoRechazo = motivo;
+        DuplicadoDe = duplicadoDe;
+        Raise(new CasoRechazadoDomainEvent(Id, TenantId.Value, Radicado, motivo, duplicadoDe, ahora));
+
+        return Result.Success();
+    }
 
     /// <summary>
     /// Crea una nueva remisión a la IPS indicada.

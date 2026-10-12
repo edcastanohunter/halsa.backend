@@ -1,7 +1,9 @@
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Tenancy;
+using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
+using Halsa.Backend.Infrastructure.Database.Integraciones;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.SharedKernel.Abstractions;
@@ -33,9 +35,13 @@ public sealed class ApplicationDbContext(
 
     internal DbSet<AccesoAuditado> AccesosAuditados => Set<AccesoAuditado>();
 
+    internal DbSet<SolicitudIntegracion> Solicitudes => Set<SolicitudIntegracion>();
+
     // ── IReadDbContext ────────────────────────────────────────────────────────
 
     IQueryable<CasoMedico> IReadDbContext.CasosMedicos => CasosMedicos;
+
+    IQueryable<SolicitudIntegracion> IReadDbContext.Solicitudes => Solicitudes.AsNoTracking();
 
     // ── Model ─────────────────────────────────────────────────────────────────
 
@@ -54,12 +60,22 @@ public sealed class ApplicationDbContext(
         // Shared with ClinicalDbContext, so it lives outside the scanned namespace. This context owns the table.
         modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration());
 
+        // Las tablas de la ingesta (SPEC 05): este contexto las crea en sus migraciones, IngestaDbContext las
+        // escribe como halsa_ingesta. halsa_app solo tiene SELECT sobre integracion.solicitudes.
+        modelBuilder.ApplyConfiguration(new ReporteEventoConfiguration());
+        modelBuilder.ApplyConfiguration(new SolicitudIntegracionConfiguration());
+        modelBuilder.ApplyConfiguration(new SolicitudIdempotenteConfiguration());
+        modelBuilder.ApplyConfiguration(new MensajeEntranteConfiguration());
+
         // ── Query filter: mirrors the PostgreSQL RLS policies for CasoMedico. ────
         // Fails closed: with no resolved context neither branch matches and no rows
         // come back, exactly like RLS with empty app.* variables.
         modelBuilder.Entity<CasoMedico>().HasQueryFilter(c =>
             (TieneTenant && c.TenantId == CurrentTenant) ||
             (TieneIps && c.Remisiones.Any(r => r.IpsId == CurrentIps && r.RevocadaEn == null)));
+
+        // Mirrors the RLS of integracion.solicitudes: only the tenant's own requests.
+        modelBuilder.Entity<SolicitudIntegracion>().HasQueryFilter(s => TieneTenant && s.TenantId == CurrentTenant);
 
         base.OnModelCreating(modelBuilder);
     }

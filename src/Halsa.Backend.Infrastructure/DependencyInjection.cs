@@ -1,8 +1,10 @@
 using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Caching;
 using Halsa.Backend.Application.Abstractions.Clinico;
+using Halsa.Backend.Application.Abstractions.Integraciones;
 using Halsa.Backend.Application.Auditoria;
 using Halsa.Backend.Application.Casos;
+using Halsa.Backend.Application.Integraciones;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Abstractions.Tenancy;
@@ -15,8 +17,10 @@ using Halsa.Backend.Infrastructure.Clinico.Crypto;
 using Halsa.Backend.Infrastructure.Database;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Clinico;
+using Halsa.Backend.Infrastructure.Database.Integraciones;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Events;
+using Halsa.Backend.Infrastructure.Integraciones;
 using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.Infrastructure.Tenancy;
 using Halsa.Backend.Infrastructure.Time;
@@ -38,6 +42,8 @@ public static class DependencyInjection
 {
     public const string ClinicalConnectionStringName = "Clinical";
 
+    public const string IngestaConnectionStringName = "Ingesta";
+
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -49,6 +55,7 @@ public static class DependencyInjection
             .AddServices()
             .AddPersistence(configuration)
             .AddClinico(configuration)
+            .AddIngesta(configuration)
             .AddAuditoria()
             .AddEventSourcing()
             .AddOutbox(configuration)
@@ -135,6 +142,50 @@ public static class DependencyInjection
             sp.GetRequiredService<IKeyEncryptionProvider>(),
             sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IClinicalCipher, AesGcmClinicalCipher>();
+        services.AddSingleton<IMensajeCipher, AesGcmMensajeCipher>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// La ingesta de FURAT y FUREP (SPEC 05): su propio contexto en la cadena <c>Ingesta</c> (rol
+    /// <c>halsa_ingesta</c>), que escribe la radicación completa en una transacción sin poder leer la HC.
+    /// </summary>
+    private static IServiceCollection AddIngesta(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        string connectionString = configuration.GetConnectionString(IngestaConnectionStringName)
+            ?? throw new InvalidOperationException($"Connection string '{IngestaConnectionStringName}' is not configured.");
+
+        // No retries: the radication opens its own transaction, and a retried one would run twice.
+        services.AddDbContext<IngestaDbContext>((sp, options) => options
+            .UseNpgsql(connectionString)
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(sp.GetRequiredService<TenantSessionInterceptor>()));
+
+        services.AddScoped<IIngestaDbContext>(sp => sp.GetRequiredService<IngestaDbContext>());
+        services.AddScoped<IIdempotencyStore, IdempotencyStore>();
+        services.AddScoped<IRadicadoGenerator, RadicadoGenerator>();
+        services.AddScoped<IIngestaAuditTrail, IngestaAuditTrail>();
+
+        // The asynchronous validation: the duplicate window and the affiliation gateway. Only the dev stub exists
+        // yet, so outside Development and Testing the API refuses to start instead of approving real cases.
+        services
+            .AddOptions<IntegracionesOptions>()
+            .Bind(configuration.GetSection(IntegracionesOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<IntegracionesOptions>>(sp =>
+            new AfiliacionGatewayValidator(sp.GetService<IHostEnvironment>()?.EnvironmentName));
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<IntegracionesOptions>>().Value);
+
+        services.AddScoped<IAfiliacionGateway>(sp =>
+        {
+            string? environmentName = sp.GetService<IHostEnvironment>()?.EnvironmentName;
+            return DevAfiliacionGateway.Admitido(environmentName)
+                ? new DevAfiliacionGateway()
+                : throw new InvalidOperationException($"No hay un IAfiliacionGateway real para '{environmentName}'.");
+        });
 
         return services;
     }
@@ -172,8 +223,9 @@ public static class DependencyInjection
 
         services.AddScoped<IIntegrationEventPublisher, OutboxIntegrationEventPublisher>();
 
-        // Replace with a Kafka / Service Bus adapter before production.
-        services.AddSingleton<IEventBus, LoggingEventBus>();
+        // In-process delivery to IIntegrationEventHandler<T> (SPEC 05). The outbox already gives at-least-once;
+        // a broker adapter can replace this one without touching a handler.
+        services.AddSingleton<IEventBus, InProcessEventBus>();
 
         services.AddHostedService<OutboxProcessor>();
 
@@ -249,7 +301,9 @@ public static class DependencyInjection
     private static IServiceCollection AddTenancy(this IServiceCollection services)
     {
         services.AddScoped<TenantContextResolver>();
-        services.AddScoped<ITenantContext, HttpTenantContext>();
+        services.AddScoped<TenantContextHolder>();
+        services.AddScoped<ITenantContext, TenantContext>();
+        services.AddScoped<ISystemTenantScope, SystemTenantScope>();
 
         return services;
     }

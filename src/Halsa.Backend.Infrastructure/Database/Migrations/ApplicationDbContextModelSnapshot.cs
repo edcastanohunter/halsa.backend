@@ -24,6 +24,186 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.MensajeEntrante", b =>
+                {
+                    b.Property<Guid>("SolicitudId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("solicitud_id");
+
+                    b.Property<DateTimeOffset>("RecibidoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recibido_en");
+
+                    b.Property<DateOnly>("RetenerHasta")
+                        .HasColumnType("date")
+                        .HasColumnName("retener_hasta");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("tipo");
+
+                    b.HasKey("SolicitudId")
+                        .HasName("pk_mensajes_entrantes");
+
+                    b.ToTable("mensajes_entrantes", "integracion");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.ReporteEvento", b =>
+                {
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<string>("Datos")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("datos");
+
+                    b.Property<string>("NumeroReporteOrigen")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("numero_reporte_origen");
+
+                    b.Property<DateTimeOffset>("RecibidoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recibido_en");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("tipo");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("version");
+
+                    b.HasKey("CasoMedicoId")
+                        .HasName("pk_reportes_evento");
+
+                    b.HasIndex("TenantId", "Tipo", "NumeroReporteOrigen")
+                        .IsUnique()
+                        .HasDatabaseName("ux_reportes_evento_tenant_tipo_numero");
+
+                    b.ToTable("reportes_evento", "atel");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.SolicitudIdempotente", b =>
+                {
+                    b.Property<string>("Emisor")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("emisor");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uuid")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<DateTimeOffset>("CreadaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creada_en");
+
+                    b.Property<byte[]>("CuerpoSha256")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("cuerpo_sha256");
+
+                    b.Property<DateTimeOffset>("ExpiraEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expira_en");
+
+                    b.Property<string>("Respuesta")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("respuesta");
+
+                    b.Property<Guid>("SolicitudId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("solicitud_id");
+
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Emisor", "IdempotencyKey")
+                        .HasName("pk_solicitudes_idempotentes");
+
+                    b.HasIndex("ExpiraEn")
+                        .HasDatabaseName("ix_solicitudes_idempotentes_expira_en");
+
+                    b.ToTable("solicitudes_idempotentes", "integracion");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.SolicitudIntegracion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("client_id");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<string>("Radicado")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("radicado");
+
+                    b.Property<DateTimeOffset>("RecibidoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recibido_en");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("tipo");
+
+                    b.HasKey("Id")
+                        .HasName("pk_solicitudes");
+
+                    b.HasIndex("CasoMedicoId")
+                        .HasDatabaseName("ix_solicitudes_caso_medico_id");
+
+                    b.ToTable("solicitudes", "integracion");
+                });
+
             modelBuilder.Entity("Halsa.Backend.Domain.Casos.Asignacion", b =>
                 {
                     b.Property<Guid>("CasoMedicoId")
@@ -63,6 +243,10 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("DuplicadoDe")
+                        .HasColumnType("uuid")
+                        .HasColumnName("duplicado_de");
+
                     b.Property<bool>("EsGraveOMortal")
                         .HasColumnType("boolean")
                         .HasColumnName("es_grave_o_mortal");
@@ -76,6 +260,11 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                     b.Property<DateTimeOffset>("FechaEvento")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fecha_evento");
+
+                    b.Property<string>("MotivoRechazo")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("motivo_rechazo");
 
                     b.Property<string>("MunicipioDivipola")
                         .IsRequired()
@@ -401,6 +590,75 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasFilter("processed_on_utc IS NULL");
 
                     b.ToTable("outbox_messages", "outbox");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.MensajeEntrante", b =>
+                {
+                    b.HasOne("Halsa.Backend.Application.Integraciones.Registros.SolicitudIntegracion", null)
+                        .WithOne()
+                        .HasForeignKey("Halsa.Backend.Application.Integraciones.Registros.MensajeEntrante", "SolicitudId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_mensajes_entrantes_solicitudes");
+
+                    b.OwnsOne("Halsa.Backend.Domain.Clinico.CampoCifrado", "Cuerpo", b1 =>
+                        {
+                            b1.Property<Guid>("MensajeEntranteSolicitudId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("solicitud_id");
+
+                            b1.Property<byte[]>("Ciphertext")
+                                .IsRequired()
+                                .HasColumnType("bytea")
+                                .HasColumnName("cuerpo_ct");
+
+                            b1.Property<string>("KeyId")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("cuerpo_key_id");
+
+                            b1.Property<byte[]>("Nonce")
+                                .IsRequired()
+                                .HasColumnType("bytea")
+                                .HasColumnName("cuerpo_nonce");
+
+                            b1.Property<byte[]>("Tag")
+                                .IsRequired()
+                                .HasColumnType("bytea")
+                                .HasColumnName("cuerpo_tag");
+
+                            b1.HasKey("MensajeEntranteSolicitudId");
+
+                            b1.ToTable("mensajes_entrantes", "integracion");
+
+                            b1.WithOwner()
+                                .HasForeignKey("MensajeEntranteSolicitudId")
+                                .HasConstraintName("fk_mensajes_entrantes_mensajes_entrantes_solicitud_id");
+                        });
+
+                    b.Navigation("Cuerpo")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.ReporteEvento", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Casos.CasoMedico", null)
+                        .WithOne()
+                        .HasForeignKey("Halsa.Backend.Application.Integraciones.Registros.ReporteEvento", "CasoMedicoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reportes_evento_casos_medicos");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.SolicitudIntegracion", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Casos.CasoMedico", null)
+                        .WithMany()
+                        .HasForeignKey("CasoMedicoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_solicitudes_casos_medicos");
                 });
 
             modelBuilder.Entity("Halsa.Backend.Domain.Casos.Asignacion", b =>

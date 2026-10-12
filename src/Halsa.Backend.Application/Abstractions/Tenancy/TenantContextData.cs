@@ -3,9 +3,8 @@ using Halsa.Backend.SharedKernel.Tenancy;
 namespace Halsa.Backend.Application.Abstractions.Tenancy;
 
 /// <summary>
-/// Resultado inmutable que produce <c>TenantContextResolver</c> al procesar el token.
-/// El middleware lo almacena en <c>HttpContext.Items</c> para que
-/// <c>HttpTenantContext</c> lo lea durante el mismo request.
+/// Contexto de tenant inmutable. Lo produce <c>TenantContextResolver</c> al procesar el token (y el middleware
+/// lo guarda en el <c>TenantContextHolder</c> del request) o <see cref="ISystemTenantScope"/> en segundo plano.
 /// </summary>
 public sealed record TenantContextData(
     ActorTipo Tipo,

@@ -1,6 +1,6 @@
 # SPEC 05 — Ingesta de FURAT y FUREP desde el core de la ARL
 
-> **Estado:** Borrador
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03, SPEC 04
 > **Fecha:** 2026-10-09
 > **Objetivo:** Que el core de una ARL radique un FURAT o un FUREP con `POST /v1/integraciones/{furat|furep}`, de forma idempotente, y que el caso, sus datos administrativos, su reporte clínico cifrado y el mensaje crudo queden en una sola transacción, seguida de una validación asíncrona.
@@ -201,26 +201,26 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] `POST /v1/integraciones/furat` con el ejemplo `FuratCaidaAltura` y el token de `int-arl-ARL_A` responde `202` con `radicado` `ATEL-ARL_A-2026-000001` (en una base limpia), `estado=RADICADO` y el header `Location`.
-- [ ] Después de esa radicación existen, en una misma transacción, una fila en `casos_medicos`, una en `reportes_evento`, una en `mensajes_entrantes`, una `REPORTE_INICIAL` en `historia_clinica_detalle`, una en `solicitudes`, una en `solicitudes_idempotentes`, un mensaje en el outbox y dos filas de auditoría.
-- [ ] Si se fuerza un fallo al insertar en `historia_clinica_detalle` (con una restricción de test), no queda ninguna de esas filas.
-- [ ] `reportes_evento.datos` no contiene las claves `descripcion`, `tiposLesion` ni `partesCuerpo` (en el FUREP, `diagnosticos`).
-- [ ] `mensajes_entrantes.cuerpo_ct` no contiene la cadena `"andamio"` del ejemplo, y como `halsa_app`, `SELECT 1 FROM integracion.mensajes_entrantes` falla con `permission denied`.
-- [ ] Como `halsa_ingesta`, `SELECT 1 FROM clinico.historia_clinica_detalle` falla con `permission denied`.
-- [ ] Repetir el POST con la misma `Idempotency-Key` y el mismo cuerpo responde `202` con el mismo `solicitudId` y el mismo `radicado`, y sigue habiendo un solo caso.
-- [ ] La misma `Idempotency-Key` con otro cuerpo responde `409` con `Integracion.IdempotenciaConflicto`.
-- [ ] Dos POST concurrentes con la misma llave y el mismo cuerpo dejan un solo caso, y ambos responden `202` con el mismo `radicado`.
-- [ ] Otra llave con el mismo `numeroReporteOrigen` responde `409` con `Integracion.ReporteYaRadicado`.
-- [ ] Sin `Idempotency-Key`, el POST responde `400`. Con `evento.fechaHora` futura, responde `400` con un error en `evento.fechaHora`.
-- [ ] El POST con un token de `analista.arla` responde `403`, y con el de `int-ips-110011234501` también responde `403`.
-- [ ] Las secuencias de `ARL_A` y `ARL_B` son independientes: el primer caso de cada tenant termina en `000001`.
-- [ ] Después de procesar el outbox, el caso del ejemplo queda `Validado` y `GET /v1/integraciones/furat/{solicitudId}` devuelve `estado=VALIDADO`.
-- [ ] Un segundo FURAT del mismo trabajador con un evento 3 h después queda `Rechazado` (`Duplicado`, `duplicado_de` informado), y la consulta devuelve `DUPLICADO`.
-- [ ] Un trabajador con un número terminado en `000` queda `Rechazado` (`NoAfiliado`).
-- [ ] Si el gateway lanza, el mensaje del outbox queda con `attempts > 0` y el caso sigue `Radicado`.
-- [ ] La validación deja una fila de auditoría `ACTUALIZAR / CASO` con `actor_tipo='sistema'`.
-- [ ] `GET /v1/integraciones/furat/{solicitudId}` de una solicitud de `ARL_B`, con un token de `ARL_A`, responde `404`.
-- [ ] `POST /v1/integraciones/furep` con un diagnóstico `J45.0` crea un caso `EnfermedadLaboral` y un `REPORTE_INICIAL` cuyo `diagnostico_indice_ciego` coincide con el de `CIE-10|J45.0` del tenant.
+- [x] `POST /v1/integraciones/furat` con el ejemplo `FuratCaidaAltura` y el token de `int-arl-ARL_A` responde `202` con `radicado` `ATEL-ARL_A-2026-000001` (en una base limpia), `estado=RADICADO` y el header `Location`.
+- [x] Después de esa radicación existen, en una misma transacción, una fila en `casos_medicos`, una en `reportes_evento`, una en `mensajes_entrantes`, una `REPORTE_INICIAL` en `historia_clinica_detalle`, una en `solicitudes`, una en `solicitudes_idempotentes`, un mensaje en el outbox y dos filas de auditoría.
+- [x] Si se fuerza un fallo al insertar en `historia_clinica_detalle` (con una restricción de test), no queda ninguna de esas filas.
+- [x] `reportes_evento.datos` no contiene las claves `descripcion`, `tiposLesion` ni `partesCuerpo` (en el FUREP, `diagnosticos`).
+- [x] `mensajes_entrantes.cuerpo_ct` no contiene la cadena `"andamio"` del ejemplo, y como `halsa_app`, `SELECT 1 FROM integracion.mensajes_entrantes` falla con `permission denied`.
+- [x] Como `halsa_ingesta`, `SELECT 1 FROM clinico.historia_clinica_detalle` falla con `permission denied`.
+- [x] Repetir el POST con la misma `Idempotency-Key` y el mismo cuerpo responde `202` con el mismo `solicitudId` y el mismo `radicado`, y sigue habiendo un solo caso.
+- [x] La misma `Idempotency-Key` con otro cuerpo responde `409` con `Integracion.IdempotenciaConflicto`.
+- [x] Dos POST concurrentes con la misma llave y el mismo cuerpo dejan un solo caso, y ambos responden `202` con el mismo `radicado`.
+- [x] Otra llave con el mismo `numeroReporteOrigen` responde `409` con `Integracion.ReporteYaRadicado`.
+- [x] Sin `Idempotency-Key`, el POST responde `400`. Con `evento.fechaHora` futura, responde `400` con un error en `evento.fechaHora`.
+- [x] El POST con un token de `analista.arla` responde `403`, y con el de `int-ips-110011234501` también responde `403`.
+- [x] Las secuencias de `ARL_A` y `ARL_B` son independientes: el primer caso de cada tenant termina en `000001`.
+- [x] Después de procesar el outbox, el caso del ejemplo queda `Validado` y `GET /v1/integraciones/furat/{solicitudId}` devuelve `estado=VALIDADO`.
+- [x] Un segundo FURAT del mismo trabajador con un evento 3 h después queda `Rechazado` (`Duplicado`, `duplicado_de` informado), y la consulta devuelve `DUPLICADO`.
+- [x] Un trabajador con un número terminado en `000` queda `Rechazado` (`NoAfiliado`).
+- [x] Si el gateway lanza, el mensaje del outbox queda con `attempts > 0` y el caso sigue `Radicado`.
+- [x] La validación deja una fila de auditoría `ACTUALIZAR / CASO` con `actor_tipo='sistema'`.
+- [x] `GET /v1/integraciones/furat/{solicitudId}` de una solicitud de `ARL_B`, con un token de `ARL_A`, responde `404`.
+- [x] `POST /v1/integraciones/furep` con un diagnóstico `J45.0` crea un caso `EnfermedadLaboral` y un `REPORTE_INICIAL` cuyo `diagnostico_indice_ciego` coincide con el de `CIE-10|J45.0` del tenant.
 
 ---
 

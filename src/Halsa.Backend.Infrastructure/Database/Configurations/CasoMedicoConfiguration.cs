@@ -2,11 +2,16 @@ using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Halsa.Backend.Infrastructure.Database.Configurations;
 
 internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMedico>
 {
+    // Defined on the non-nullable id so it also serves the nullable DuplicadoDe: EF handles the nulls.
+    private static readonly ValueConverter<CasoMedicoId, Guid> IdConverter =
+        new(v => v.Value, v => new CasoMedicoId(v));
+
     public void Configure(EntityTypeBuilder<CasoMedico> builder)
     {
         builder.ToTable("casos_medicos", Schemas.Atel);
@@ -55,6 +60,16 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
         builder.Property(c => c.RadicadoEn)
             .HasColumnName("radicado_en")
             .HasColumnType("timestamp with time zone");
+
+        builder.Property(c => c.MotivoRechazo)
+            .HasColumnName("motivo_rechazo")
+            .HasMaxLength(30)
+            .HasConversion<string>();
+
+        builder.Property(c => c.DuplicadoDe)
+            .HasColumnName("duplicado_de")
+            .HasColumnType("uuid")
+            .HasConversion(IdConverter);
 
         // ── xmin concurrency token ─────────────────────────────────────────────
         // PostgreSQL increments xmin on every UPDATE so EF Core can detect concurrent
@@ -133,5 +148,8 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
         builder.HasIndex(c => new { c.TenantId, c.Estado, c.RadicadoEn })
             .IsDescending(false, false, true)
             .HasDatabaseName("ix_casos_medicos_tenant_estado_radicado_en");
+
+        // ix_casos_medicos_deduplicacion (tenant_id, trabajador_tipo, trabajador_numero, fecha_evento) lo crea
+        // la migración IntegracionEsquema con SQL: EF no admite un índice que mezcle columnas del dueño y de un owned.
     }
 }

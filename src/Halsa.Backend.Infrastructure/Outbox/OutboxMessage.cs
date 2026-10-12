@@ -1,3 +1,7 @@
+using System.Text.Json;
+using Halsa.Backend.Infrastructure.EventSourcing;
+using Halsa.Backend.SharedKernel.Primitives;
+
 namespace Halsa.Backend.Infrastructure.Outbox;
 
 /// <summary>
@@ -20,4 +24,18 @@ public sealed class OutboxMessage
     public int Attempts { get; set; }
 
     public string? Error { get; set; }
+
+    /// <summary>The row for <paramref name="integrationEvent"/>, keyed by its id and typed by its CLR name.</summary>
+    public static OutboxMessage Desde(IIntegrationEvent integrationEvent)
+    {
+        ArgumentNullException.ThrowIfNull(integrationEvent);
+
+        return new OutboxMessage
+        {
+            Id = integrationEvent.EventId,
+            Type = integrationEvent.GetType().FullName!,
+            Content = JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType(), EventSerializer.Options),
+            OccurredOnUtc = integrationEvent.OccurredOnUtc
+        };
+    }
 }

@@ -1,5 +1,7 @@
 using Halsa.Backend.Application.Abstractions.Auditoria;
+using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Behaviors;
+using Halsa.Backend.Application.Integraciones.Canonico;
 using Halsa.Backend.Mediation.DependencyInjection;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +35,21 @@ public static class DependencyInjection
         // One per request: the handler reports the resource's tenant, the audit behaviour reads it.
         services.AddScoped<AuditScope>();
         services.AddScoped<IAuditScope>(sp => sp.GetRequiredService<AuditScope>());
+
+        // Ingesta (SPEC 05): un adaptador por formato de reporte; la radicación elige por tipo.
+        services.AddScoped<IReporteAdapter, FuratV1Adapter>();
+        services.AddScoped<IReporteAdapter, FurepV1Adapter>();
+
+        // Handlers of the integration events the outbox delivers in-process (SPEC 05).
+        foreach (Type handler in typeof(DependencyInjection).Assembly.GetTypes()
+                     .Where(type => type is { IsClass: true, IsAbstract: false }))
+        {
+            foreach (Type contrato in handler.GetInterfaces().Where(i =>
+                         i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IIntegrationEventHandler<>)))
+            {
+                services.AddScoped(contrato, handler);
+            }
+        }
 
         services.AddValidatorsFromAssembly(
             typeof(DependencyInjection).Assembly,

@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 
 namespace Halsa.Backend.Application.Abstractions.Data;
@@ -14,4 +15,7 @@ public interface IReadDbContext
     /// a second layer of enforcement independently.
     /// </summary>
     IQueryable<CasoMedico> CasosMedicos { get; }
+
+    /// <summary>Las radicaciones del tenant actual (SPEC 05), para la consulta de estado.</summary>
+    IQueryable<SolicitudIntegracion> Solicitudes { get; }
 }

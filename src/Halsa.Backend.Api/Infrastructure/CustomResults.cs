@@ -9,7 +9,13 @@ namespace Halsa.Backend.Api.Infrastructure;
 /// </summary>
 public static class CustomResults
 {
-    public static IResult Problem(Result result)
+    public static IResult Problem(Result result) => Problem(result, extensions: null);
+
+    /// <summary>
+    /// Same mapping, plus <paramref name="extensions"/> on top of the default ones (an entry with the same key
+    /// replaces the default): for endpoints whose contract adds fields to the problem.
+    /// </summary>
+    public static IResult Problem(Result result, IReadOnlyDictionary<string, object?>? extensions)
     {
         ArgumentNullException.ThrowIfNull(result);
 
@@ -18,12 +24,22 @@ public static class CustomResults
             throw new InvalidOperationException("A successful result cannot be turned into a problem response.");
         }
 
+        Dictionary<string, object?>? all = GetErrors(result);
+        if (extensions is not null)
+        {
+            all ??= [];
+            foreach ((string key, object? value) in extensions)
+            {
+                all[key] = value;
+            }
+        }
+
         return Results.Problem(
             title: GetTitle(result.Error),
             detail: GetDetail(result.Error),
             type: GetType(result.Error.Type),
             statusCode: GetStatusCode(result.Error.Type),
-            extensions: GetErrors(result));
+            extensions: all);
     }
 
     private static string GetTitle(Error error) => error.Type switch

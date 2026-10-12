@@ -4,7 +4,7 @@ namespace Halsa.Backend.Domain.Casos;
 
 /// <summary>
 /// Se emite cuando se radica un nuevo caso médico.
-/// En esta spec no tiene handlers; las reacciones (plazos, notificaciones) llegan en SPEC 05+.
+/// La ingesta (SPEC 05) lo publica como <c>CasoRadicadoIntegrationEvent</c>; los plazos llegan en la SPEC 09.
 /// </summary>
 public sealed record CasoRadicadoDomainEvent(
     CasoMedicoId CasoId,
@@ -13,3 +13,19 @@ public sealed record CasoRadicadoDomainEvent(
     TipoEvento TipoEvento,
     DateTimeOffset FechaEvento,
     DateTimeOffset RadicadoEn) : DomainEvent;
+
+/// <summary>La validación asíncrona aceptó el caso (SPEC 05). Llega al outbox como <c>caso.validado</c>.</summary>
+public sealed record CasoValidadoDomainEvent(
+    CasoMedicoId CasoId,
+    string TenantId,
+    string Radicado,
+    DateTimeOffset ValidadoEn) : DomainEvent;
+
+/// <summary>La validación asíncrona rechazó el caso (SPEC 05). Llega al outbox como <c>caso.rechazado</c>.</summary>
+public sealed record CasoRechazadoDomainEvent(
+    CasoMedicoId CasoId,
+    string TenantId,
+    string Radicado,
+    MotivoRechazo Motivo,
+    CasoMedicoId? DuplicadoDe,
+    DateTimeOffset RechazadoEn) : DomainEvent;

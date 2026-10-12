@@ -27,7 +27,7 @@ The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain 
 ## Getting started
 
 ```bash
-# -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico)
+# -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico, halsa_ingesta)
 # only runs on an empty volume. Without those roles the API fails to authenticate at startup.
 docker compose down -v && docker compose up -d   # PostgreSQL, Keycloak, Seq (+ Redis if enabled)
 
@@ -44,6 +44,10 @@ runtime it connects as `halsa_app` (connection string `Database`), which has no 
 `DELETE` on cases, so PostgreSQL row-level security isolates tenants even if an EF filter is wrong.
 The clinical detail lives apart, in the encrypted `clinico` schema: only `ClinicalDbContext` reaches
 it, as `halsa_clinico` (connection string `Clinical`); `halsa_app` has no access to the schema at all.
+FURAT and FUREP reports from the ARL cores (`POST /v1/integraciones/{furat|furep}`, SPEC 05) are radicated
+by `IngestaDbContext` as `halsa_ingesta` (connection string `Ingesta`): one transaction writes the case,
+the report, the encrypted raw message and the encrypted initial clinical record, and the role can insert
+into the clinical history but never read it.
 
 Keycloak comes preloaded with the `halsa` and `halsa-pacientes` realms. Get a token for a dev user
 (`analista.arla`, `analista.arlb`, `medico.ips`, ... password `dev`) with the `halsa-dev-cli` client:
@@ -100,13 +104,15 @@ Guarantees:
 
 `IIntegrationEventPublisher` writes to `outbox.outbox_messages` inside the business transaction.
 `OutboxProcessor` drains it with `FOR UPDATE SKIP LOCKED`, so several API replicas can run it
-concurrently. `IEventBus` is the seam: swap `LoggingEventBus` for Kafka or Service Bus and nothing
-else changes.
+concurrently. `InProcessEventBus` delivers each message to the `IIntegrationEventHandler<T>`s of the
+process, in a DI scope of its own (the asynchronous validation of a radication is one). `IEventBus` is the
+seam: swap it for Kafka or Service Bus and no handler changes.
 
 ## Before production
 
 - [ ] Apply migrations from your pipeline, not from `Program`.
-- [ ] Replace `LoggingEventBus` with a real broker.
+- [ ] Register a real `IAfiliacionGateway` per ARL: outside `Development` and `Testing` the API refuses to
+      start with the dev stub.
 - [ ] Point `OpenTelemetry:OtlpEndpoint` at your collector.
 - [ ] Turn `TreatWarningsAsErrors` on in `Directory.Build.props` once the solution is warning-clean.
 - [ ] Set `Keycloak:RequireHttpsMetadata` back to `true`.

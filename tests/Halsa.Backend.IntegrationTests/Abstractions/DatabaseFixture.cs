@@ -22,8 +22,8 @@ namespace Halsa.Backend.IntegrationTests.Abstractions;
 ///
 /// Lifecycle:
 /// 1. Start the container as the <c>postgres</c> superuser.
-/// 2. Run <c>01-roles.sql</c> to create <c>halsa_owner</c>, <c>halsa_app</c> and
-///    <c>halsa_clinico</c> and grant CREATE on the database to <c>halsa_owner</c>.
+/// 2. Run <c>01-roles.sql</c> to create <c>halsa_owner</c>, <c>halsa_app</c>, <c>halsa_clinico</c> and
+///    <c>halsa_ingesta</c> and grant CREATE on the database to <c>halsa_owner</c>.
 /// 3. Apply the EF Core migrations of both contexts as <c>halsa_owner</c> (creates schemas, tables,
 ///    grants and RLS), then <c>auditoria.asegurar_particiones(3)</c>.
 /// 4. Register all application services connected as <c>halsa_app</c> (and <c>halsa_clinico</c> for the
@@ -44,6 +44,8 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
     public ServiceProvider Services { get; private set; } = null!;
 
+    private IConfiguration _configuration = null!;
+
     /// <summary>Connection string using <c>halsa_owner</c> — for tests that run DDL or seed data.</summary>
     public string OwnerConnectionString { get; private set; } = null!;
 
@@ -52,6 +54,9 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
     /// <summary>Connection string using <c>halsa_clinico</c> — the role of the clinical context (SPEC 03).</summary>
     public string ClinicalConnectionString { get; private set; } = null!;
+
+    /// <summary>Connection string using <c>halsa_ingesta</c> — the role of the FURAT/FUREP ingestion (SPEC 05).</summary>
+    public string IngestaConnectionString { get; private set; } = null!;
 
     /// <summary>
     /// Connection string using the <c>postgres</c> superuser, which bypasses RLS. Only for asserting on
@@ -83,18 +88,21 @@ public sealed class DatabaseFixture : IAsyncLifetime
                                 "Username=halsa_app;Password=halsa_app_dev;Include Error Detail=true";
         ClinicalConnectionString = $"Host={host};Port={port};Database={database};" +
                                    "Username=halsa_clinico;Password=halsa_clinico_dev;Include Error Detail=true";
+        IngestaConnectionString = $"Host={host};Port={port};Database={database};" +
+                                  "Username=halsa_ingesta;Password=halsa_ingesta_dev;Include Error Detail=true";
 
         // ── Step 3: apply the migrations of both contexts as halsa_owner, then the audit partitions ─
         await DatabaseMigrator.MigrateAsync(OwnerConnectionString);
         await DatabaseMigrator.AsegurarParticionesAsync(OwnerConnectionString);
 
         // ── Step 4: register services connected as halsa_app ─────────────────
-        IConfiguration configuration = new ConfigurationBuilder()
+        _configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Database"]   = AppConnectionString,
                 ["ConnectionStrings:Migrations"] = OwnerConnectionString,
                 ["ConnectionStrings:Clinical"]   = ClinicalConnectionString,
+                ["ConnectionStrings:Ingesta"]    = IngestaConnectionString,
                 ["Clinico:KekBase64"]            = KekBase64,
                 ["Keycloak:PersonalAuthority"]   = "http://localhost:8080/realms/halsa",
                 ["Keycloak:PacientesAuthority"]  = "http://localhost:8080/realms/halsa-pacientes",
@@ -104,20 +112,28 @@ public sealed class DatabaseFixture : IAsyncLifetime
             })
             .Build();
 
+        Services = CrearServicios();
+    }
+
+    /// <summary>
+    /// A new provider with the fixture's registrations plus <paramref name="ajustes"/>, for a test that needs to
+    /// replace a dependency (a gateway that fails, say). The caller disposes it.
+    /// </summary>
+    public ServiceProvider CrearServicios(Action<IServiceCollection>? ajustes = null)
+    {
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddSingleton(configuration);
+        services.AddSingleton(_configuration);
         services.AddApplication();
-        services.AddInfrastructure(configuration);
+        services.AddInfrastructure(_configuration);
 
-        // In integration tests there is no HTTP context, so HttpTenantContext and CurrentUser
-        // (registered by AddInfrastructure) would never resolve an actor. Both read the scope's
-        // TestActor instead: NullTenantContext (Resuelto = false) unless CreateScope(actor) set one.
+        // In integration tests there is no HTTP context, so the middleware never fills the scope's
+        // TenantContextHolder and CurrentUser never sees a principal. CreateScope(actor) fills the holder
+        // (the real TenantContext reads it, so ISystemTenantScope works as in production) and CurrentUser
+        // reads the scope's TestActor. Without an actor, Resuelto = false.
         // The event store does not depend on it; RLS tests use CreateDbContext instead.
         services.AddScoped<TestActor>();
-        services.RemoveAll<ITenantContext>();
-        services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TestActor>().Tenant);
         services.RemoveAll<ICurrentUser>();
         services.AddScoped<ICurrentUser, TestCurrentUser>();
 
@@ -127,7 +143,9 @@ public sealed class DatabaseFixture : IAsyncLifetime
             typeof(DomainAssemblyMarker).Assembly,
             typeof(TestAggregate).Assembly));
 
-        Services = services.BuildServiceProvider();
+        ajustes?.Invoke(services);
+
+        return services.BuildServiceProvider();
     }
 
     public async Task DisposeAsync()
@@ -148,8 +166,17 @@ public sealed class DatabaseFixture : IAsyncLifetime
     /// </summary>
     public AsyncServiceScope CreateScope(ITenantContext actor)
     {
+        ArgumentNullException.ThrowIfNull(actor);
+
         AsyncServiceScope scope = Services.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<TestActor>().Tenant = actor;
+
+        if (actor.Resuelto)
+        {
+            scope.ServiceProvider.GetRequiredService<TenantContextHolder>()
+                .Establecer(new TenantContextData(actor.Tipo, actor.Sub, actor.TenantId, actor.IpsId));
+        }
+
         return scope;
     }
 
@@ -205,6 +232,13 @@ public sealed class DatabaseFixture : IAsyncLifetime
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_clinico') THEN
                 CREATE ROLE halsa_clinico LOGIN PASSWORD 'halsa_clinico_dev';
+            END IF;
+        END$$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_ingesta') THEN
+                CREATE ROLE halsa_ingesta LOGIN PASSWORD 'halsa_ingesta_dev';
             END IF;
         END$$;
 

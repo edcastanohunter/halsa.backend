@@ -7,7 +7,7 @@ namespace Halsa.Backend.Api.Middleware;
 
 /// <summary>
 /// Middleware que resuelve el contexto de tenant a partir del principal autenticado
-/// y lo deposita en <c>HttpContext.Items</c> para que <c>HttpTenantContext</c> lo lea.
+/// y lo deposita en el <see cref="TenantContextHolder"/> del request para que <c>ITenantContext</c> lo lea.
 ///
 /// Posición en el pipeline: entre <c>UseAuthentication()</c> y <c>UseAuthorization()</c>.
 /// Si el usuario es anónimo, el middleware deja pasar el request sin intervenir,
@@ -19,7 +19,8 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(
         HttpContext context,
-        TenantContextResolver resolver)
+        TenantContextResolver resolver,
+        TenantContextHolder holder)
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
@@ -32,7 +33,7 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                 return;
             }
 
-            context.Items[TenantContextKeys.Key] = resolveResult.Value;
+            holder.Establecer(resolveResult.Value);
         }
 
         await next(context);

@@ -44,7 +44,8 @@ internal sealed partial class OutboxProcessor(
         }
     }
 
-    private async Task ProcessBatchAsync(CancellationToken cancellationToken)
+    /// <summary>One pass: claims, publishes and commits up to <c>BatchSize</c> messages. Returns how many it claimed.</summary>
+    internal async Task<int> ProcessBatchAsync(CancellationToken cancellationToken)
     {
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
 
@@ -56,12 +57,12 @@ internal sealed partial class OutboxProcessor(
         // retriable unit: the whole claim-publish-commit cycle runs inside the execution strategy.
         IExecutionStrategy strategy = context.Database.CreateExecutionStrategy();
 
-        await strategy
+        return await strategy
             .ExecuteAsync(token => ProcessClaimedBatchAsync(context, eventBus, clock, token), cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private async Task ProcessClaimedBatchAsync(
+    private async Task<int> ProcessClaimedBatchAsync(
         ApplicationDbContext context,
         IEventBus eventBus,
         IClock clock,
@@ -86,7 +87,7 @@ internal sealed partial class OutboxProcessor(
         if (messages.Count == 0)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return;
+            return 0;
         }
 
         foreach (OutboxMessage message in messages)
@@ -113,6 +114,8 @@ internal sealed partial class OutboxProcessor(
 
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return messages.Count;
     }
 
     [LoggerMessage(EventId = 3010, Level = LogLevel.Error, Message = "Outbox batch failed")]

@@ -39,6 +39,10 @@ public static class CasoMedicoErrors
         Error.Problem("Caso.IpsIdInvalido",
             "El código REPS de la IPS debe tener 12 dígitos.");
 
+    public static readonly Error TransicionInvalida =
+        Error.Conflict("Caso.TransicionInvalida",
+            "El estado actual del caso no admite esta transición.");
+
     public static readonly Error NoEncontrado =
         Error.NotFound("Caso.NoEncontrado",
             "El caso no existe o no pertenece al contexto de tenant actual.");

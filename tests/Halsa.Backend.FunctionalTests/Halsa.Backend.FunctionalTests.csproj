@@ -32,4 +32,8 @@
     <Using Include="Shouldly" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\EjemplosContrato.cs" Link="Shared\EjemplosContrato.cs" />
+  </ItemGroup>
+
 </Project>

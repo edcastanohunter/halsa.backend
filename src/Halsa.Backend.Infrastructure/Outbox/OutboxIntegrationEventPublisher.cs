@@ -1,7 +1,5 @@
-using System.Text.Json;
 using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Infrastructure.Database;
-using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.SharedKernel.Primitives;
 
 namespace Halsa.Backend.Infrastructure.Outbox;
@@ -16,16 +14,7 @@ internal sealed class OutboxIntegrationEventPublisher(ApplicationDbContext conte
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
 
-        context.OutboxMessages.Add(new OutboxMessage
-        {
-            Id = integrationEvent.EventId,
-            Type = integrationEvent.GetType().FullName!,
-            Content = JsonSerializer.Serialize(
-                integrationEvent,
-                integrationEvent.GetType(),
-                EventSerializer.Options),
-            OccurredOnUtc = integrationEvent.OccurredOnUtc
-        });
+        context.OutboxMessages.Add(OutboxMessage.Desde(integrationEvent));
 
         return Task.CompletedTask;
     }
