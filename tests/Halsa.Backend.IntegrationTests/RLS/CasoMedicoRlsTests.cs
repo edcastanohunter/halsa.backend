@@ -117,7 +117,7 @@ public sealed class CasoMedicoRlsTests(DatabaseFixture db)
         Guid casoA = await InsertCasoAsync(ArlA);
 
         // A pool of one guarantees the second context gets the same physical connection.
-        string pooled = $"{db.AppConnectionString};Pooling=true;Max Pool Size=1;Application Name=rls-pool-test";
+        string pooled = $"{db.AppConnectionString};Pooling=true;Maximum Pool Size=1;Application Name=rls-pool-test";
 
         int firstPid;
         await using (ApplicationDbContext arl = db.CreateDbContext(FakeTenantContext.Arl(ArlA), pooled))

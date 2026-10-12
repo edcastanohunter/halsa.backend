@@ -241,24 +241,24 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] El repo ya no contiene tipos ni rutas `WorkItem*`, y `dotnet test` pasa completo, incluidos los tests del event store con `TestAggregate`.
-- [ ] `DatabaseFixture` y `ApiFactory` ya no llaman a `EnsureCreatedAsync()` y se conectan como `halsa_app`.
-- [ ] Como `halsa_app`, con `app.tenant_id='ARL_A'`, `SELECT count(*) FROM atel.casos_medicos WHERE tenant_id='ARL_B'` devuelve `0`.
-- [ ] Como `halsa_app`, sin fijar ninguna variable `app.*`, `SELECT count(*) FROM atel.casos_medicos` devuelve `0` aunque existan filas.
-- [ ] Como `halsa_app`, con `app.ips_id='110011234501'`, solo se ven los casos con remisión vigente a esa IPS, de ambos tenants. Al revocar la remisión, el caso deja de verse.
-- [ ] Como `halsa_app`, con `app.tenant_id='ARL_A'`, un `INSERT` en `atel.casos_medicos` con `tenant_id='ARL_B'` falla por la política (`new row violates row-level security policy`).
-- [ ] Como `halsa_app`, `DELETE FROM atel.casos_medicos` falla con `permission denied`.
-- [ ] Como `halsa_owner`, sin variables, `SELECT count(*) FROM atel.casos_medicos` devuelve `0` (por `FORCE ROW LEVEL SECURITY`).
-- [ ] Un test de integración abre una conexión con el tenant `ARL_A`, la devuelve al pool, la reutiliza sin contexto resuelto y no ve filas.
-- [ ] Un test de integración desactiva el query filter (`IgnoreQueryFilters()`) con el contexto de `ARL_A` y sigue sin ver casos de `ARL_B`.
-- [ ] `GET /v1/casos` como actor `ARL_A` no incluye ningún caso de `ARL_B`.
-- [ ] `GET /v1/casos/{id}` de un caso de `ARL_B`, como actor `ARL_A`, responde `404`.
-- [ ] `GET /v1/casos` como actor `Ips` `110011234501` devuelve solo los casos con remisión vigente a esa IPS, incluidos los de los dos tenants.
-- [ ] `POST /v1/casos/{id}/remisiones` dos veces a la misma IPS responde `201` y luego `409` con el código `Caso.RemisionDuplicada`.
-- [ ] `POST /v1/casos/{id}/remisiones` como actor `Ips`, aunque tenga `casos:write`, responde `403` con `Caso.ActorNoAutorizado`.
-- [ ] `POST /v1/casos/{id}/asignaciones` repetido con el mismo `sub` responde `204` las dos veces y deja una sola fila.
-- [ ] `GET /v1/identidad/yo` responde `200`, y `GET /identidad/yo` responde `404`.
-- [ ] Con `docker compose down -v && docker compose up -d && dotnet run`, el seed carga 5 casos, y una segunda ejecución no los duplica.
+- [x] El repo ya no contiene tipos ni rutas `WorkItem*`, y `dotnet test` pasa completo, incluidos los tests del event store con `TestAggregate`.
+- [x] `DatabaseFixture` y `ApiFactory` ya no llaman a `EnsureCreatedAsync()` y se conectan como `halsa_app`.
+- [x] Como `halsa_app`, con `app.tenant_id='ARL_A'`, `SELECT count(*) FROM atel.casos_medicos WHERE tenant_id='ARL_B'` devuelve `0`.
+- [x] Como `halsa_app`, sin fijar ninguna variable `app.*`, `SELECT count(*) FROM atel.casos_medicos` devuelve `0` aunque existan filas.
+- [x] Como `halsa_app`, con `app.ips_id='110011234501'`, solo se ven los casos con remisión vigente a esa IPS, de ambos tenants. Al revocar la remisión, el caso deja de verse.
+- [x] Como `halsa_app`, con `app.tenant_id='ARL_A'`, un `INSERT` en `atel.casos_medicos` con `tenant_id='ARL_B'` falla por la política (`new row violates row-level security policy`).
+- [x] Como `halsa_app`, `DELETE FROM atel.casos_medicos` falla con `permission denied`.
+- [x] Como `halsa_owner`, sin variables, `SELECT count(*) FROM atel.casos_medicos` devuelve `0` (por `FORCE ROW LEVEL SECURITY`).
+- [x] Un test de integración abre una conexión con el tenant `ARL_A`, la devuelve al pool, la reutiliza sin contexto resuelto y no ve filas.
+- [x] Un test de integración desactiva el query filter (`IgnoreQueryFilters()`) con el contexto de `ARL_A` y sigue sin ver casos de `ARL_B`.
+- [x] `GET /v1/casos` como actor `ARL_A` no incluye ningún caso de `ARL_B`.
+- [x] `GET /v1/casos/{id}` de un caso de `ARL_B`, como actor `ARL_A`, responde `404`.
+- [x] `GET /v1/casos` como actor `Ips` `110011234501` devuelve solo los casos con remisión vigente a esa IPS, incluidos los de los dos tenants.
+- [x] `POST /v1/casos/{id}/remisiones` dos veces a la misma IPS responde `201` y luego `409` con el código `Caso.RemisionDuplicada`.
+- [x] `POST /v1/casos/{id}/remisiones` como actor `Ips`, aunque tenga `casos:write`, responde `403` con `Caso.ActorNoAutorizado`.
+- [x] `POST /v1/casos/{id}/asignaciones` repetido con el mismo `sub` responde `204` las dos veces y deja una sola fila.
+- [x] `GET /v1/identidad/yo` responde `200`, y `GET /identidad/yo` responde `404`.
+- [x] Con `docker compose down -v && docker compose up -d && dotnet run`, el seed carga 5 casos, y una segunda ejecución no los duplica.
 
 ---
 
