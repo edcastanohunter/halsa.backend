@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Integraciones;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Application.Integraciones.Canonico;
@@ -80,6 +81,16 @@ public sealed class IngestaDbContext(
             ChangeTracker.Clear();
             return ResultadoGuardado.ReporteYaRadicado;
         }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.InsufficientPrivilege,
+            MessageText: var mensaje
+        } && mensaje.Contains("row-level security", StringComparison.Ordinal))
+        {
+            // The WITH CHECK of the clinical policy: the remission was revoked after the case was read.
+            ChangeTracker.Clear();
+            return ResultadoGuardado.FueraDeAlcance;
+        }
     }
 
     async Task<string?> IIngestaDbContext.RadicadoDelReporteAsync(
@@ -95,6 +106,23 @@ public sealed class IngestaDbContext(
             .Join(Solicitudes, r => r.CasoMedicoId, s => s.CasoMedicoId, (_, s) => s.Radicado)
             .FirstOrDefaultAsync(ct);
     }
+
+    Task<CasoVisible?> IIngestaDbContext.CasoVisibleAsync(CasoMedicoId casoId, CancellationToken ct) =>
+        CasosMedicos
+            .AsNoTracking()
+            .Where(c => c.Id == casoId)
+            .Select(c => new CasoVisible(c.TenantId, c.FechaEvento, c.Estado))
+            .FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// <c>clinico.registro_del_caso_visible</c> (migración <c>ConceptosMedicosIngestaClinico</c>): corre como su
+    /// dueño, sujeto a la RLS de la HC con las variables de esta sesión, y no devuelve nada del registro.
+    /// </summary>
+    Task<bool> IIngestaDbContext.RegistroVisibleAsync(
+        CasoMedicoId casoId, HistoriaClinicaDetalleId registroId, CancellationToken ct) =>
+        Database
+            .SqlQuery<bool>($"SELECT clinico.registro_del_caso_visible({registroId.Value}, {casoId.Value}) AS \"Value\"")
+            .SingleAsync(ct);
 
     // ── Model ─────────────────────────────────────────────────────────────────
 

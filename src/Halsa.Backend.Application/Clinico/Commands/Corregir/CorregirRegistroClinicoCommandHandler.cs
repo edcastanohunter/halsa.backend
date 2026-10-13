@@ -4,7 +4,6 @@ using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Domain.Clinico;
 using Halsa.Backend.SharedKernel.Results;
-using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Halsa.Backend.Application.Clinico.Commands.Corregir;
@@ -16,16 +15,22 @@ internal sealed class CorregirRegistroClinicoCommandHandler(
     ICurrentUser currentUser,
     IClinicalAuditTrail auditTrail,
     TimeProvider time)
-    : ICommandHandler<CorregirRegistroClinicoCommand, Guid>
+    : ICommandHandler<CorregirRegistroClinicoCommand, RegistroClinicoCreadoResponse>
 {
-    public async Task<Result<Guid>> Handle(
+    public async Task<Result<RegistroClinicoCreadoResponse>> Handle(
         CorregirRegistroClinicoCommand command,
         CancellationToken cancellationToken)
     {
-        TenantId? tenant = await gate.TenantDelCasoVisibleAsync(command.CasoId, cancellationToken);
-        if (tenant is null)
+        CasoVisible? caso = await gate.CasoVisibleAsync(command.CasoId, cancellationToken);
+        if (caso is null)
         {
-            return Result.Failure<Guid>(ClinicoErrors.CasoNoEncontrado);
+            return Result.Failure<RegistroClinicoCreadoResponse>(ClinicoErrors.CasoNoEncontrado);
+        }
+
+        Result admite = RegistroClinicoEscritura.AdmiteRegistro(caso, command.AtendidoEn);
+        if (admite.IsFailure)
+        {
+            return Result.Failure<RegistroClinicoCreadoResponse>(admite.Error);
         }
 
         // The query filter and the clinical RLS decide visibility; the case must match too.
@@ -35,11 +40,11 @@ internal sealed class CorregirRegistroClinicoCommandHandler(
 
         if (!existe)
         {
-            return Result.Failure<Guid>(ClinicoErrors.RegistroNoEncontrado);
+            return Result.Failure<RegistroClinicoCreadoResponse>(ClinicoErrors.RegistroNoEncontrado);
         }
 
         return await RegistroClinicoEscritura.RegistrarAsync(
-            command, tenant.Value, command.RegistroId, AccionAuditoria.Corregir, cipher, db, auditTrail, currentUser, time,
+            command, caso.TenantId, command.RegistroId, AccionAuditoria.Corregir, cipher, db, auditTrail, currentUser, time,
             cancellationToken);
     }
 }

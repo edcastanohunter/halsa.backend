@@ -1,4 +1,4 @@
-using Halsa.Backend.IntegrationTests.Abstractions;
+﻿using Halsa.Backend.IntegrationTests.Abstractions;
 using Npgsql;
 using static Halsa.Backend.IntegrationTests.Clinico.ClinicoSql;
 
@@ -28,7 +28,8 @@ public sealed class IngestaBarrierTests(DatabaseFixture db)
     [InlineData("DELETE FROM atel.reportes_evento")]
     [InlineData("UPDATE outbox.outbox_messages SET attempts = 0")]
     [InlineData("SELECT 1 FROM auditoria.accesos")]
-    [InlineData("SELECT 1 FROM atel.remisiones")]
+    [InlineData("UPDATE atel.remisiones SET revocada_en = now()")]
+    [InlineData("DELETE FROM atel.remisiones")]
     public async Task Ingesta_ShouldNotModifyOrReadBeyondItsGrants(string sql)
     {
         await using NpgsqlConnection conn = await OpenAsync(db.IngestaConnectionString, tenantId: ArlA);
@@ -36,6 +37,25 @@ public sealed class IngestaBarrierTests(DatabaseFixture db)
         PostgresException ex = await Should.ThrowAsync<PostgresException>(() => ScalarAsync(conn, sql));
 
         ex.SqlState.ShouldBe(PostgresErrorCodes.InsufficientPrivilege);
+    }
+
+    /// <summary>
+    /// SPEC 06: <c>halsa_ingesta</c> reads <c>atel.remisiones</c>, because the read policy of
+    /// <c>casos_medicos</c> queries it, but the RLS only shows it the remissions of its own IPS.
+    /// </summary>
+    [Fact]
+    public async Task Ingesta_ShouldReadTheRemisiones_OfItsOwnIpsOnly()
+    {
+        Guid caso = await InsertCasoAsync(db, ArlB);
+        await InsertRemisionAsync(db, caso, ArlB, Ips);
+        await InsertRemisionAsync(db, caso, ArlB, "110019999901");
+
+        await using NpgsqlConnection conn = await OpenAsync(db.IngestaConnectionString, ipsId: Ips);
+
+        (await ScalarAsync(conn, "SELECT count(*) FROM atel.remisiones WHERE caso_medico_id = @caso", ("caso", caso)))
+            .ShouldBe(1);
+        (await ScalarAsync(conn, "SELECT count(*) FROM atel.remisiones WHERE ips_id <> @ips", ("ips", Ips)))
+            .ShouldBe(0);
     }
 
     [Theory]

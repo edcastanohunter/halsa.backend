@@ -26,7 +26,7 @@ tags:
   - name: Incapacidades
     description: Carga de certificados de incapacidad por IPS o personal médico.
   - name: Clinico
-    description: Accesos sensibles con step-up.
+    description: Historia clínica. La carga de conceptos (SPEC 06) y los accesos sensibles con step-up.
 
 security:
   - personal: []
@@ -120,6 +120,95 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '409': { $ref: '#/components/responses/ConflictoIdempotencia' }
+
+  /integraciones/conceptos-medicos:
+    post:
+      tags: [Integraciones]
+      operationId: recibirConceptoMedico
+      summary: Recibe un concepto médico, una evolución o un concepto de rehabilitación desde el sistema de una IPS.
+      description: |
+        Responde `201` en cuanto el registro queda cifrado y guardado en la historia clínica del caso. No hay
+        procesamiento posterior. Es idempotente por `(IPS, Idempotency-Key)`: el mismo cuerpo devuelve la misma
+        respuesta, y otro cuerpo con la misma llave devuelve `409`. Las llaves de cada emisor son independientes.
+
+        El caso tiene que estar remitido a la IPS del token, con la remisión vigente. Si no, la respuesta es `404`,
+        igual que si el caso no existiera. El registro queda en el tenant del caso y se cifra con su DEK.
+
+        El profesional que firma viaja en el cuerpo: la IPS responde por su personal. La service account queda
+        como `profesional_sub` y en la auditoría.
+
+        Requiere:
+        - mTLS en Nginx, con un token ligado al certificado (`cnf.x5t#S256`).
+        - Un token de client credentials del client `int-ips-{REPS}` con el rol `integracion:clinico:write`.
+      security:
+        - integracion: [integracion:clinico:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConceptoMedicoRequest' }
+            examples:
+              controlPostquirurgico: { $ref: '#/components/examples/ConceptoMedicoControl' }
+      responses:
+        '201':
+          description: Concepto registrado. Repetir la llave con el mismo cuerpo devuelve la misma respuesta.
+          headers:
+            Location:
+              description: El registro en la historia clínica del caso. Se podrá leer con la SPEC 08.
+              schema: { type: string, example: /v1/casos/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b/registros-clinicos/0192f1e5-0000-7000-8000-000000000001 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistroClinicoCreadoResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflictoRegistroClinico' }
+
+  /casos/{casoId}/registros-clinicos:
+    post:
+      tags: [Clinico]
+      operationId: registrarRegistroClinico
+      summary: Registra un concepto médico, una evolución o un concepto de rehabilitación en el caso.
+      description: |
+        Lo usa el backoffice. Un médico de la ARL del caso, o de una IPS con remisión vigente, añade un registro a
+        la historia clínica. Con `corrigeA` corrige un registro anterior del mismo caso: el original no cambia y el
+        nuevo apunta a él.
+
+        El profesional que firma sale del token (claims `rethus`, `tipo_documento` y `numero_documento`), nunca del
+        cuerpo. Si falta alguno, la respuesta es `403` con `Clinico.ProfesionalSinRegistro`.
+
+        Para escribir basta con ver el caso. La asignación al caso solo se exige para leer la historia clínica (SPEC 08).
+      security:
+        - personal: [clinico:write]
+      parameters:
+        - name: casoId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistroClinicoRequest' }
+      responses:
+        '201':
+          description: Registro creado.
+          headers:
+            Location:
+              description: El registro en la historia clínica del caso. Se podrá leer con la SPEC 08.
+              schema: { type: string, example: /v1/casos/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b/registros-clinicos/0192f1e5-0000-7000-8000-000000000001 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistroClinicoCreadoResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflictoRegistroClinico' }
 
   /casos/{casoId}/incapacidades:
     post:
@@ -277,6 +366,7 @@ components:
           authorizationUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/auth
           tokenUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/token
           scopes:
+            clinico:write: Registrar conceptos médicos, evoluciones y conceptos de rehabilitación
             incapacidades:write: Cargar incapacidades
             pcl:dictamen:read: Leer dictámenes PCL
     integracion:
@@ -288,6 +378,7 @@ components:
           scopes:
             integracion:furat:write: Radicar FURAT
             integracion:furep:write: Radicar FUREP
+            integracion:clinico:write: Enviar conceptos médicos desde una IPS
             incapacidades:write: Cargar incapacidades
 
   parameters:
@@ -583,6 +674,73 @@ components:
         registroRethus: { type: string, maxLength: 30 }
         especialidad: { type: string, maxLength: 120 }
 
+    ContenidoClinico:
+      type: object
+      description: |
+        El texto clínico de un concepto, igual en los dos canales de carga. Al menos uno entre `motivo`, `anamnesis`,
+        `examenFisico`, `analisis` y `plan` tiene texto. Se cifra con la DEK del tenant del caso antes de guardarse.
+      properties:
+        motivo: { type: [string, 'null'], maxLength: 8000 }
+        anamnesis: { type: [string, 'null'], maxLength: 8000 }
+        examenFisico: { type: [string, 'null'], maxLength: 8000 }
+        analisis: { type: [string, 'null'], maxLength: 8000 }
+        plan: { type: [string, 'null'], maxLength: 8000 }
+        diagnosticos:
+          type: [array, 'null']
+          description: |
+            Solo CIE-10, validado por formato (el catálogo va en su propia spec). El primero es el diagnóstico
+            principal. La historia guarda el sistema y el código.
+          items:
+            type: object
+            required: [sistema, codigo]
+            properties:
+              sistema: { type: string, const: CIE-10 }
+              codigo: { type: string, pattern: '^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$', example: S62.6 }
+              descripcion: { type: [string, 'null'], maxLength: 250 }
+        observaciones: { type: [string, 'null'], maxLength: 8000 }
+
+    RegistroClinicoRequest:
+      type: object
+      description: El cuerpo del backoffice. El profesional sale del token.
+      required: [tipo, atendidoEn, contenido]
+      properties:
+        tipo: { type: string, enum: [CONCEPTO_MEDICO, EVOLUCION, CONCEPTO_REHABILITACION] }
+        atendidoEn:
+          type: string
+          format: date-time
+          description: |
+            Cuándo se atendió al paciente. No puede ser futuro, ni anterior en más de un día a la fecha del evento del
+            caso (`Clinico.FechaAtencionAnteriorAlEvento`).
+        corrigeA:
+          type: [string, 'null']
+          format: uuid
+          description: El registro del mismo caso que este corrige. Si no existe o no es visible, `404`.
+        contenido: { $ref: '#/components/schemas/ContenidoClinico' }
+
+    ConceptoMedicoRequest:
+      type: object
+      description: El cuerpo de la integración de una IPS. Lleva el caso y el profesional que firma.
+      required: [version, casoId, tipo, atendidoEn, profesional, contenido]
+      properties:
+        version: { type: string, const: '1.0' }
+        casoId: { type: string, format: uuid }
+        tipo: { type: string, enum: [CONCEPTO_MEDICO, EVOLUCION, CONCEPTO_REHABILITACION] }
+        atendidoEn:
+          type: string
+          format: date-time
+          description: Igual que en `RegistroClinicoRequest`.
+        corrigeA: { type: [string, 'null'], format: uuid }
+        profesional: { $ref: '#/components/schemas/Profesional' }
+        contenido: { $ref: '#/components/schemas/ContenidoClinico' }
+
+    RegistroClinicoCreadoResponse:
+      type: object
+      required: [registroId, casoId, registradoEn]
+      properties:
+        registroId: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        registradoEn: { type: string, format: date-time }
+
     DictamenPclResponse:
       type: object
       required: [casoId, porcentajePcl, origen, fechaEstructuracion, fechaDictamen, calificador]
@@ -711,6 +869,13 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
+    ConflictoRegistroClinico:
+      description: |
+        La `Idempotency-Key` ya se usó con un cuerpo distinto (`Integracion.IdempotenciaConflicto`, solo en la
+        integración), o el caso está rechazado o cerrado y no admite registros (`Clinico.CasoNoAdmiteRegistros`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
     DemasiadoGrande:
       description: El cuerpo supera el límite (2 MB en integraciones, 10 MB en el soporte PDF).
     LimiteExcedido:
@@ -765,3 +930,24 @@ components:
           cargo: Coordinadora SST
           fechaDiligenciamiento: '2026-10-08T09:00:00-05:00'
         ipsAtencionInicial: { codigoReps: '050010212301', nombre: Clínica Las Américas }
+    ConceptoMedicoControl:
+      summary: Control postquirúrgico de una fractura de dedo
+      value:
+        version: '1.0'
+        casoId: 0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b
+        tipo: CONCEPTO_MEDICO
+        atendidoEn: '2026-10-09T10:20:00-05:00'
+        corrigeA: null
+        profesional:
+          identificacion: { tipo: CC, numero: '79111222' }
+          nombreCompleto: Ana Ruiz
+          registroRethus: RM-12345
+          especialidad: Ortopedia
+        contenido:
+          motivo: Control postquirúrgico
+          anamnesis: Refiere dolor leve en el dedo intervenido.
+          examenFisico: Herida limpia, sin signos de infección.
+          analisis: Evolución favorable.
+          plan: Terapia física por dos semanas.
+          diagnosticos: [{ sistema: CIE-10, codigo: S62.6, descripcion: Fractura de otro dedo de la mano }]
+          observaciones: null

@@ -24,4 +24,20 @@ public static class ClinicoErrors
     public static readonly Error ProfesionalNoIdentificado =
         Error.Unauthorized("Clinico.ProfesionalNoIdentificado",
             "No se pudo identificar al profesional que firma el registro.");
+
+    public static readonly Error ProfesionalSinRegistro =
+        Error.Forbidden("Clinico.ProfesionalSinRegistro",
+            "El token no trae la identidad del profesional (rethus, tipo_documento y numero_documento).");
+
+    public static readonly Error FechaAtencionAnteriorAlEvento =
+        Error.Problem("Clinico.FechaAtencionAnteriorAlEvento",
+            "El momento de la atención es anterior a la fecha del evento del caso.");
+
+    public static readonly Error CasoNoAdmiteRegistros =
+        Error.Conflict("Clinico.CasoNoAdmiteRegistros",
+            "El caso está rechazado o cerrado y no admite registros clínicos nuevos.");
+
+    public static readonly Error ActorNoAutorizado =
+        Error.Forbidden("Clinico.ActorNoAutorizado",
+            "El tipo de actor no puede registrar conceptos médicos por este canal.");
 }

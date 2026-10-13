@@ -15,6 +15,7 @@ public sealed class ClinicalIsolationTests : BaseTest
 {
     private const string CasosNamespace = "Halsa.Backend.Application.Casos";
     private const string ClinicoApplicationNamespace = "Halsa.Backend.Application.Clinico";
+    private const string ClinicoQueriesNamespace = "Halsa.Backend.Application.Clinico.Queries";
     private const string ClinicoDomainNamespace = "Halsa.Backend.Domain.Clinico";
     private const string ClinicalDbContextInterface = "Halsa.Backend.Application.Abstractions.Clinico.IClinicalDbContext";
     private const string ClinicalAuditTrailInterface = "Halsa.Backend.Application.Abstractions.Auditoria.IClinicalAuditTrail";
@@ -49,12 +50,13 @@ public sealed class ClinicalIsolationTests : BaseTest
     }
 
     [Fact]
-    public void Api_ShouldNotExposeTheClinicalSlice()
+    public void Api_ShouldNotExposeTheClinicalReadSide()
     {
-        // No clinical endpoint until audit (SPEC 04) and per-resource authorization (SPEC 08) exist.
+        // SPEC 06 opens the writes (audited, SPEC 04). No clinical read endpoint until assignment-based
+        // authorization and step-up exist (SPEC 08).
         TestResult result = Types.InAssembly(ApiAssembly)
             .ShouldNot()
-            .HaveDependencyOnAny(ClinicoApplicationNamespace, ClinicoDomainNamespace)
+            .HaveDependencyOn(ClinicoQueriesNamespace)
             .GetResult();
 
         result.FailingTypeNames.ShouldBeNull();

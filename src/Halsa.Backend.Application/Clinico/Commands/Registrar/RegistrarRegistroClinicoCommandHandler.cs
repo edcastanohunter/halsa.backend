@@ -4,7 +4,6 @@ using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Domain.Clinico;
 using Halsa.Backend.SharedKernel.Results;
-using Halsa.Backend.SharedKernel.Tenancy;
 
 namespace Halsa.Backend.Application.Clinico.Commands.Registrar;
 
@@ -15,21 +14,27 @@ internal sealed class RegistrarRegistroClinicoCommandHandler(
     ICurrentUser currentUser,
     IClinicalAuditTrail auditTrail,
     TimeProvider time)
-    : ICommandHandler<RegistrarRegistroClinicoCommand, Guid>
+    : ICommandHandler<RegistrarRegistroClinicoCommand, RegistroClinicoCreadoResponse>
 {
-    public async Task<Result<Guid>> Handle(
+    public async Task<Result<RegistroClinicoCreadoResponse>> Handle(
         RegistrarRegistroClinicoCommand command,
         CancellationToken cancellationToken)
     {
         // Invisible and missing answer the same, as on the administrative side.
-        TenantId? tenant = await gate.TenantDelCasoVisibleAsync(command.CasoId, cancellationToken);
-        if (tenant is null)
+        CasoVisible? caso = await gate.CasoVisibleAsync(command.CasoId, cancellationToken);
+        if (caso is null)
         {
-            return Result.Failure<Guid>(ClinicoErrors.CasoNoEncontrado);
+            return Result.Failure<RegistroClinicoCreadoResponse>(ClinicoErrors.CasoNoEncontrado);
+        }
+
+        Result admite = RegistroClinicoEscritura.AdmiteRegistro(caso, command.AtendidoEn);
+        if (admite.IsFailure)
+        {
+            return Result.Failure<RegistroClinicoCreadoResponse>(admite.Error);
         }
 
         return await RegistroClinicoEscritura.RegistrarAsync(
-            command, tenant.Value, corrigeA: null, AccionAuditoria.Crear, cipher, db, auditTrail, currentUser, time,
+            command, caso.TenantId, corrigeA: null, AccionAuditoria.Crear, cipher, db, auditTrail, currentUser, time,
             cancellationToken);
     }
 }

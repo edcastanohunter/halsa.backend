@@ -1,6 +1,6 @@
 # SPEC 06 — Carga de conceptos médicos desde las IPS y el backoffice
 
-> **Estado:** Borrador
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03, SPEC 04, SPEC 05
 > **Fecha:** 2026-10-09
 > **Objetivo:** Que una IPS (por integración) o un médico autorizado (por el backoffice) registren conceptos médicos, evoluciones y conceptos de rehabilitación sobre un caso visible para ellos, cifrados, auditados y firmados con la identidad verificada del profesional.
@@ -45,6 +45,20 @@ Exige ABAC por asignación y step-up, y va en la SPEC 08.
 
 Esta spec no crea tablas.
 Escribe en `clinico.historia_clinica_detalle` (SPEC 03), `integracion.solicitudes_idempotentes` (SPEC 05) y `auditoria.accesos` (SPEC 04).
+
+### Permisos nuevos de `halsa_ingesta`
+
+| Objeto | Privilegio | Migración | Por qué |
+| --- | --- | --- | --- |
+| `atel.remisiones` | `SELECT` | `ConceptosMedicosIngesta` | La política de lectura de `casos_medicos` consulta `remisiones` con los permisos de quien lee. Sin el `SELECT`, la IPS no ve los casos remitidos. La RLS de `remisiones` (`tenant_id` o `ips_id` de la sesión) le deja ver solo las de su propia IPS. Sigue sin `INSERT`, `UPDATE` ni `DELETE`. |
+| `clinico.registro_del_caso_visible(uuid, uuid)` | `EXECUTE` (revocado a `PUBLIC`) | `ConceptosMedicosIngestaClinico` | Valida `corrigeA` sin leer la HC: responde solo sí o no. Es `SECURITY DEFINER` con `search_path` fijo, y su dueño sigue sujeto al `FORCE RLS` de la HC, así que un registro invisible responde `false`, igual que uno que no existe. |
+
+```sql
+CREATE FUNCTION clinico.registro_del_caso_visible(p_registro uuid, p_caso uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER SET search_path = clinico, pg_temp AS $$
+    SELECT EXISTS (SELECT 1 FROM clinico.historia_clinica_detalle h
+                   WHERE h.id = p_registro AND h.caso_medico_id = p_caso) $$;
+```
 
 ### Contrato de integración: `POST /v1/integraciones/conceptos-medicos`
 
@@ -158,23 +172,23 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] Con el token de `int-ips-110011234501`, `POST /v1/integraciones/conceptos-medicos` sobre un caso de `ARL_B` con remisión vigente responde `201`, y el registro queda con `tenant_id='ARL_B'` y `contenido_key_id` de `ARL_B`.
-- [ ] El mismo POST sobre un caso sin remisión para esa IPS responde `404` con `Clinico.CasoNoEncontrado`.
-- [ ] Después de revocar la remisión, un POST nuevo sobre ese caso responde `404`.
-- [ ] Repetir el POST con la misma `Idempotency-Key` y el mismo cuerpo responde `201` con el mismo `registroId`, y deja una sola fila en la HC.
-- [ ] La misma llave con otro cuerpo responde `409` con `Integracion.IdempotenciaConflicto`.
-- [ ] La llave `K` usada por `int-arl-ARL_A` en un FURAT y por `int-ips-110011234501` en un concepto no choca: ambas responden con éxito.
-- [ ] `POST /v1/casos/{id}/registros-clinicos` como `medico.ips` (con remisión) responde `201`, y el registro tiene `profesional_registro_rethus='RM-DEV-0002'` y `profesional_sub` igual al `sub` del token.
-- [ ] El mismo POST con un principal con `clinico:write` pero sin el claim `rethus` responde `403` con `Clinico.ProfesionalSinRegistro`.
-- [ ] El mismo POST como `analista.arla` (sin `clinico:write`) responde `403` y deja una fila de auditoría `DENEGADO`.
-- [ ] Como `calificador.arla`, el POST sobre un caso de `ARL_B` responde `404`.
-- [ ] `tipo=DICTAMEN_PCL` o `tipo=REPORTE_INICIAL` responde `400`.
-- [ ] `atendidoEn` dos días antes de la `fecha_evento` del caso responde `400` con `Clinico.FechaAtencionAnteriorAlEvento`.
-- [ ] Un caso `Rechazado` responde `409` con `Clinico.CasoNoAdmiteRegistros`.
-- [ ] Los diagnósticos `S62` y `S62.6` son válidos, y `ABC.1` y `S626` responden `400`.
-- [ ] Un POST con `corrigeA` crea un registro nuevo con `corrige_a` informado, deja el original intacto y audita `CORREGIR`.
-- [ ] Cada registro exitoso deja exactamente una fila de auditoría `CREAR` o `CORREGIR` sobre `REGISTRO_CLINICO`, con el `tenant_id` del caso.
-- [ ] `/openapi/v1.json` contiene las dos rutas nuevas, y sus schemas coinciden con los de `docs/api/atel-api.openapi.yaml`.
+- [x] Con el token de `int-ips-110011234501`, `POST /v1/integraciones/conceptos-medicos` sobre un caso de `ARL_B` con remisión vigente responde `201`, y el registro queda con `tenant_id='ARL_B'` y `contenido_key_id` de `ARL_B`.
+- [x] El mismo POST sobre un caso sin remisión para esa IPS responde `404` con `Clinico.CasoNoEncontrado`.
+- [x] Después de revocar la remisión, un POST nuevo sobre ese caso responde `404`.
+- [x] Repetir el POST con la misma `Idempotency-Key` y el mismo cuerpo responde `201` con el mismo `registroId`, y deja una sola fila en la HC.
+- [x] La misma llave con otro cuerpo responde `409` con `Integracion.IdempotenciaConflicto`.
+- [x] La llave `K` usada por `int-arl-ARL_A` en un FURAT y por `int-ips-110011234501` en un concepto no choca: ambas responden con éxito.
+- [x] `POST /v1/casos/{id}/registros-clinicos` como `medico.ips` (con remisión) responde `201`, y el registro tiene `profesional_registro_rethus='RM-DEV-0002'` y `profesional_sub` igual al `sub` del token.
+- [x] El mismo POST con un principal con `clinico:write` pero sin el claim `rethus` responde `403` con `Clinico.ProfesionalSinRegistro`.
+- [x] El mismo POST como `analista.arla` (sin `clinico:write`) responde `403` y deja una fila de auditoría `DENEGADO`.
+- [x] Como `calificador.arla`, el POST sobre un caso de `ARL_B` responde `404`.
+- [x] `tipo=DICTAMEN_PCL` o `tipo=REPORTE_INICIAL` responde `400`.
+- [x] `atendidoEn` dos días antes de la `fecha_evento` del caso responde `400` con `Clinico.FechaAtencionAnteriorAlEvento`.
+- [x] Un caso `Rechazado` responde `409` con `Clinico.CasoNoAdmiteRegistros`.
+- [x] Los diagnósticos `S62` y `S62.6` son válidos, y `ABC.1` y `S626` responden `400`.
+- [x] Un POST con `corrigeA` crea un registro nuevo con `corrige_a` informado, deja el original intacto y audita `CORREGIR`.
+- [x] Cada registro exitoso deja exactamente una fila de auditoría `CREAR` o `CORREGIR` sobre `REGISTRO_CLINICO`, con el `tenant_id` del caso.
+- [x] `/openapi/v1.json` contiene las dos rutas nuevas, y sus schemas coinciden con los de `docs/api/atel-api.openapi.yaml`.
 
 ---
 
@@ -187,6 +201,8 @@ Cada paso deja la solución compilando y con los tests en verde.
 - **Sí:** en la integración, el profesional viene en el payload. La IPS responde por su personal, y la service account queda en `profesional_sub` y en la auditoría.
 - **Sí:** para escribir basta con el tenant o la remisión vigente. **No:** exigir la asignación también para escribir. La asignación protege la lectura (SPEC 08).
 - **Sí:** se añade `AtendidoEn` a `HistoriaClinicaDetalle`, separado de `RegistradoEn` (se ajustó la SPEC 03). La HC registra cuándo se atendió, no solo cuándo se cargó.
+- **Sí:** `halsa_ingesta` lee `atel.remisiones`, acotada por su RLS a su propia IPS (se ajustó la SPEC 05). **No:** cambiar la política de `casos_medicos` para que pase por `atel.tenant_del_caso_remitido`, porque toca la SPEC 02 y a todos los roles que leen casos.
+- **Sí:** `corrigeA` se valida en la integración con `clinico.registro_del_caso_visible`, que responde sí o no. **No:** dar a `halsa_ingesta` `SELECT` sobre la HC.
 - **Sí:** respuesta síncrona `201`. No hay enriquecimiento posterior que justifique un `202`.
 - **No:** adjuntos PDF ahora. El almacenamiento de archivos se diseña una sola vez en la SPEC 07.
 - **No:** deduplicación por número de documento de la IPS. La idempotencia por llave cubre los reintentos, y la HC admite varios conceptos legítimos el mismo día.

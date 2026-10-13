@@ -19,13 +19,13 @@ internal sealed class GetRegistrosClinicosQueryHandler(
         GetRegistrosClinicosQuery query,
         CancellationToken cancellationToken)
     {
-        TenantId? tenant = await gate.TenantDelCasoVisibleAsync(query.CasoId, cancellationToken);
-        if (tenant is null)
+        CasoVisible? caso = await gate.CasoVisibleAsync(query.CasoId, cancellationToken);
+        if (caso is null)
         {
             return Result.Failure<IReadOnlyList<RegistroClinicoResponse>>(ClinicoErrors.CasoNoEncontrado);
         }
 
-        auditScope.TenantDelRecurso(tenant.Value);
+        auditScope.TenantDelRecurso(caso.TenantId);
 
         List<HistoriaClinicaDetalle> registros = await db.Registros
             .AsNoTracking()

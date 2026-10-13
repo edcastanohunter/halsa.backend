@@ -1,7 +1,6 @@
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Database;
-using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Halsa.Backend.Infrastructure.Clinico;
@@ -13,14 +12,10 @@ namespace Halsa.Backend.Infrastructure.Clinico;
 /// </summary>
 internal sealed class ClinicalCaseGate(ApplicationDbContext db) : IClinicalCaseGate
 {
-    public async Task<TenantId?> TenantDelCasoVisibleAsync(CasoMedicoId casoId, CancellationToken ct)
-    {
-        var caso = await db.CasosMedicos
+    public Task<CasoVisible?> CasoVisibleAsync(CasoMedicoId casoId, CancellationToken ct) =>
+        db.CasosMedicos
             .AsNoTracking()
             .Where(c => c.Id == casoId)
-            .Select(c => new { c.TenantId })
+            .Select(c => new CasoVisible(c.TenantId, c.FechaEvento, c.Estado))
             .FirstOrDefaultAsync(ct);
-
-        return caso?.TenantId;
-    }
 }

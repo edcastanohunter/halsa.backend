@@ -9,6 +9,12 @@ namespace Halsa.Backend.Application.Abstractions.Clinico;
 /// </summary>
 public interface IClinicalCaseGate
 {
-    /// <summary>Tenant del caso si existe y el actor actual lo ve (por tenant o por remisión vigente). Si no, null.</summary>
-    Task<TenantId?> TenantDelCasoVisibleAsync(CasoMedicoId casoId, CancellationToken ct);
+    /// <summary>
+    /// El caso si existe y el actor actual lo ve (por tenant o por remisión vigente). Si no, null.
+    /// Trae solo lo que el lado clínico necesita para decidir: el tenant, la fecha del evento y el estado.
+    /// </summary>
+    Task<CasoVisible?> CasoVisibleAsync(CasoMedicoId casoId, CancellationToken ct);
 }
+
+/// <summary>Lo que el lado clínico sabe de un caso visible (SPEC 06).</summary>
+public sealed record CasoVisible(TenantId TenantId, DateTimeOffset FechaEvento, EstadoCaso Estado);

@@ -130,6 +130,47 @@ public sealed class RealmCatalogTests
             $"Encontrados: {string.Join(", ", forbidden)}");
     }
 
+    [Theory]
+    [InlineData("rethus")]
+    [InlineData("tipo_documento")]
+    [InlineData("numero_documento")]
+    public void HalsaClaims_ShouldMapTheProfessionalAttribute_AsAFlatAccessTokenClaim(string atributo)
+    {
+        // SPEC 06: IProfesionalActual reads these claims; without the mapper every backoffice write answers 403.
+        JsonObject realm = LoadHalsaRealm();
+
+        JsonObject scope = realm["clientScopes"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(s => s["name"]!.GetValue<string>() == "halsa-claims");
+
+        JsonObject config = scope["protocolMappers"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Where(m => m["protocolMapper"]!.GetValue<string>() == "oidc-usermodel-attribute-mapper")
+            .Select(m => m["config"]!.AsObject())
+            .Single(c => c["user.attribute"]!.GetValue<string>() == atributo);
+
+        config["claim.name"]!.GetValue<string>().ShouldBe(atributo);
+        config["access.token.claim"]!.GetValue<string>().ShouldBe("true");
+        config["jsonType.label"]!.GetValue<string>().ShouldBe("String");
+    }
+
+    [Theory]
+    [InlineData("calificador.arla", "CC", "52000111", "RM-DEV-0001")]
+    [InlineData("medico.ips", "CC", "80000222", "RM-DEV-0002")]
+    public void SeedDoctors_ShouldCarryTheirProfessionalIdentity(
+        string username, string tipoDocumento, string numeroDocumento, string rethus)
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        JsonObject attributes = realm["users"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(u => u["username"]!.GetValue<string>() == username)["attributes"]!.AsObject();
+
+        attributes["tipo_documento"]!.AsArray().Single()!.GetValue<string>().ShouldBe(tipoDocumento);
+        attributes["numero_documento"]!.AsArray().Single()!.GetValue<string>().ShouldBe(numeroDocumento);
+        attributes["rethus"]!.AsArray().Single()!.GetValue<string>().ShouldBe(rethus);
+    }
+
     [Fact]
     public void ClinicoEmergencia_ShouldNotBelongToAnyCompositeRole()
     {

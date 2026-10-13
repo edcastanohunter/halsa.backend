@@ -6,7 +6,7 @@ namespace Halsa.Backend.Application.Clinico.Commands.Corregir;
 
 /// <summary>
 /// Corrige un registro clínico. La historia es append-only: el original no cambia, y se añade un
-/// registro nuevo que lo referencia con <c>CorrigeA</c>. Devuelve el id del registro nuevo.
+/// registro nuevo que lo referencia con <c>CorrigeA</c>. Devuelve el registro nuevo.
 /// </summary>
 public sealed record CorregirRegistroClinicoCommand(
     HistoriaClinicaDetalleId RegistroId,
@@ -14,4 +14,4 @@ public sealed record CorregirRegistroClinicoCommand(
     TipoRegistroClinico Tipo,
     DateTimeOffset AtendidoEn,
     ContenidoClinico Contenido,
-    DatosProfesional Profesional) : ICommand<Guid>, IRegistroClinicoInput;
+    DatosProfesional Profesional) : ICommand<RegistroClinicoCreadoResponse>, IRegistroClinicoInput;

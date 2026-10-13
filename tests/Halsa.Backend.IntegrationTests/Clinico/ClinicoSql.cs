@@ -38,17 +38,20 @@ internal static class ClinicoSql
     public static async Task<Guid> RegistrarAsync(
         DatabaseFixture db, FakeTenantContext actor, Guid casoId, ContenidoClinico contenido)
     {
-        Result<Guid> result = await SendAsync(db, actor, new RegistrarRegistroClinicoCommand(
+        Result<RegistroClinicoCreadoResponse> result = await SendAsync(db, actor, new RegistrarRegistroClinicoCommand(
             new CasoMedicoId(casoId), TipoRegistroClinico.ConceptoMedico,
             DateTimeOffset.UtcNow.AddHours(-1), contenido, Medico));
 
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.ToString() : null);
-        return result.Value;
+        return result.Value.RegistroId;
     }
 
     // ── atel seed (as halsa_owner) ────────────────────────────────────────────
 
-    public static async Task<Guid> InsertCasoAsync(DatabaseFixture db, string tenantId)
+    /// <param name="fechaEvento">Default: now. SPEC 06 checks the care date against it.</param>
+    /// <param name="estado">Default: <c>Radicado</c>. SPEC 06 rejects records on a closed or rejected case.</param>
+    public static async Task<Guid> InsertCasoAsync(
+        DatabaseFixture db, string tenantId, DateTimeOffset? fechaEvento = null, string estado = "Radicado")
     {
         await using NpgsqlConnection conn = await OpenAsync(db.OwnerConnectionString, tenantId: tenantId);
 
@@ -60,12 +63,14 @@ internal static class ClinicoSql
                trabajador_tipo, trabajador_numero, empleador_tipo, empleador_numero,
                municipio_divipola, estado, es_grave_o_mortal, radicado_en)
             VALUES
-              (@id, @tid, @rad, 'AccidenteTrabajo', now(), 'CC', '123456', 'NIT', '9001', '11001',
-               'Radicado', false, now())
+              (@id, @tid, @rad, 'AccidenteTrabajo', @fecha, 'CC', '123456', 'NIT', '9001', '11001',
+               @estado, false, now())
             """;
         cmd.Parameters.AddWithValue("id", id);
         cmd.Parameters.AddWithValue("tid", tenantId);
         cmd.Parameters.AddWithValue("rad", $"HC-{id:N}");
+        cmd.Parameters.AddWithValue("fecha", (fechaEvento ?? DateTimeOffset.UtcNow).ToUniversalTime());
+        cmd.Parameters.AddWithValue("estado", estado);
         await cmd.ExecuteNonQueryAsync();
 
         return id;

@@ -65,6 +65,8 @@ Se añade a `docker/postgres/init/01-roles.sql`, lo que exige `docker compose do
 | `integracion.*` | `SELECT, INSERT, UPDATE` |
 | `clinico.historia_clinica_detalle` | **Solo `INSERT`** (no lee la HC) |
 | `atel.tenant_del_caso_remitido` | `EXECUTE` (lo usa la SPEC 06 para la RLS de las IPS) |
+| `atel.remisiones` | `SELECT`, acotado por su RLS a la IPS de la sesión (SPEC 06: lo exige la política de lectura de `casos_medicos`) |
+| `clinico.registro_del_caso_visible` | `EXECUTE` (SPEC 06: valida `corrigeA` sin leer la HC) |
 | `clinico.llaves_tenant` | `SELECT, INSERT` (DEK envueltas) |
 | `outbox.outbox_messages`, `auditoria.accesos` | `INSERT` |
 

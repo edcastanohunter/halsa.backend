@@ -197,7 +197,15 @@ internal sealed class RadicarReporteCommandHandler(
             tenant);
 
         // 8. The business key (tenant, tipo, numeroReporteOrigen) already radicated under another key.
-        if (await db.GuardarAsync(ct) == ResultadoGuardado.ReporteYaRadicado)
+        ResultadoGuardado guardado = await db.GuardarAsync(ct);
+
+        // An ARL writes only its own tenant: an RLS rejection here is a bug, not an expected outcome.
+        if (guardado == ResultadoGuardado.FueraDeAlcance)
+        {
+            throw new InvalidOperationException("La RLS rechazó una fila de la radicación del propio tenant.");
+        }
+
+        if (guardado == ResultadoGuardado.ReporteYaRadicado)
         {
             await transaccion.RollbackAsync(ct);
 

@@ -15,7 +15,7 @@
   "clientScopes": [
     {
       "name": "halsa-claims",
-      "description": "Mappers de atributos de usuario: tenant_id, ips_id, actor_tipo",
+      "description": "Mappers de atributos de usuario: tenant_id, ips_id, actor_tipo y la identidad del profesional (rethus, tipo_documento, numero_documento)",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true"
@@ -60,6 +60,48 @@
             "id.token.claim": "false",
             "access.token.claim": "true",
             "claim.name": "actor_tipo",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "rethus mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "rethus",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "rethus",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "tipo_documento mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "tipo_documento",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "tipo_documento",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "numero_documento mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "numero_documento",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "numero_documento",
             "jsonType.label": "String"
           }
         }
@@ -411,7 +453,10 @@
       ],
       "attributes": {
         "actor_tipo": ["arl"],
-        "tenant_id": ["ARL_A"]
+        "tenant_id": ["ARL_A"],
+        "tipo_documento": ["CC"],
+        "numero_documento": ["52000111"],
+        "rethus": ["RM-DEV-0001"]
       },
       "clientRoles": {
         "halsa-api": ["medico-calificador"]
@@ -468,7 +513,10 @@
       ],
       "attributes": {
         "actor_tipo": ["ips"],
-        "ips_id": ["110011234501"]
+        "ips_id": ["110011234501"],
+        "tipo_documento": ["CC"],
+        "numero_documento": ["80000222"],
+        "rethus": ["RM-DEV-0002"]
       },
       "clientRoles": {
         "halsa-api": ["medico-ips"]

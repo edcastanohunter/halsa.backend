@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using Halsa.Backend.Api.Infrastructure;
+using Halsa.Backend.Application.Clinico;
 using Halsa.Backend.Application.Integraciones;
 using Halsa.Backend.Application.Integraciones.Canonico;
 using Halsa.Backend.Application.Integraciones.Commands.Radicar;
+using Halsa.Backend.Application.Integraciones.Conceptos;
 using Halsa.Backend.Application.Integraciones.Queries.ConsultarRadicacion;
 using Halsa.Backend.Infrastructure.Http;
 using Halsa.Backend.Mediation;
@@ -11,8 +13,9 @@ using Halsa.Backend.SharedKernel.Results;
 namespace Halsa.Backend.Api.Endpoints.Integraciones;
 
 /// <summary>
-/// Lo común a los endpoints de radicación y de consulta de estado del FURAT y del FUREP: leer el cuerpo crudo,
-/// la cabecera de idempotencia, y traducir el resultado a <c>202</c> o al problema del contrato.
+/// Lo común a los endpoints de integración: leer el cuerpo crudo, la cabecera de idempotencia, y traducir el
+/// resultado a la respuesta o al problema del contrato. La radicación del FURAT y del FUREP responde <c>202</c>;
+/// el concepto médico de una IPS (SPEC 06), <c>201</c>.
 /// </summary>
 internal static class IntegracionEndpoints
 {
@@ -46,6 +49,23 @@ internal static class IntegracionEndpoints
             : Problem(result);
     }
 
+    /// <summary>El cuerpo crudo, como en la radicación: su SHA-256 es la huella de la idempotencia.</summary>
+    public static async Task<IResult> RecibirConceptoAsync(HttpContext http, ISender sender, CancellationToken ct)
+    {
+        using var cuerpo = new MemoryStream();
+        await http.Request.Body.CopyToAsync(cuerpo, ct);
+
+        Result<RegistroClinicoCreadoResponse> result = await sender.Send(new RecibirConceptoMedicoCommand(
+            http.Request.Headers[IdempotencyKeyHeader].FirstOrDefault(),
+            cuerpo.ToArray()), ct);
+
+        return result.IsSuccess
+            ? Results.Created(
+                $"/v1/casos/{result.Value.CasoId}/registros-clinicos/{result.Value.RegistroId}",
+                result.Value)
+            : Problem(result);
+    }
+
     public static async Task<IResult> ConsultarAsync(
         TipoReporte tipo,
         Guid solicitudId,
@@ -61,7 +81,7 @@ internal static class IntegracionEndpoints
     /// Los errores de validación van como en el contrato: <c>errors</c> por ruta JSON
     /// (<c>{ "evento.fechaHora": ["..."] }</c>). <c>Integracion.ReporteYaRadicado</c> lleva el radicado existente.
     /// </summary>
-    private static IResult Problem(Result result) => result.Error switch
+    internal static IResult Problem(Result result) => result.Error switch
     {
         ValidationError validacion when validacion.Errors.All(e => e is ErrorDeCampo) =>
             CustomResults.Problem(result, new Dictionary<string, object?>

@@ -1,4 +1,5 @@
 using Halsa.Backend.Application.Abstractions.Authentication;
+using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Infrastructure.Auditoria;
 using Halsa.Backend.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Authentication;
@@ -116,6 +117,7 @@ internal static class AuthenticationInstaller
         services.AddHttpContextAccessor();
         services.AddScoped<IClaimsTransformation, KeycloakClaimsTransformation>();
         services.AddScoped<ICurrentUser, CurrentUser>();
+        services.AddScoped<IProfesionalActual, ProfesionalActual>();
 
         return services;
     }

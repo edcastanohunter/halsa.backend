@@ -1,3 +1,4 @@
+using Halsa.Backend.Application.Clinico;
 using Halsa.Backend.Application.Clinico.Commands.Corregir;
 using Halsa.Backend.Application.Clinico.Commands.Registrar;
 using Halsa.Backend.Application.Clinico.Queries.GetRegistrosClinicos;
@@ -67,7 +68,7 @@ public sealed class ClinicalFlowTests(DatabaseFixture db)
     {
         Guid casoB = await InsertCasoAsync(db, ArlB);
 
-        Result<Guid> result = await SendAsync(db, ActorArlA, new RegistrarRegistroClinicoCommand(
+        Result<RegistroClinicoCreadoResponse> result = await SendAsync(db, ActorArlA, new RegistrarRegistroClinicoCommand(
             new CasoMedicoId(casoB), TipoRegistroClinico.ConceptoMedico,
             DateTimeOffset.UtcNow.AddHours(-1), Contenido("Intruso"), Medico));
 
@@ -130,7 +131,7 @@ public sealed class ClinicalFlowTests(DatabaseFixture db)
         Guid caso = await InsertCasoAsync(db, ArlA);
         Guid original = await RegistrarAsync(db, ActorArlA, caso, Contenido("Con error"));
 
-        Result<Guid> correccion = await SendAsync(db, ActorArlA, new CorregirRegistroClinicoCommand(
+        Result<RegistroClinicoCreadoResponse> correccion = await SendAsync(db, ActorArlA, new CorregirRegistroClinicoCommand(
             new HistoriaClinicaDetalleId(original), new CasoMedicoId(caso), TipoRegistroClinico.ConceptoMedico,
             DateTimeOffset.UtcNow.AddHours(-1), Contenido("Corregido"), Medico));
 
@@ -141,8 +142,8 @@ public sealed class ClinicalFlowTests(DatabaseFixture db)
         registros.Count.ShouldBe(2);
         registros[0].Id.ShouldBe(original);
         registros[0].Contenido.Motivo.ShouldBe("Con error");
-        registros[0].CorregidoPor.ShouldBe(correccion.Value);
-        registros[1].Id.ShouldBe(correccion.Value);
+        registros[0].CorregidoPor.ShouldBe(correccion.Value.RegistroId);
+        registros[1].Id.ShouldBe(correccion.Value.RegistroId);
         registros[1].CorrigeA.ShouldBe(original);
         registros[1].Contenido.Motivo.ShouldBe("Corregido");
     }
@@ -154,7 +155,7 @@ public sealed class ClinicalFlowTests(DatabaseFixture db)
         Guid otroCaso = await InsertCasoAsync(db, ArlA);
         Guid registroDeOtroCaso = await RegistrarAsync(db, ActorArlA, otroCaso, Contenido("Otro caso"));
 
-        Result<Guid> result = await SendAsync(db, ActorArlA, new CorregirRegistroClinicoCommand(
+        Result<RegistroClinicoCreadoResponse> result = await SendAsync(db, ActorArlA, new CorregirRegistroClinicoCommand(
             new HistoriaClinicaDetalleId(registroDeOtroCaso), new CasoMedicoId(caso),
             TipoRegistroClinico.ConceptoMedico, DateTimeOffset.UtcNow.AddHours(-1), Contenido("x"), Medico));
 
@@ -168,7 +169,7 @@ public sealed class ClinicalFlowTests(DatabaseFixture db)
     {
         Guid caso = await InsertCasoAsync(db, ArlA);
 
-        Result<Guid> result = await SendAsync(db, ActorArlA, new RegistrarRegistroClinicoCommand(
+        Result<RegistroClinicoCreadoResponse> result = await SendAsync(db, ActorArlA, new RegistrarRegistroClinicoCommand(
             new CasoMedicoId(caso), TipoRegistroClinico.Evolucion, DateTimeOffset.UtcNow.AddHours(-1),
             Contenido("Sin RETHUS"), Medico with { RegistroRethus = " " }));
 
@@ -182,7 +183,7 @@ public sealed class ClinicalFlowTests(DatabaseFixture db)
     {
         Guid caso = await InsertCasoAsync(db, ArlA);
 
-        Result<Guid> result = await SendAsync(db, ActorArlA, new RegistrarRegistroClinicoCommand(
+        Result<RegistroClinicoCreadoResponse> result = await SendAsync(db, ActorArlA, new RegistrarRegistroClinicoCommand(
             new CasoMedicoId(caso), TipoRegistroClinico.ConceptoMedico, DateTimeOffset.UtcNow.AddHours(-1),
             new ContenidoClinico(" ", null, null, null, null, [], ""), Medico));
 
