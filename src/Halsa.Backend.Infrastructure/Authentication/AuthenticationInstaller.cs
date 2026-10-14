@@ -2,6 +2,7 @@ using Halsa.Backend.Application.Abstractions.Authentication;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Infrastructure.Auditoria;
 using Halsa.Backend.Infrastructure.Authorization;
+using Halsa.Backend.Infrastructure.Clinico;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -125,13 +126,26 @@ internal static class AuthenticationInstaller
     internal static IServiceCollection AddAuthorizationInternal(this IServiceCollection services)
     {
         services.AddAuthorization(options =>
+        {
             options.AddPolicy(Policies.IncapacidadEscritura, policy => policy.AddRequirements(
                 new PermissionRequirement(Permissions.IncapacidadesWrite),
-                new StepUpRequirement(Policies.AcrIncapacidadEscritura, MaxAntiguedadAuth: null))));
+                new StepUpRequirement(Policies.AcrIncapacidadEscritura, MaxAntiguedadAuth: null)));
+
+            // SPEC 08: the clinical policies are evaluated with the case as resource (IClinicalAuthorization).
+            foreach (string politica in Policies.Clinicas)
+            {
+                options.AddPolicy(politica, policy => policy
+                    .AddRequirements(Policies.RequisitosPrevios(politica))
+                    .AddRequirements(new AccesoClinicoRequirement()));
+            }
+        });
 
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddScoped<IAuthorizationHandler, StepUpHandler>();
+        services.AddScoped<IAuthorizationHandler, AccesoClinicoHandler>();
+        services.AddScoped<ICasoAccessReader, CasoAccessReader>();
+        services.AddScoped<IClinicalAuthorization, ClinicalAuthorization>();
 
         // Records policy denials on .Auditable routes (SPEC 04), then answers as the default handler would.
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuditingAuthorizationResultHandler>();

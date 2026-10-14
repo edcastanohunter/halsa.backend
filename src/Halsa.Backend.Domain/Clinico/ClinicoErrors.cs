@@ -40,4 +40,12 @@ public static class ClinicoErrors
     public static readonly Error ActorNoAutorizado =
         Error.Forbidden("Clinico.ActorNoAutorizado",
             "El tipo de actor no puede registrar conceptos médicos por este canal.");
+
+    public static readonly Error NoAsignado =
+        Error.Forbidden("Clinico.NoAsignado",
+            "El caso es visible, pero el profesional no está asignado a él.");
+
+    public static readonly Error AccesoNoPermitido =
+        Error.Forbidden("Clinico.AccesoNoPermitido",
+            "El tipo de actor nunca accede a la historia clínica.");
 }

@@ -2,6 +2,7 @@ using System.Reflection;
 using Halsa.Backend.Api.Endpoints;
 using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Infrastructure.Auditoria;
+using Halsa.Backend.Infrastructure.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Halsa.Backend.Api.Extensions;
@@ -44,6 +45,18 @@ public static class EndpointExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         return builder.RequireAuthorization(permission);
+    }
+
+    /// <summary>
+    /// The part of a clinical policy (SPEC 08) that does not depend on the case: the permission and the step-up, with
+    /// their <c>DENEGADO</c> row and their <c>401</c>. The handler must then call <c>IClinicalAuthorization</c> with the
+    /// same policy, which adds the ABAC over the case.
+    /// </summary>
+    public static RouteHandlerBuilder RequireClinicalPolicy(this RouteHandlerBuilder builder, string politica)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        return builder.RequireAuthorization(Policies.PreviaClinica(politica));
     }
 
     /// <summary>
