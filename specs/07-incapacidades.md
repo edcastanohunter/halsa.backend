@@ -1,6 +1,6 @@
 # SPEC 07 — Carga de incapacidades con soporte PDF y step-up
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03, SPEC 04, SPEC 05, SPEC 06
 > **Fecha:** 2026-10-09
 > **Objetivo:** Que una IPS o un médico con MFA reciente carguen un certificado de incapacidad temporal con su PDF a `POST /v1/casos/{casoId}/incapacidades`. El PDF se analiza con antivirus y se guarda cifrado; las reglas de prórroga se validan sin descifrar diagnósticos; y la ARL ve solo los datos administrativos y las alertas de días acumulados.
