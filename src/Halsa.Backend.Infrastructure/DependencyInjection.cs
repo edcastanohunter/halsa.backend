@@ -2,6 +2,7 @@ using Halsa.Backend.Application.Abstractions.Archivos;
 using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Caching;
 using Halsa.Backend.Application.Abstractions.Clinico;
+using Halsa.Backend.Application.Abstractions.Dictamenes;
 using Halsa.Backend.Application.Abstractions.Incapacidades;
 using Halsa.Backend.Application.Abstractions.Integraciones;
 using Halsa.Backend.Application.Auditoria;
@@ -176,6 +177,7 @@ public static class DependencyInjection
 
         // SPEC 07: the incapacidad upload writes through the same context and role ("mixed writing").
         services.AddScoped<IIncapacidadesDbContext>(sp => sp.GetRequiredService<IngestaDbContext>());
+        services.AddScoped<IDictamenesDbContext>(sp => sp.GetRequiredService<IngestaDbContext>());
         services
             .AddOptions<IncapacidadesOptions>()
             .Bind(configuration.GetSection(IncapacidadesOptions.SectionName));

@@ -7,7 +7,7 @@ namespace Halsa.Backend.Application.Clinico;
 /// Las reglas de formato del contenido de un concepto (SPEC 06), comunes a la integración y al backoffice. Solo el
 /// formato del CIE-10: validarlo contra el catálogo es otra spec.
 /// </summary>
-internal sealed partial class ContenidoClinicoRequestValidator : AbstractValidator<ContenidoClinicoRequest>
+internal sealed class ContenidoClinicoRequestValidator : AbstractValidator<ContenidoClinicoRequest>
 {
     public const int MaximoCaracteres = 8000;
 
@@ -22,27 +22,8 @@ internal sealed partial class ContenidoClinicoRequestValidator : AbstractValidat
         RuleFor(x => x.Plan).Texto();
         RuleFor(x => x.Observaciones).Texto();
 
-        RuleForEach(x => x.Diagnosticos).ChildRules(diagnostico =>
-        {
-            diagnostico.RuleFor(d => d.Sistema)
-                .NotEmpty().WithErrorCode("Clinico.DiagnosticoSistemaInvalido").WithMessage("Es obligatorio.")
-                .Equal(SistemaCie10).WithErrorCode("Clinico.DiagnosticoSistemaInvalido")
-                .WithMessage($"Debe ser '{SistemaCie10}'.");
-
-            diagnostico.RuleFor(d => d.Codigo)
-                .NotEmpty().WithErrorCode("Clinico.DiagnosticoCodigoInvalido").WithMessage("Es obligatorio.")
-                .Matches(Cie10()).WithErrorCode("Clinico.DiagnosticoCodigoInvalido")
-                .WithMessage("El código CIE-10 no tiene un formato válido (por ejemplo, S62 o S62.6).");
-
-            diagnostico.RuleFor(d => d.Descripcion)
-                .MaximumLength(250).WithErrorCode("Clinico.CampoDemasiadoLargo")
-                .WithMessage("Admite como máximo {MaxLength} caracteres.");
-        });
+        RuleForEach(x => x.Diagnosticos).SetValidator(new DiagnosticoRequestValidator());
     }
-
-    /// <summary>Una letra, dos dígitos y, opcionalmente, un punto y de 1 a 4 caracteres (<c>S62</c>, <c>S62.6</c>).</summary>
-    [GeneratedRegex(@"^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$", RegexOptions.CultureInvariant)]
-    private static partial Regex Cie10();
 
     private static bool TieneTexto(ContenidoClinicoRequest? contenido) =>
         contenido is null ||
@@ -59,6 +40,31 @@ internal sealed partial class ContenidoClinicoRequestValidator : AbstractValidat
             .Must(TieneTexto).WithErrorCode("Clinico.ContenidoVacio")
             .WithMessage("Al menos uno entre motivo, anamnesis, examenFisico, analisis y plan debe tener texto.")
             .SetValidator(new ContenidoClinicoRequestValidator()!);
+}
+
+/// <summary>Un diagnóstico CIE-10 (SPEC 06): lo comparten el contenido de un concepto y el dictamen PCL (SPEC 08).</summary>
+internal sealed partial class DiagnosticoRequestValidator : AbstractValidator<DiagnosticoRequest>
+{
+    public DiagnosticoRequestValidator()
+    {
+        RuleFor(d => d.Sistema)
+            .NotEmpty().WithErrorCode("Clinico.DiagnosticoSistemaInvalido").WithMessage("Es obligatorio.")
+            .Equal(ContenidoClinicoRequestValidator.SistemaCie10).WithErrorCode("Clinico.DiagnosticoSistemaInvalido")
+            .WithMessage($"Debe ser '{ContenidoClinicoRequestValidator.SistemaCie10}'.");
+
+        RuleFor(d => d.Codigo)
+            .NotEmpty().WithErrorCode("Clinico.DiagnosticoCodigoInvalido").WithMessage("Es obligatorio.")
+            .Matches(Cie10()).WithErrorCode("Clinico.DiagnosticoCodigoInvalido")
+            .WithMessage("El código CIE-10 no tiene un formato válido (por ejemplo, S62 o S62.6).");
+
+        RuleFor(d => d.Descripcion)
+            .MaximumLength(250).WithErrorCode("Clinico.CampoDemasiadoLargo")
+            .WithMessage("Admite como máximo {MaxLength} caracteres.");
+    }
+
+    /// <summary>Una letra, dos dígitos y, opcionalmente, un punto y de 1 a 4 caracteres (<c>S62</c>, <c>S62.6</c>).</summary>
+    [GeneratedRegex(@"^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$", RegexOptions.CultureInvariant)]
+    private static partial Regex Cie10();
 }
 
 internal static class ReglasContenido

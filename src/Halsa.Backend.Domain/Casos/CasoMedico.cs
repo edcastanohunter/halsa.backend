@@ -153,6 +153,26 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
     }
 
     /// <summary>
+    /// El dictamen PCL quedó registrado (SPEC 08): el caso guarda su resultado administrativo (lo que la ARL necesita
+    /// para liquidar) y pasa a <see cref="EstadoCaso.EnCalificacionPcl"/>. Una corrección del dictamen lo reemplaza.
+    /// Un caso rechazado o cerrado no se califica.
+    /// </summary>
+    public Result Calificar(ResultadoCalificacion calificacion)
+    {
+        ArgumentNullException.ThrowIfNull(calificacion);
+
+        if (Estado is EstadoCaso.Rechazado or EstadoCaso.Cerrado)
+        {
+            return Result.Failure(CasoMedicoErrors.TransicionInvalida);
+        }
+
+        Calificacion = calificacion;
+        Estado = EstadoCaso.EnCalificacionPcl;
+
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Crea una nueva remisión a la IPS indicada.
     /// Rechaza si ya existe una remisión vigente a la misma IPS.
     /// </summary>

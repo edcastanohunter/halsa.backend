@@ -1,4 +1,5 @@
 using Halsa.Backend.Application.Abstractions.Clinico;
+using Halsa.Backend.Application.Abstractions.Dictamenes;
 using Halsa.Backend.Application.Abstractions.Incapacidades;
 using Halsa.Backend.Application.Abstractions.Integraciones;
 using Halsa.Backend.Application.Abstractions.Tenancy;
@@ -6,6 +7,7 @@ using Halsa.Backend.Application.Integraciones.Canonico;
 using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Clinico;
+using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Clinico;
@@ -31,7 +33,7 @@ namespace Halsa.Backend.Infrastructure.Database.Integraciones;
 public sealed class IngestaDbContext(
     DbContextOptions<IngestaDbContext> options,
     ITenantContext tenantContext)
-    : DbContext(options), IIngestaDbContext, IIncapacidadesDbContext
+    : DbContext(options), IIngestaDbContext, IIncapacidadesDbContext, IDictamenesDbContext
 {
     internal DbSet<CasoMedico> CasosMedicos => Set<CasoMedico>();
 
@@ -48,6 +50,8 @@ public sealed class IngestaDbContext(
     internal DbSet<Soporte> Soportes => Set<Soporte>();
 
     internal DbSet<Incapacidad> Incapacidades => Set<Incapacidad>();
+
+    internal DbSet<DictamenPcl> DictamenesPcl => Set<DictamenPcl>();
 
     internal DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
@@ -189,6 +193,39 @@ public sealed class IngestaDbContext(
         }
     }
 
+    // ── IDictamenesDbContext (SPEC 08) ────────────────────────────────────────
+
+    Task<IDbContextTransaction> IDictamenesDbContext.BeginTransactionAsync(CancellationToken ct) =>
+        Database.BeginTransactionAsync(ct);
+
+    /// <summary>The same advisory lock as the incapacidades, with its own key.</summary>
+    async Task IDictamenesDbContext.BloquearCasoAsync(CasoMedicoId casoId, CancellationToken ct)
+    {
+        if (Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("El caso se bloquea dentro de la transacción del dictamen.");
+        }
+
+        string clave = $"dictamen-pcl:{casoId.Value}";
+        await Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({clave}, 0))", ct);
+    }
+
+    /// <summary>
+    /// Tracked, so saving it updates only what <c>Calificar</c> changed: <c>estado</c> and <c>calificacion_*</c>, the only
+    /// columns <c>halsa_ingesta</c> may update. Without <c>Version</c>, the UPDATE needs no <c>RETURNING</c>.
+    /// </summary>
+    Task<CasoMedico?> IDictamenesDbContext.CasoAsync(CasoMedicoId casoId, CancellationToken ct) =>
+        CasosMedicos.FirstOrDefaultAsync(c => c.Id == casoId, ct);
+
+    Task<DictamenPcl?> IDictamenesDbContext.VigenteAsync(CasoMedicoId casoId, CancellationToken ct) =>
+        DictamenesPcl.FirstOrDefaultAsync(d => d.CasoMedicoId == casoId && d.CorregidoPor == null, ct);
+
+    void IDictamenesDbContext.Add(DictamenPcl dictamen) => DictamenesPcl.Add(dictamen);
+
+    void IDictamenesDbContext.Add(HistoriaClinicaDetalle registro) => HistoriaClinica.Add(registro);
+
+    Task IDictamenesDbContext.GuardarAsync(CancellationToken ct) => SaveChangesAsync(ct);
+
     private static bool EsRls(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.InsufficientPrivilege, MessageText: var mensaje } &&
         mensaje.Contains("row-level security", StringComparison.Ordinal);
@@ -220,6 +257,8 @@ public sealed class IngestaDbContext(
         // SPEC 07: the incapacidad, its clinical record and its support, in the same transaction.
         modelBuilder.ApplyConfiguration(new SoporteConfiguration());
         modelBuilder.ApplyConfiguration(new IncapacidadConfiguration());
+        // SPEC 08: the dictamen, its clinical record and the case's calificación, in the same transaction.
+        modelBuilder.ApplyConfiguration(new DictamenPclConfiguration());
         modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
         modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration(excluirDeMigraciones: true));
 

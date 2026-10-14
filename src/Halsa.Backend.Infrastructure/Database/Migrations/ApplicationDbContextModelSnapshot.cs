@@ -372,6 +372,95 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                     b.ToTable("remisiones", "atel");
                 });
 
+            modelBuilder.Entity("Halsa.Backend.Domain.Dictamenes.DictamenPcl", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CalificadorNombre")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("calificador_nombre");
+
+                    b.Property<string>("CalificadorRegistroRethus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("calificador_registro_rethus");
+
+                    b.Property<string>("CalificadorSub")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("calificador_sub");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<Guid?>("CorregidoPor")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corregido_por");
+
+                    b.Property<Guid?>("CorrigeA")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corrige_a");
+
+                    b.Property<string>("EstadoNotificacion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("estado_notificacion");
+
+                    b.Property<DateOnly>("FechaDictamen")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_dictamen");
+
+                    b.Property<DateOnly>("FechaEstructuracion")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_estructuracion");
+
+                    b.Property<string>("MedioNotificacion")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("medio_notificacion");
+
+                    b.Property<DateTimeOffset?>("NotificadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("notificado_en");
+
+                    b.Property<string>("Origen")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("origen");
+
+                    b.Property<decimal>("PorcentajePcl")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("porcentaje_pcl");
+
+                    b.Property<Guid>("RegistroClinicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("registro_clinico_id");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_dictamenes_pcl");
+
+                    b.HasIndex("CasoMedicoId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_dictamenes_pcl_caso_vigente")
+                        .HasFilter("corregido_por IS NULL");
+
+                    b.ToTable("dictamenes_pcl", "atel");
+                });
+
             modelBuilder.Entity("Halsa.Backend.Domain.Incapacidades.Incapacidad", b =>
                 {
                     b.Property<Guid>("Id")
@@ -885,6 +974,16 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_remisiones_casos_medicos");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Dictamenes.DictamenPcl", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Casos.CasoMedico", null)
+                        .WithMany()
+                        .HasForeignKey("CasoMedicoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_dictamenes_pcl_casos_medicos");
                 });
 
             modelBuilder.Entity("Halsa.Backend.Domain.Incapacidades.Incapacidad", b =>

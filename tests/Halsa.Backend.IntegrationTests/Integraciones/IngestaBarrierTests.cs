@@ -23,7 +23,7 @@ public sealed class IngestaBarrierTests(DatabaseFixture db)
     }
 
     [Theory]
-    [InlineData("UPDATE atel.casos_medicos SET estado = estado")]
+    [InlineData("UPDATE atel.casos_medicos SET radicado = radicado")]
     [InlineData("DELETE FROM atel.casos_medicos")]
     [InlineData("DELETE FROM atel.reportes_evento")]
     [InlineData("UPDATE outbox.outbox_messages SET attempts = 0")]
