@@ -13,4 +13,7 @@ internal sealed class DictamenPclRepository(ApplicationDbContext db) : IDictamen
 {
     public Task<DictamenPcl?> VigenteAsync(CasoMedicoId casoId, CancellationToken ct) =>
         db.DictamenesPcl.FirstOrDefaultAsync(d => d.CasoMedicoId == casoId && d.CorregidoPor == null, ct);
+
+    public Task<DictamenPcl?> GetAsync(CasoMedicoId casoId, DictamenPclId id, CancellationToken ct) =>
+        db.DictamenesPcl.FirstOrDefaultAsync(d => d.Id == id && d.CasoMedicoId == casoId, ct);
 }

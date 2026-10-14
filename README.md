@@ -27,8 +27,9 @@ The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain 
 ## Getting started
 
 ```bash
-# -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico, halsa_ingesta)
-# only runs on an empty volume. Without those roles the API fails to authenticate at startup.
+# -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico, halsa_ingesta,
+# halsa_worker) only runs on an empty volume. Without those roles the API fails to authenticate at startup,
+# and the SPEC 09 migrations fail on an older volume without halsa_worker.
 docker compose down -v && docker compose up -d   # PostgreSQL, Keycloak, Seq (+ Redis if enabled)
 
 # The clinical KEK (SPEC 03): 32 random bytes, in user-secrets and never in appsettings.
@@ -37,6 +38,13 @@ dotnet user-secrets --project src/Halsa.Backend.Api set "Clinico:KekBase64" "$(o
 
 dotnet run --project src/Halsa.Backend.Api    # http://localhost:5600/scalar/v1
 ```
+
+The same image is the API and the Worker (SPEC 09): `Halsa:Rol` is `Api`, `Worker` or `Ambos`. In `Development` it
+defaults to `Ambos`; anywhere else it is required. To run them apart, use the launch profiles
+`dotnet run --project src/Halsa.Backend.Api --launch-profile api` and `--launch-profile worker` (port 5601, only
+`/health`). The Worker drains the outbox and runs Quartz (clustered, JobStore in the `quartz` schema): the legal
+deadline sweep every minute, the Colombian holidays, the audit partitions, the idempotency purge and the orphan
+files. Its cross-tenant sweeps connect as `halsa_worker` (connection string `Worker`), which never reads `atel`.
 
 On startup the API applies migrations as `halsa_owner` (connection string `Migrations`) and, in
 `Development`, loads `Extensions/Seed/casos-dev.sql`: 3 cases for `ARL_A` and 2 for `ARL_B`. At

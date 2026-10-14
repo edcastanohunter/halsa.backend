@@ -127,6 +127,22 @@ public sealed class DictamenPcl
     }
 
     /// <summary>
+    /// Venció <c>CONTROVERSIA_DICTAMEN</c> (SPEC 09) sin una controversia registrada: el dictamen queda en firme. Solo
+    /// desde <see cref="EstadoNotificacionDictamen.Notificado"/>; devuelve <c>false</c> si no cambió (ya en firme, o en
+    /// otro estado), así que un evento repetido no hace nada.
+    /// </summary>
+    public bool PonerEnFirme()
+    {
+        if (EstadoNotificacion != EstadoNotificacionDictamen.Notificado)
+        {
+            return false;
+        }
+
+        EstadoNotificacion = EstadoNotificacionDictamen.EnFirme;
+        return true;
+    }
+
+    /// <summary>
     /// Deja de ser el vigente: lo reemplaza <paramref name="nuevo"/>. Solo si aún no se notificó; un dictamen
     /// notificado se recalifica con otro procedimiento (fuera de la SPEC 08).
     /// </summary>

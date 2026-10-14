@@ -45,7 +45,8 @@ public static class DatabaseMigrator
 
     /// <summary>
     /// Runs <c>auditoria.asegurar_particiones</c> as <c>halsa_owner</c>: the current month and the next
-    /// <see cref="MesesDeParticionesAdelante"/>. Idempotent. Until the SPEC 09 job exists, only migrating calls it.
+    /// <see cref="MesesDeParticionesAdelante"/>. Idempotent. Migrating calls it, and the Worker's daily
+    /// <c>ParticionesAuditoriaJob</c> (SPEC 09) as <c>halsa_worker</c>.
     /// </summary>
     public static async Task AsegurarParticionesAsync(string ownerConnectionString, CancellationToken cancellationToken = default)
     {

@@ -2,6 +2,7 @@ using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
+using Halsa.Backend.Domain.Terminos;
 
 namespace Halsa.Backend.Application.Abstractions.Data;
 
@@ -32,4 +33,10 @@ public interface IReadDbContext
     /// <c>DICTAMEN_PCL</c> cifrado en <c>clinico</c>.
     /// </summary>
     IQueryable<DictamenPcl> DictamenesPcl { get; }
+
+    /// <summary>Los plazos legales del tenant actual (SPEC 09). Una IPS no ve ninguno.</summary>
+    IQueryable<Plazo> Plazos { get; }
+
+    /// <summary>Las reglas de término (SPEC 09), globales: todas sus versiones.</summary>
+    IQueryable<ReglaTermino> ReglasTermino { get; }
 }

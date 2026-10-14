@@ -27,6 +27,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     private string _appConnectionString = null!;
     private string _clinicalConnectionString = null!;
     private string _ingestaConnectionString = null!;
+    private string _workerConnectionString = null!;
 
     // A random KEK per run (SPEC 03): never written anywhere.
     private readonly string _kekBase64 = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
@@ -55,6 +56,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         builder.UseEnvironment("Testing");
 
+        // SPEC 09: outside Development the role is required. The hosted services are removed below anyway.
+        builder.UseSetting("Halsa:Rol",                    "Ambos");
+
         // The API connects as halsa_app at runtime.
         builder.UseSetting("ConnectionStrings:Database",   _appConnectionString);
         // MigrationExtensions uses this string if present; in tests we apply migrations ourselves.
@@ -63,6 +67,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("ConnectionStrings:Clinical",   _clinicalConnectionString);
         // The FURAT/FUREP ingestion connects as halsa_ingesta (SPEC 05).
         builder.UseSetting("ConnectionStrings:Ingesta",    _ingestaConnectionString);
+        // The Worker's cross-tenant sweeps connect as halsa_worker (SPEC 09).
+        builder.UseSetting("ConnectionStrings:Worker",     _workerConnectionString);
         builder.UseSetting("Clinico:KekBase64",            _kekBase64);
         builder.UseSetting("Archivos:Raiz",                ArchivosRaiz);
         // Nothing listens there, so /health reports the antivirus as Degraded whatever runs on the host.
@@ -116,6 +122,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                                     "Username=halsa_clinico;Password=halsa_clinico_dev;Include Error Detail=true";
         _ingestaConnectionString = $"Host={host};Port={port};Database={database};" +
                                    "Username=halsa_ingesta;Password=halsa_ingesta_dev;Include Error Detail=true";
+        _workerConnectionString = $"Host={host};Port={port};Database={database};" +
+                                  "Username=halsa_worker;Password=halsa_worker_dev;Include Error Detail=true";
 
         // ── Step 3: apply the migrations of both contexts, then the audit partitions ──
         // ConfigureWebHost hasn't run yet (it runs on first Services access), so we
@@ -177,6 +185,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_ingesta') THEN
                 CREATE ROLE halsa_ingesta LOGIN PASSWORD 'halsa_ingesta_dev';
+            END IF;
+        END$$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_worker') THEN
+                CREATE ROLE halsa_worker LOGIN PASSWORD 'halsa_worker_dev';
             END IF;
         END$$;
 

@@ -6,6 +6,7 @@ using Halsa.Backend.Application.Dictamenes;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Clinico;
 using Halsa.Backend.Domain.Dictamenes;
+using Halsa.Backend.Domain.Terminos;
 using Halsa.Backend.SharedKernel.Results;
 using Microsoft.EntityFrameworkCore;
 
@@ -65,7 +66,17 @@ internal sealed class GetDictamenPclQueryHandler(
             registro.TenantId, registro.Id.Value, RegistroClinicoEscritura.CampoContenido, registro.Contenido,
             cancellationToken);
 
+        // SPEC 09: the plazo opened by its notification. Only the tenant sees plazos, so for an IPS it stays null.
+        Guid dictamenId = dictamen.Id.Value;
+        var controversia = await readDb.Plazos
+            .Where(p => p.CasoMedicoId == query.CasoId
+                        && p.ReglaCodigo == CodigosRegla.ControversiaDictamen
+                        && p.ReferenciaId == dictamenId)
+            .Select(p => new { p.VenceEn })
+            .FirstOrDefaultAsync(cancellationToken);
+
         return DictamenPclClinico.Respuesta(
-            dictamen, registro.Profesional, RegistroClinicoEscritura.Deserializar<ContenidoClinico>(claro));
+            dictamen, registro.Profesional, RegistroClinicoEscritura.Deserializar<ContenidoClinico>(claro),
+            controversia is null ? null : CalculadoraTerminos.FechaLocal(controversia.VenceEn));
     }
 }

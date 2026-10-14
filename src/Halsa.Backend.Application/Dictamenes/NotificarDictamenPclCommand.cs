@@ -40,6 +40,9 @@ public interface IDictamenPclRepository
 {
     /// <summary>El dictamen vigente del caso, si el actor lo ve; si no, null.</summary>
     Task<DictamenPcl?> VigenteAsync(CasoMedicoId casoId, CancellationToken ct);
+
+    /// <summary>Un dictamen del caso por su id, si el actor lo ve; si no, null.</summary>
+    Task<DictamenPcl?> GetAsync(CasoMedicoId casoId, DictamenPclId id, CancellationToken ct);
 }
 
 internal sealed class NotificarDictamenPclCommandValidator : AbstractValidator<NotificarDictamenPclCommand>

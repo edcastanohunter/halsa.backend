@@ -28,6 +28,9 @@ public static class Permissions
     // ── Plazos ───────────────────────────────────────────────────────────────
     public const string PlazosRead = "plazos:read";
 
+    /// <summary>Cumplir un plazo a mano, con una nota (SPEC 09). Lo tiene <c>analista-arl</c>.</summary>
+    public const string PlazosWrite = "plazos:write";
+
     // ── Clínico ──────────────────────────────────────────────────────────────
     public const string ClinicoRead = "clinico:read";
     public const string ClinicoWrite = "clinico:write";

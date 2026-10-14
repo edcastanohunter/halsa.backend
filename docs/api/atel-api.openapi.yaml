@@ -32,6 +32,11 @@ tags:
       emergencia; un caso no visible responde `404` y uno visible sin asignación `403` (`Clinico.NoAsignado`).
   - name: Auditoria
     description: Revisión de los accesos de emergencia por el oficial de privacidad (SPEC 08).
+  - name: Plazos
+    description: |
+      Plazos legales de cada caso (SPEC 09), calculados sobre el calendario laboral colombiano. Los abre un evento, los
+      alerta y los vence el Worker, y los cumple otro evento o una persona de la ARL. Las reglas son las de
+      `sst.reglas_termino`, pendientes de validación jurídica.
 
 security:
   - personal: []
@@ -84,6 +89,9 @@ paths:
       tags: [Integraciones]
       operationId: consultarEstadoFurat
       summary: Estado del procesamiento asíncrono de un FURAT.
+      description: |
+        `plazos` son los plazos `ABIERTO` del caso (SPEC 09). Se abren de forma asíncrona, así que la respuesta `202`
+        de la radicación los trae vacíos y esta consulta los muestra cuando el Worker procesó el evento.
       security:
         - integracion: [integracion:furat:write]
       parameters:
@@ -636,6 +644,110 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problema' }
 
+  /casos/{casoId}/plazos:
+    get:
+      tags: [Plazos]
+      operationId: listarPlazosCaso
+      summary: Plazos legales de un caso.
+      description: |
+        Todos los plazos del caso, de cualquier estado, ordenados por vencimiento. Solo el personal de la ARL del caso
+        (una IPS no ve plazos). La consulta queda auditada (`LEER / PLAZO`).
+      security:
+        - personal: [plazos:read]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+      responses:
+        '200':
+          description: Los plazos del caso.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PlazoResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /plazos:
+    get:
+      tags: [Plazos]
+      operationId: listarPlazos
+      summary: Plazos legales del tenant.
+      description: |
+        Paginados y ordenados por vencimiento, solo del tenant del token y solo para un actor ARL. La consulta queda
+        auditada (`LEER / PLAZO`).
+      security:
+        - personal: [plazos:read]
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          schema: { type: string, enum: [ABIERTO, CUMPLIDO, VENCIDO, SUSPENDIDO] }
+        - name: venceAntesDe
+          in: query
+          required: false
+          description: Solo los que vencen antes de este instante (exclusivo).
+          schema: { type: string, format: date-time }
+        - name: regla
+          in: query
+          required: false
+          schema: { type: string, example: INVESTIGACION_AT }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Una página de plazos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaPlazos' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /casos/{casoId}/plazos/{plazoId}/cumplir:
+    post:
+      tags: [Plazos]
+      operationId: cumplirPlazo
+      summary: Marca un plazo como cumplido, con una nota.
+      description: |
+        Solo desde `ABIERTO` o `VENCIDO`. Uno vencido, o cumplido después de `venceEn`, queda `extemporaneo`. Sin
+        `cumplidoEn`, se toma el instante de la solicitud; no puede ser futuro (`Plazo.CumplidoEnFuturo`). El
+        cumplimiento queda auditado (`ACTUALIZAR / PLAZO`).
+      security:
+        - personal: [plazos:write]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+        - name: plazoId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CumplirPlazoRequest' }
+      responses:
+        '204': { description: Plazo cumplido. }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: El plazo no existe, no es del caso o no es del tenant (`Plazo.NoEncontrado`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '409':
+          description: El plazo ya no está `ABIERTO` ni `VENCIDO` (`Plazo.NoCumplible`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
 webhooks:
   plazoProximoAVencer:
     post:
@@ -928,7 +1040,9 @@ components:
         recibidoEn: { type: string, format: date-time }
         plazos:
           type: array
-          description: Plazos legales que abrió la radicación.
+          description: |
+            Los plazos `ABIERTO` del caso (SPEC 09). Vacío en el `202`: se abren de forma asíncrona y los muestra la
+            consulta de estado.
           items: { $ref: '#/components/schemas/PlazoResumen' }
         motivoRechazo: { $ref: '#/components/schemas/Problema' }
 
@@ -1219,7 +1333,9 @@ components:
         venceControversiaEn:
           type: [string, 'null']
           format: date
-          description: Nulo hasta que lo calcule la SPEC 09.
+          description: |
+            El día (en Colombia) en que vence `CONTROVERSIA_DICTAMEN`. Nulo hasta la notificación, y para un actor que no
+            ve los plazos del tenant (una IPS). Al vencer sin controversia, el dictamen pasa a `EN_FIRME`.
         corrigeA:
           type: [string, 'null']
           format: uuid
@@ -1267,6 +1383,59 @@ components:
       properties:
         conclusion: { type: string, enum: [JUSTIFICADO, INJUSTIFICADO] }
         observaciones: { type: [string, 'null'], maxLength: 2000 }
+
+    # ---------- Plazos ----------
+    PlazoResponse:
+      type: object
+      required: [id, casoId, radicado, regla, baseLegal, iniciaEn, venceEn, alertaEn, estado, extemporaneo]
+      properties:
+        id: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        regla:
+          type: string
+          example: INVESTIGACION_AT
+          description: Código de `sst.reglas_termino`.
+        baseLegal: { type: string, example: 'Res. 1401/2007; Decreto 1072/2015, art. 2.2.4.6.32' }
+        referenciaId:
+          type: [string, 'null']
+          format: uuid
+          description: La cadena de incapacidades (`TOPE_IT_180`) o el dictamen (`CONTROVERSIA_DICTAMEN`) del que cuelga.
+        iniciaEn: { type: string, format: date-time }
+        venceEn:
+          type: string
+          format: date-time
+          description: Los términos en días vencen a las 23:59:59 (hora de Colombia) del último día.
+        alertaEn: { type: string, format: date-time }
+        estado: { type: string, enum: [ABIERTO, CUMPLIDO, VENCIDO, SUSPENDIDO] }
+        extemporaneo:
+          type: boolean
+          description: Se cumplió, o la radicación llegó, después de `venceEn`.
+        cumplidoEn: { type: [string, 'null'], format: date-time }
+
+    PaginaPlazos:
+      type: object
+      required: [items, page, pageSize, totalCount]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PlazoResponse' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalCount: { type: integer }
+        totalPages: { type: integer }
+        hasNextPage: { type: boolean }
+        hasPreviousPage: { type: boolean }
+
+    CumplirPlazoRequest:
+      type: object
+      required: [nota]
+      properties:
+        nota: { type: string, minLength: 10, maxLength: 1000 }
+        cumplidoEn:
+          type: [string, 'null']
+          format: date-time
+          description: Sin valor, el instante de la solicitud.
 
     # ---------- Eventos ----------
     PlazoResumen:

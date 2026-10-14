@@ -17,7 +17,8 @@ public enum OrigenPcl
 }
 
 /// <summary>
-/// Dónde está la notificación del dictamen. <see cref="EnControversia"/> y <see cref="EnFirme"/> llegan con la SPEC 09.
+/// Dónde está la notificación del dictamen. <see cref="EnFirme"/> llega con la SPEC 09, al vencer la controversia;
+/// <see cref="EnControversia"/>, con el registro de una controversia (fuera de ARQ 01).
 /// Se guarda como <c>PENDIENTE</c>, <c>NOTIFICADO</c>, <c>EN_CONTROVERSIA</c> o <c>EN_FIRME</c>.
 /// </summary>
 public enum EstadoNotificacionDictamen

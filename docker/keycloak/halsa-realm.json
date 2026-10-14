@@ -503,6 +503,7 @@
         { "name": "incapacidades:read",        "description": "Leer incapacidades",                        "composite": false, "clientRole": true },
         { "name": "incapacidades:write",       "description": "Registrar y modificar incapacidades",       "composite": false, "clientRole": true },
         { "name": "plazos:read",               "description": "Consultar plazos legales",                  "composite": false, "clientRole": true },
+        { "name": "plazos:write",              "description": "Cumplir plazos legales a mano",             "composite": false, "clientRole": true },
         { "name": "clinico:read",              "description": "Leer expediente clínico",                   "composite": false, "clientRole": true },
         { "name": "clinico:write",             "description": "Ingresar datos clínicos",                   "composite": false, "clientRole": true },
         { "name": "clinico:emergencia",        "description": "Acceso de emergencia al expediente (break-the-glass)", "composite": false, "clientRole": true },
@@ -523,7 +524,7 @@
           "clientRole": true,
           "composites": {
             "client": {
-              "halsa-api": ["casos:read", "casos:write", "casos:asignar", "incapacidades:read", "plazos:read"]
+              "halsa-api": ["casos:read", "casos:write", "casos:asignar", "incapacidades:read", "plazos:read", "plazos:write"]
             }
           }
         },

@@ -73,7 +73,12 @@ public static class DictamenPclClinico
         return contenido.Observaciones is null ? null : JsonSerializer.Deserialize<ComponentesPcl>(contenido.Observaciones, Json);
     }
 
-    public static DictamenPclResponse Respuesta(DictamenPcl dictamen, ProfesionalRef firma, ContenidoClinico contenido)
+    /// <param name="venceControversiaEn">La fecha (en Colombia) en que vence su <c>CONTROVERSIA_DICTAMEN</c>, si ya se abrió.</param>
+    public static DictamenPclResponse Respuesta(
+        DictamenPcl dictamen,
+        ProfesionalRef firma,
+        ContenidoClinico contenido,
+        DateOnly? venceControversiaEn = null)
     {
         ArgumentNullException.ThrowIfNull(dictamen);
         ArgumentNullException.ThrowIfNull(firma);
@@ -95,8 +100,7 @@ public static class DictamenPclClinico
                 dictamen.CalificadorNombre,
                 dictamen.CalificadorRegistroRethus),
             CodigosDictamen.Codigo(dictamen.EstadoNotificacion),
-            // SPEC 09 computes the controversy deadline.
-            VenceControversiaEn: null,
+            venceControversiaEn,
             dictamen.CorrigeA?.Value);
     }
 }

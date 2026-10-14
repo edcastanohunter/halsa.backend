@@ -8,4 +8,5 @@ internal static class Tags
     internal const string Integraciones = "Integraciones";
     internal const string Clinico = "Clinico";
     internal const string Incapacidades = "Incapacidades";
+    internal const string Plazos = "Plazos";
 }

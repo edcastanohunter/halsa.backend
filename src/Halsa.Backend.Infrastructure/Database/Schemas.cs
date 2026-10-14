@@ -35,4 +35,13 @@ public static class Schemas
     /// Lo escribe <c>halsa_ingesta</c>; <c>halsa_app</c> solo lee <c>solicitudes</c>.
     /// </summary>
     public const string Integracion = "integracion";
+
+    /// <summary>
+    /// Motor de términos de ley (SPEC 09): reglas y festivos (globales) y los plazos de cada caso (RLS por tenant).
+    /// <c>halsa_app</c> los abre y cumple; <c>halsa_worker</c> los barre entre tenants.
+    /// </summary>
+    public const string Sst = "sst";
+
+    /// <summary>El JobStore de Quartz (SPEC 09). Solo lo usa <c>halsa_worker</c>.</summary>
+    public const string Quartz = "quartz";
 }

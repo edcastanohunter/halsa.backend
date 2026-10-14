@@ -11,6 +11,7 @@ using Halsa.Backend.Application.Auditoria;
 using Halsa.Backend.Application.Casos;
 using Halsa.Backend.Application.Incapacidades;
 using Halsa.Backend.Application.Integraciones;
+using Halsa.Backend.Application.Plazos;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Abstractions.Tenancy;
@@ -29,8 +30,11 @@ using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Events;
 using Halsa.Backend.Infrastructure.Integraciones;
 using Halsa.Backend.Infrastructure.Outbox;
+using Halsa.Backend.Infrastructure.Proceso;
 using Halsa.Backend.Infrastructure.Tenancy;
+using Halsa.Backend.Infrastructure.Terminos;
 using Halsa.Backend.Infrastructure.Time;
+using Halsa.Backend.Infrastructure.Worker;
 using Halsa.Backend.Mediation.DependencyInjection;
 using Halsa.Backend.SharedKernel.Abstractions;
 using Halsa.Backend.SharedKernel.EventSourcing;
@@ -51,9 +55,16 @@ public static class DependencyInjection
 
     public const string IngestaConnectionStringName = "Ingesta";
 
+    public const string WorkerConnectionStringName = "Worker";
+
+    /// <param name="rol">
+    /// SPEC 09: con <see cref="RolProceso.Worker"/> o <see cref="RolProceso.Ambos"/> se registran el
+    /// <see cref="OutboxProcessor"/> y Quartz; con <see cref="RolProceso.Api"/>, ningún hosted service de background.
+    /// </param>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        RolProceso rol)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -66,12 +77,13 @@ public static class DependencyInjection
             .AddArchivos(configuration)
             .AddAuditoria()
             .AddEventSourcing()
-            .AddOutbox(configuration)
+            .AddOutbox(configuration, rol)
             .AddCaching(configuration)
             .AddHealthChecksInternal(configuration)
             .AddAuthenticationInternal(configuration)
             .AddAuthorizationInternal()
-            .AddTenancy();
+            .AddTenancy()
+            .AddWorker(configuration, rol);
     }
 
     private static IServiceCollection AddServices(this IServiceCollection services)
@@ -110,6 +122,10 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<ICasoMedicoRepository, CasoMedicoRepository>();
         services.AddScoped<IDictamenPclRepository, DictamenPclRepository>();
+
+        // SPEC 09: the plazos are opened and fulfilled as halsa_app; only the sweeps use halsa_worker.
+        services.AddScoped<IPlazosRepository, PlazosRepository>();
+        services.AddScoped<ICatalogoTerminos, CatalogoTerminos>();
 
         return services;
     }
@@ -250,7 +266,7 @@ public static class DependencyInjection
         return services;
     }
 
-    private static IServiceCollection AddOutbox(this IServiceCollection services, IConfiguration configuration)
+    private static IServiceCollection AddOutbox(this IServiceCollection services, IConfiguration configuration, RolProceso rol)
     {
         services.Configure<OutboxOptions>(configuration.GetSection(OutboxOptions.SectionName));
 
@@ -260,7 +276,11 @@ public static class DependencyInjection
         // a broker adapter can replace this one without touching a handler.
         services.AddSingleton<IEventBus, InProcessEventBus>();
 
-        services.AddHostedService<OutboxProcessor>();
+        // SPEC 09: only the Worker drains the outbox. The API enqueues and never dispatches.
+        if (rol.EjecutaWorker())
+        {
+            services.AddHostedService<OutboxProcessor>();
+        }
 
         return services;
     }
@@ -329,6 +349,26 @@ public static class DependencyInjection
         {
             healthChecks.AddRedis(redis, name: "redis", failureStatus: HealthStatus.Degraded);
         }
+
+        return services;
+    }
+
+    /// <summary>
+    /// SPEC 09: lo que solo corre en el Worker. La conexión <c>halsa_worker</c> de los barridos entre tenants (cadena
+    /// <c>Worker</c>, obligatoria con ese rol) y Quartz con sus jobs.
+    /// </summary>
+    private static IServiceCollection AddWorker(this IServiceCollection services, IConfiguration configuration, RolProceso rol)
+    {
+        if (!rol.EjecutaWorker())
+        {
+            return services;
+        }
+
+        string connectionString = configuration.GetConnectionString(WorkerConnectionStringName)
+            ?? throw new InvalidOperationException($"Connection string '{WorkerConnectionStringName}' is not configured.");
+
+        services.AddSingleton(new BaseDatosWorker(connectionString));
+        services.AddTrabajosWorker(connectionString);
 
         return services;
     }

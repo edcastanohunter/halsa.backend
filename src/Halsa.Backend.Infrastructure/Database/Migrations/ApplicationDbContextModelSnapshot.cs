@@ -568,6 +568,170 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                     b.ToTable("incapacidades", "atel");
                 });
 
+            modelBuilder.Entity("Halsa.Backend.Domain.Terminos.Plazo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AlertaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("alerta_en");
+
+                    b.Property<DateTimeOffset?>("AlertadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("alertado_en");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<DateTimeOffset?>("CumplidoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cumplido_en");
+
+                    b.Property<string>("CumplidoPor")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("cumplido_por");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("estado");
+
+                    b.Property<bool>("Extemporaneo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("extemporaneo");
+
+                    b.Property<DateTimeOffset>("IniciaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inicia_en");
+
+                    b.Property<string>("NotaCumplimiento")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("nota_cumplimiento");
+
+                    b.Property<string>("Radicado")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("radicado");
+
+                    b.Property<Guid?>("ReferenciaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("referencia_id");
+
+                    b.Property<string>("ReglaCodigo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("regla_codigo");
+
+                    b.Property<Guid>("ReglaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("regla_id");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateOnly?>("UltimaFechaFin")
+                        .HasColumnType("date")
+                        .HasColumnName("ultima_fecha_fin");
+
+                    b.Property<DateTimeOffset>("VenceEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("vence_en");
+
+                    b.HasKey("Id")
+                        .HasName("pk_plazos");
+
+                    b.HasIndex("ReglaId")
+                        .HasDatabaseName("ix_plazos_regla_id");
+
+                    b.HasIndex("VenceEn")
+                        .HasDatabaseName("ix_plazos_abiertos_vence_en")
+                        .HasFilter("estado = 'ABIERTO'");
+
+                    b.HasIndex("CasoMedicoId", "ReglaCodigo", "ReferenciaId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_plazos_caso_regla_referencia");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("CasoMedicoId", "ReglaCodigo", "ReferenciaId"), false);
+
+                    b.HasIndex("TenantId", "Estado", "VenceEn")
+                        .HasDatabaseName("ix_plazos_tenant_estado_vence_en");
+
+                    b.ToTable("plazos", "sst");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Terminos.ReglaTermino", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AlertaCantidad")
+                        .HasColumnType("integer")
+                        .HasColumnName("alerta_cantidad");
+
+                    b.Property<string>("AlertaUnidad")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("alerta_unidad");
+
+                    b.Property<string>("BaseLegal")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("base_legal");
+
+                    b.Property<int>("Cantidad")
+                        .HasColumnType("integer")
+                        .HasColumnName("cantidad");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("codigo");
+
+                    b.Property<string>("EventoDisparador")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("evento_disparador");
+
+                    b.Property<string>("Unidad")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("unidad");
+
+                    b.Property<DateOnly>("VigenteDesde")
+                        .HasColumnType("date")
+                        .HasColumnName("vigente_desde");
+
+                    b.Property<DateOnly?>("VigenteHasta")
+                        .HasColumnType("date")
+                        .HasColumnName("vigente_hasta");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reglas_termino");
+
+                    b.HasIndex("Codigo", "VigenteDesde")
+                        .IsUnique()
+                        .HasDatabaseName("ux_reglas_termino_codigo_vigente_desde");
+
+                    b.ToTable("reglas_termino", "sst");
+                });
+
             modelBuilder.Entity("Halsa.Backend.Infrastructure.Database.Auditoria.AccesoAuditado", b =>
                 {
                     b.Property<Guid>("Id")
@@ -725,6 +889,7 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasColumnName("ocurrido_en");
 
                     b.Property<DateTimeOffset?>("RevisadoEn")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revisado_en");
 
@@ -862,6 +1027,30 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasFilter("processed_on_utc IS NULL");
 
                     b.ToTable("outbox_messages", "outbox");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Infrastructure.Terminos.FestivoFila", b =>
+                {
+                    b.Property<DateOnly>("Fecha")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<string>("Origen")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("origen");
+
+                    b.HasKey("Fecha")
+                        .HasName("pk_festivos");
+
+                    b.ToTable("festivos", "sst");
                 });
 
             modelBuilder.Entity("Halsa.Backend.Application.Integraciones.Registros.MensajeEntrante", b =>
@@ -1141,6 +1330,23 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
 
                     b.Navigation("Profesional")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Terminos.Plazo", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Casos.CasoMedico", null)
+                        .WithMany()
+                        .HasForeignKey("CasoMedicoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_plazos_casos_medicos");
+
+                    b.HasOne("Halsa.Backend.Domain.Terminos.ReglaTermino", null)
+                        .WithMany()
+                        .HasForeignKey("ReglaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_plazos_reglas_termino");
                 });
 
             modelBuilder.Entity("Halsa.Backend.Domain.Casos.CasoMedico", b =>

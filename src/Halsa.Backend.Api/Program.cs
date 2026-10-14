@@ -5,6 +5,7 @@ using Halsa.Backend.Api.Infrastructure;
 using Halsa.Backend.Api.Middleware;
 using Halsa.Backend.Application;
 using Halsa.Backend.Infrastructure;
+using Halsa.Backend.Infrastructure.Proceso;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
@@ -15,11 +16,17 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, configuration) =>
     configuration.ReadFrom.Configuration(context.Configuration));
 
+// SPEC 09: the same image runs as the API, the Worker or both. The role decides what is registered.
+RolProceso rol = RolesProceso.Resolver(builder.Configuration, builder.Environment.EnvironmentName);
+
 builder.Services
     .AddApplication()
-    .AddInfrastructure(builder.Configuration);
+    .AddInfrastructure(builder.Configuration, rol);
 
-builder.Services.AddEndpoints(Assembly.GetExecutingAssembly());
+if (rol.AtiendeApi())
+{
+    builder.Services.AddEndpoints(Assembly.GetExecutingAssembly());
+}
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
@@ -31,7 +38,8 @@ WebApplication app = builder.Build();
 
 app.UseExceptionHandler();
 
-if (app.Environment.IsDevelopment())
+// A Worker started on its own in Development expects the API (or Ambos) to have migrated.
+if (app.Environment.IsDevelopment() && rol.AtiendeApi())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
@@ -47,7 +55,11 @@ app.UseAuthentication();
 app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthorization();
 
-app.MapEndpoints(app.MapGroup("v1"));
+// The Worker answers only /health: no business endpoint, so /v1/* is 404.
+if (rol.AtiendeApi())
+{
+    app.MapEndpoints(app.MapGroup("v1"));
+}
 
 app.MapHealthChecks("/health", new HealthCheckOptions
 {

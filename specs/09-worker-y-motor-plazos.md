@@ -1,6 +1,6 @@
 # SPEC 09 — Worker con Quartz y motor de términos legales
 
-> **Estado:** Borrador
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 04, SPEC 05, SPEC 07, SPEC 08
 > **Fecha:** 2026-10-09
 > **Objetivo:** Separar un proceso Worker que ejecute con Quartz los jobs en background, entre ellos un motor que abre, alerta y vence los plazos legales de cada caso como filas calculadas sobre el calendario laboral colombiano.
@@ -69,10 +69,11 @@ Además, varias specs anteriores dejaron tareas para "el Worker":
 | --- | --- | --- |
 | `sst.plazos` | `SELECT, UPDATE` | `TO halsa_worker USING (true)`: barrido entre tenants |
 | `integracion.solicitudes_idempotentes` | `SELECT, DELETE` | `TO halsa_worker USING (expira_en < now())`: solo las vencidas |
-| `clinico.soportes` | `SELECT (id, ruta)` | `TO halsa_worker USING (true)` |
+| `clinico.soportes` | `SELECT (id, ruta)` | `TO halsa_worker USING (true)`. `p_soportes` pasa a `TO halsa_owner, halsa_clinico, halsa_ingesta`: llama a `atel.tenant_del_caso_remitido`, que `halsa_worker` no puede ejecutar. |
 | `outbox.outbox_messages` | `SELECT, INSERT, UPDATE` | sin RLS |
 | `quartz.*` | `SELECT, INSERT, UPDATE, DELETE` | sin RLS |
 | `sst.festivos` | `SELECT, INSERT` | sin RLS |
+| `sst.reglas_termino` | `SELECT` | sin RLS (global): la necesita `RecalcularPlazosJob` |
 | `auditoria.asegurar_particiones` | `EXECUTE` (la función pasa a `SECURITY DEFINER`) | |
 
 Los handlers que reaccionan a eventos (la validación de la SPEC 05, la apertura de plazos y la puesta en firme) siguen usando `halsa_app` con `ISystemTenantScope`, porque el tenant viene en el evento.
@@ -83,8 +84,8 @@ Solo los barridos entre tenants usan `halsa_worker` (cadena de conexión `Worker
 | Tabla | Columnas | Notas |
 | --- | --- | --- |
 | `reglas_termino` | `id`, `codigo`, `evento_disparador`, `cantidad`, `unidad` (`HABILES`/`CALENDARIO`/`HORAS`), `alerta_cantidad`, `alerta_unidad`, `base_legal`, `vigente_desde`, `vigente_hasta` | Global, sin tenant. Un `codigo` puede tener varias versiones por vigencia. `halsa_app` tiene `SELECT`. |
-| `plazos` | `id`, `tenant_id`, `caso_medico_id`, `regla_id`, `regla_codigo`, `referencia_id` (null), `inicia_en`, `vence_en`, `alerta_en`, `estado` (`ABIERTO`/`CUMPLIDO`/`VENCIDO`/`SUSPENDIDO`), `alertado_en`, `cumplido_en`, `cumplido_por`, `nota_cumplimiento`, `extemporaneo bool` | Único `(caso_medico_id, regla_codigo, referencia_id)`. Índice parcial `(vence_en) WHERE estado='ABIERTO'`. RLS por tenant. `halsa_app` tiene `SELECT, INSERT, UPDATE`. |
-| `festivos` | `fecha` (PK), `descripcion`, `origen` (`CALCULADO`/`MANUAL`) | Global. El job no pisa las filas `MANUAL`. |
+| `plazos` | `id`, `tenant_id`, `caso_medico_id`, `regla_id`, `regla_codigo`, `referencia_id` (null), `inicia_en`, `vence_en`, `alerta_en`, `estado` (`ABIERTO`/`CUMPLIDO`/`VENCIDO`/`SUSPENDIDO`), `alertado_en`, `cumplido_en`, `cumplido_por`, `nota_cumplimiento`, `extemporaneo bool`, `radicado`, `ultima_fecha_fin` (null) | `radicado` y `ultima_fecha_fin` (solo `TOPE_IT_180`) se copian del caso y de la cadena al abrir o recalcular, porque `halsa_worker` no lee `atel`. Único `(caso_medico_id, regla_codigo, referencia_id)`. Índice parcial `(vence_en) WHERE estado='ABIERTO'`. RLS por tenant. `halsa_app` tiene `SELECT, INSERT, UPDATE`. |
+| `festivos` | `fecha` (PK), `descripcion`, `origen` (`CALCULADO`/`MANUAL`) | Global. El job no pisa las filas `MANUAL`. `halsa_app` tiene `SELECT` (calcula al abrir). |
 
 Reglas semilla (migración; **pendientes de validación jurídica**):
 
@@ -179,24 +180,24 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] `CalculadoraTerminos`: un plazo de 2 días hábiles que inicia el viernes anterior a un lunes festivo vence el miércoles a las 23:59:59 `-05:00`.
-- [ ] `CalendarioColombia.Festivos(2026)` coincide con la lista oficial de 18 festivos de 2026.
-- [ ] Un FURAT de un evento del lunes, radicado el martes, deja `REPORTE_FURAT` `CUMPLIDO`. Uno radicado el jueves siguiente lo deja `VENCIDO` con `extemporaneo=true`.
-- [ ] Un FURAT con `esGrave=true` abre `REMISION_INVESTIGACION_GRAVE`, y uno con `esGrave=false` no lo abre.
-- [ ] Procesar dos veces el mismo `CasoRadicadoIntegrationEvent` deja un solo plazo por regla.
-- [ ] Con el reloj en `alerta_en`, el barrido emite exactamente un `PlazoProximoAVencerIntegrationEvent`. Un segundo barrido no emite otro.
-- [ ] Con el reloj después de `vence_en`, el plazo pasa a `VENCIDO` y se emite un `PlazoVencidoIntegrationEvent`.
-- [ ] Al vencer `CONTROVERSIA_DICTAMEN`, el dictamen queda `EN_FIRME`, y `GET …/dictamen-pcl` devolvía antes `venceControversiaEn` con la fecha del plazo.
-- [ ] Una cadena de incapacidades con 120 días acumulados tiene `TOPE_IT_180` con `vence_en = fecha_fin + 60 días`. Al cargar una prórroga de 30, se recalcula a `fecha_fin' + 30`.
-- [ ] Insertar un festivo `MANUAL` dentro de un plazo abierto y ejecutar `RecalcularPlazosJob` alarga ese `vence_en` un día. Borrar el festivo y recalcular no lo acorta.
-- [ ] Como `halsa_app` con `app.tenant_id='ARL_A'`, no se ven plazos de `ARL_B`. Como `halsa_worker`, el barrido sí los procesa.
-- [ ] Como `halsa_worker`, `SELECT` sobre `atel.casos_medicos` falla con `permission denied`.
-- [ ] Con dos instancias del Worker en paralelo, cada plazo vencido genera exactamente un evento.
-- [ ] `PurgaIdempotenciaJob` borra una llave con `expira_en` vencida y conserva una vigente.
-- [ ] `ArchivosHuerfanosJob` borra un archivo sin metadata de hace 2 h y conserva uno con metadata y uno sin metadata de hace 10 min.
-- [ ] Con `Halsa:Rol=Api`, la API no procesa el outbox. Con `Worker`, sí.
-- [ ] `POST …/plazos/{id}/cumplir` con una nota de 5 caracteres responde `400`. Con una nota válida responde `204`, el plazo queda `CUMPLIDO` y hay una fila `ACTUALIZAR / PLAZO`.
-- [ ] `GET /v1/integraciones/furat/{solicitudId}` incluye los plazos abiertos de ese caso.
+- [x] `CalculadoraTerminos`: un plazo de 2 días hábiles que inicia el viernes anterior a un lunes festivo vence el miércoles a las 23:59:59 `-05:00`.
+- [x] `CalendarioColombia.Festivos(2026)` coincide con la lista oficial de 18 festivos de 2026.
+- [x] Un FURAT de un evento del lunes, radicado el martes, deja `REPORTE_FURAT` `CUMPLIDO`. Uno radicado el jueves siguiente lo deja `VENCIDO` con `extemporaneo=true`.
+- [x] Un FURAT con `esGrave=true` abre `REMISION_INVESTIGACION_GRAVE`, y uno con `esGrave=false` no lo abre.
+- [x] Procesar dos veces el mismo `CasoRadicadoIntegrationEvent` deja un solo plazo por regla.
+- [x] Con el reloj en `alerta_en`, el barrido emite exactamente un `PlazoProximoAVencerIntegrationEvent`. Un segundo barrido no emite otro.
+- [x] Con el reloj después de `vence_en`, el plazo pasa a `VENCIDO` y se emite un `PlazoVencidoIntegrationEvent`.
+- [x] Al vencer `CONTROVERSIA_DICTAMEN`, el dictamen queda `EN_FIRME`, y `GET …/dictamen-pcl` devolvía antes `venceControversiaEn` con la fecha del plazo.
+- [x] Una cadena de incapacidades con 120 días acumulados tiene `TOPE_IT_180` con `vence_en = fecha_fin + 60 días`. Al cargar una prórroga de 30, se recalcula a `fecha_fin' + 30`.
+- [x] Insertar un festivo `MANUAL` dentro de un plazo abierto y ejecutar `RecalcularPlazosJob` alarga ese `vence_en` un día. Borrar el festivo y recalcular no lo acorta.
+- [x] Como `halsa_app` con `app.tenant_id='ARL_A'`, no se ven plazos de `ARL_B`. Como `halsa_worker`, el barrido sí los procesa.
+- [x] Como `halsa_worker`, `SELECT` sobre `atel.casos_medicos` falla con `permission denied`.
+- [x] Con dos instancias del Worker en paralelo, cada plazo vencido genera exactamente un evento.
+- [x] `PurgaIdempotenciaJob` borra una llave con `expira_en` vencida y conserva una vigente.
+- [x] `ArchivosHuerfanosJob` borra un archivo sin metadata de hace 2 h y conserva uno con metadata y uno sin metadata de hace 10 min.
+- [x] Con `Halsa:Rol=Api`, la API no procesa el outbox. Con `Worker`, sí.
+- [x] `POST …/plazos/{id}/cumplir` con una nota de 5 caracteres responde `400`. Con una nota válida responde `204`, el plazo queda `CUMPLIDO` y hay una fila `ACTUALIZAR / PLAZO`.
+- [x] `GET /v1/integraciones/furat/{solicitudId}` incluye los plazos abiertos de ese caso.
 
 ---
 

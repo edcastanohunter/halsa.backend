@@ -55,6 +55,29 @@ public sealed class DictamenPclTests
     public void Registrar_ShouldAcceptADictamenOfToday_StructuredTheSameDay() =>
         Registrar(estructuracion: Hoy, dictamen: Hoy).IsSuccess.ShouldBeTrue();
 
+    // ── PonerEnFirme (SPEC 09) ────────────────────────────────────────────────
+
+    [Fact]
+    public void PonerEnFirme_FromNotificado_ShouldChangeOnce()
+    {
+        DictamenPcl dictamen = Registrar().Value;
+        var ahora = new DateTimeOffset(2026, 10, 14, 10, 0, 0, TimeSpan.FromHours(-5));
+        dictamen.Notificar(ahora.AddHours(-1), MedioNotificacion.Personal, ahora).IsSuccess.ShouldBeTrue();
+
+        dictamen.PonerEnFirme().ShouldBeTrue();
+        dictamen.EstadoNotificacion.ShouldBe(EstadoNotificacionDictamen.EnFirme);
+        dictamen.PonerEnFirme().ShouldBeFalse();
+    }
+
+    [Fact]
+    public void PonerEnFirme_OfAPendingDictamen_ShouldChangeNothing()
+    {
+        DictamenPcl dictamen = Registrar().Value;
+
+        dictamen.PonerEnFirme().ShouldBeFalse();
+        dictamen.EstadoNotificacion.ShouldBe(EstadoNotificacionDictamen.Pendiente);
+    }
+
     // ── CorregirCon ───────────────────────────────────────────────────────────
 
     [Fact]

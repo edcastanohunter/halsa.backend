@@ -7,6 +7,7 @@ using Halsa.Backend.Infrastructure;
 using Halsa.Backend.Infrastructure.Database;
 using Halsa.Backend.Infrastructure.Database.Clinico;
 using Halsa.Backend.Infrastructure.EventSourcing;
+using Halsa.Backend.Infrastructure.Proceso;
 using Halsa.Backend.Infrastructure.Tenancy;
 using Halsa.Backend.SharedKernel.EventSourcing;
 using Microsoft.EntityFrameworkCore;
@@ -22,7 +23,7 @@ namespace Halsa.Backend.IntegrationTests.Abstractions;
 ///
 /// Lifecycle:
 /// 1. Start the container as the <c>postgres</c> superuser.
-/// 2. Run <c>01-roles.sql</c> to create <c>halsa_owner</c>, <c>halsa_app</c>, <c>halsa_clinico</c> and
+/// 2. Run <c>01-roles.sql</c> to create <c>halsa_owner</c>, <c>halsa_app</c>, <c>halsa_clinico</c>, <c>halsa_worker</c> and
 ///    <c>halsa_ingesta</c> and grant CREATE on the database to <c>halsa_owner</c>.
 /// 3. Apply the EF Core migrations of both contexts as <c>halsa_owner</c> (creates schemas, tables,
 ///    grants and RLS), then <c>auditoria.asegurar_particiones(3)</c>.
@@ -58,6 +59,9 @@ public sealed class DatabaseFixture : IAsyncLifetime
     /// <summary>Connection string using <c>halsa_ingesta</c> — the role of the FURAT/FUREP ingestion (SPEC 05).</summary>
     public string IngestaConnectionString { get; private set; } = null!;
 
+    /// <summary>Connection string using <c>halsa_worker</c> — the cross-tenant sweeps of the Worker (SPEC 09).</summary>
+    public string WorkerConnectionString { get; private set; } = null!;
+
     /// <summary>
     /// Connection string using the <c>postgres</c> superuser, which bypasses RLS. Only for asserting on
     /// rows no application role can read, such as audit rows with <c>tenant_id = null</c>.
@@ -90,6 +94,8 @@ public sealed class DatabaseFixture : IAsyncLifetime
                                    "Username=halsa_clinico;Password=halsa_clinico_dev;Include Error Detail=true";
         IngestaConnectionString = $"Host={host};Port={port};Database={database};" +
                                   "Username=halsa_ingesta;Password=halsa_ingesta_dev;Include Error Detail=true";
+        WorkerConnectionString = $"Host={host};Port={port};Database={database};" +
+                                 "Username=halsa_worker;Password=halsa_worker_dev;Include Error Detail=true";
 
         // ── Step 3: apply the migrations of both contexts as halsa_owner, then the audit partitions ─
         await DatabaseMigrator.MigrateAsync(OwnerConnectionString);
@@ -103,6 +109,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
                 ["ConnectionStrings:Migrations"] = OwnerConnectionString,
                 ["ConnectionStrings:Clinical"]   = ClinicalConnectionString,
                 ["ConnectionStrings:Ingesta"]    = IngestaConnectionString,
+                ["ConnectionStrings:Worker"]     = WorkerConnectionString,
                 ["Clinico:KekBase64"]            = KekBase64,
                 ["Keycloak:PersonalAuthority"]   = "http://localhost:8080/realms/halsa",
                 ["Keycloak:PacientesAuthority"]  = "http://localhost:8080/realms/halsa-pacientes",
@@ -126,7 +133,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
         services.AddLogging();
         services.AddSingleton(_configuration);
         services.AddApplication();
-        services.AddInfrastructure(_configuration);
+        services.AddInfrastructure(_configuration, RolProceso.Ambos);
 
         // In integration tests there is no HTTP context, so the middleware never fills the scope's
         // TenantContextHolder and CurrentUser never sees a principal. CreateScope(actor) fills the holder
@@ -239,6 +246,13 @@ public sealed class DatabaseFixture : IAsyncLifetime
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_ingesta') THEN
                 CREATE ROLE halsa_ingesta LOGIN PASSWORD 'halsa_ingesta_dev';
+            END IF;
+        END$$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_worker') THEN
+                CREATE ROLE halsa_worker LOGIN PASSWORD 'halsa_worker_dev';
             END IF;
         END$$;
 

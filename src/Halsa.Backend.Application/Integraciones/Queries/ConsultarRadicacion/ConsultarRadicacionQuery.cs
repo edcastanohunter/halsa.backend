@@ -4,6 +4,7 @@ using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Application.Integraciones.Canonico;
 using Halsa.Backend.Application.Integraciones.Commands.Radicar;
 using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Domain.Terminos;
 using Halsa.Backend.SharedKernel.Results;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,7 +15,8 @@ public sealed record ConsultarRadicacionQuery(TipoReporte Tipo, Guid SolicitudId
 
 /// <summary>
 /// Lee con <c>halsa_app</c>: la solicitud y su caso pasan por los query filters y la RLS, así que una solicitud
-/// de otro tenant responde igual que una que no existe.
+/// de otro tenant responde igual que una que no existe. <c>plazos</c> son los abiertos del caso (SPEC 09): se abren de
+/// forma asíncrona, así que llegan después de la radicación.
 /// </summary>
 internal sealed class ConsultarRadicacionQueryHandler(IReadDbContext db, ITenantContext tenantContext)
     : IQueryHandler<ConsultarRadicacionQuery, RadicacionResponse>
@@ -56,8 +58,15 @@ internal sealed class ConsultarRadicacionQueryHandler(IReadDbContext db, ITenant
 
         (string estado, Problema? motivo) = Estado(fila.Estado, fila.MotivoRechazo);
 
+        List<PlazoResumen> plazos = await db.Plazos
+            .Where(p => p.CasoMedicoId == fila.CasoMedicoId && p.Estado == EstadoPlazo.Abierto)
+            .Join(db.ReglasTermino, p => p.ReglaId, r => r.Id, (p, r) => new { p.ReglaCodigo, r.BaseLegal, p.VenceEn })
+            .OrderBy(x => x.VenceEn)
+            .Select(x => new PlazoResumen(x.ReglaCodigo, x.BaseLegal, x.VenceEn))
+            .ToListAsync(cancellationToken);
+
         return Result.Success(new RadicacionResponse(
-            fila.Id, fila.CasoMedicoId.Value, fila.Radicado, estado, fila.RecibidoEn, [], motivo));
+            fila.Id, fila.CasoMedicoId.Value, fila.Radicado, estado, fila.RecibidoEn, plazos, motivo));
     }
 
     /// <summary>Cualquier estado posterior a la validación cuenta como <c>VALIDADO</c>.</summary>

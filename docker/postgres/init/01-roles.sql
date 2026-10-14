@@ -51,6 +51,19 @@ BEGIN
     END IF;
 END$$;
 
+-- ── halsa_worker ──────────────────────────────────────────────────────────────
+-- Rol de los barridos del Worker entre tenants (SPEC 09). Sus políticas son TO
+-- halsa_worker y solo en las tablas que se barren: sst.plazos, la idempotencia
+-- vencida, clinico.soportes (id, ruta), el outbox y quartz. Nunca recibe USAGE
+-- sobre atel. Sus permisos los dan las migraciones SstTerminos, SoportesWorker y
+-- Quartz. Los handlers de eventos del Worker siguen usando halsa_app.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_worker') THEN
+        CREATE ROLE halsa_worker LOGIN PASSWORD 'halsa_worker_dev';
+    END IF;
+END$$;
+
 -- ── Propiedad de la base de datos ─────────────────────────────────────────────
 -- halsa_owner necesita CREATE en la base para que EF Core pueda crear esquemas
 -- en las migraciones.

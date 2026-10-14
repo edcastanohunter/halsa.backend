@@ -4,10 +4,12 @@ using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
+using Halsa.Backend.Domain.Terminos;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Integraciones;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Outbox;
+using Halsa.Backend.Infrastructure.Terminos;
 using Halsa.Backend.SharedKernel.Abstractions;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +47,12 @@ public sealed class ApplicationDbContext(
 
     internal DbSet<DictamenPcl> DictamenesPcl => Set<DictamenPcl>();
 
+    internal DbSet<Plazo> Plazos => Set<Plazo>();
+
+    internal DbSet<ReglaTermino> ReglasTermino => Set<ReglaTermino>();
+
+    internal DbSet<FestivoFila> Festivos => Set<FestivoFila>();
+
     // ── IReadDbContext ────────────────────────────────────────────────────────
 
     IQueryable<CasoMedico> IReadDbContext.CasosMedicos => CasosMedicos;
@@ -54,6 +62,10 @@ public sealed class ApplicationDbContext(
     IQueryable<Incapacidad> IReadDbContext.Incapacidades => Incapacidades.AsNoTracking();
 
     IQueryable<DictamenPcl> IReadDbContext.DictamenesPcl => DictamenesPcl.AsNoTracking();
+
+    IQueryable<Plazo> IReadDbContext.Plazos => Plazos.AsNoTracking();
+
+    IQueryable<ReglaTermino> IReadDbContext.ReglasTermino => ReglasTermino.AsNoTracking();
 
     // ── Model ─────────────────────────────────────────────────────────────────
 
@@ -99,6 +111,9 @@ public sealed class ApplicationDbContext(
         modelBuilder.Entity<DictamenPcl>().HasQueryFilter(d =>
             (TieneTenant && d.TenantId == CurrentTenant) ||
             (TieneIps && CasosMedicos.Any(c => c.Id == d.CasoMedicoId)));
+
+        // Mirrors the RLS of sst.plazos (SPEC 09): only the tenant's own. The IPS has no read channel on them.
+        modelBuilder.Entity<Plazo>().HasQueryFilter(p => TieneTenant && p.TenantId == CurrentTenant);
 
         // Mirrors the RLS of integracion.solicitudes: only the tenant's own requests.
         modelBuilder.Entity<SolicitudIntegracion>().HasQueryFilter(s => TieneTenant && s.TenantId == CurrentTenant);
