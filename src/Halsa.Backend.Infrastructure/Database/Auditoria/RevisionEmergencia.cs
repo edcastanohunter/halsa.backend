@@ -60,6 +60,10 @@ internal sealed class RevisionEmergenciaConfiguration : IEntityTypeConfiguration
         builder.Property(r => r.ActorId).HasMaxLength(64);
         builder.Property(r => r.Motivo).HasMaxLength(500);
         builder.Property(r => r.RevisadoPor).HasMaxLength(64);
+
+        // A close updates WHERE revisado_en IS NULL: two officers closing at once, the second matches no row and
+        // EF reports a concurrency conflict (409), instead of the immutability trigger raising (500).
+        builder.Property(r => r.RevisadoEn).IsConcurrencyToken();
         builder.Property(r => r.Conclusion).HasMaxLength(15);
         builder.Property(r => r.Observaciones).HasMaxLength(2000);
 

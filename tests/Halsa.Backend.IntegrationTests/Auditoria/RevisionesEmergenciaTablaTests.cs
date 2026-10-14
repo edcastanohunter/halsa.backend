@@ -1,4 +1,7 @@
 using Halsa.Backend.IntegrationTests.Abstractions;
+using Halsa.Backend.Infrastructure.Database;
+using Halsa.Backend.Infrastructure.Database.Auditoria;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using static Halsa.Backend.IntegrationTests.Clinico.ClinicoSql;
 
@@ -107,6 +110,27 @@ public sealed class RevisionesEmergenciaTablaTests(DatabaseFixture db)
 
         (await ScalarAsync(conn, "SELECT count(*) FROM auditoria.revisiones_emergencia WHERE id = @id", ("id", id))).ShouldBe(0);
         (await ExecuteAsync(conn, Cerrar, ("id", id))).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task TwoOfficersClosingAtOnce_TheSecondShouldGetAConcurrencyConflict_NotTheTrigger()
+    {
+        // SPEC 08, step 8: revisado_en is EF's concurrency token, so the second UPDATE matches no row.
+        Guid id = await InsertRevisionAsync();
+        await using ApplicationDbContext primero = db.CreateDbContext(FakeTenantContext.Arl(ArlA));
+        await using ApplicationDbContext segundo = db.CreateDbContext(FakeTenantContext.Arl(ArlA));
+
+        RevisionEmergencia a = await primero.RevisionesEmergencia.SingleAsync(r => r.Id == id);
+        RevisionEmergencia b = await segundo.RevisionesEmergencia.SingleAsync(r => r.Id == id);
+        foreach ((RevisionEmergencia revision, string conclusion) in new[] { (a, "JUSTIFICADO"), (b, "INJUSTIFICADO") })
+        {
+            revision.RevisadoEn = DateTimeOffset.UtcNow;
+            revision.RevisadoPor = "sub-oficial";
+            revision.Conclusion = conclusion;
+        }
+
+        await primero.SaveChangesAsync();
+        await Should.ThrowAsync<DbUpdateConcurrencyException>(() => segundo.SaveChangesAsync());
     }
 
     [Fact]

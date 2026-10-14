@@ -3,6 +3,7 @@ using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Caching;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Dictamenes;
+using Halsa.Backend.Application.Auditoria.RevisionesEmergencia;
 using Halsa.Backend.Application.Dictamenes;
 using Halsa.Backend.Application.Abstractions.Incapacidades;
 using Halsa.Backend.Application.Abstractions.Integraciones;
@@ -233,6 +234,7 @@ public static class DependencyInjection
         services.AddScoped<IClinicalAuditTrail, ClinicalAuditTrail>();
         services.AddScoped<IAuditWriter, AuditWriter>();
         services.AddScoped<IAccesosAuditadosReader, AccesosAuditadosReader>();
+        services.AddScoped<IRevisionesEmergenciaStore, RevisionesEmergenciaStore>();
 
         return services;
     }
