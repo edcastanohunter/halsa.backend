@@ -1,6 +1,6 @@
 # SPEC 08 — Lectura clínica, dictamen PCL y break-the-glass
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03, SPEC 04, SPEC 06, SPEC 07
 > **Fecha:** 2026-10-09
 > **Objetivo:** Abrir la lectura de la historia clínica, la descarga de soportes y el registro y la consulta del dictamen PCL, solo para los profesionales asignados al caso y con MFA, auditando cada acceso. La excepción es el break-the-glass, que queda justificado y sometido a revisión.
@@ -188,26 +188,26 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] Un token `analista-arl` recibe `403` en `GET /v1/casos/{id}/dictamen-pcl` y en `GET /v1/casos/{id}/registros-clinicos`, y cada intento deja una fila `DENEGADO`.
-- [ ] `calificador.arla` **asignado** al caso, con `acr=1`, recibe `401` con `error="insufficient_user_authentication"` en el dictamen.
-- [ ] El mismo usuario con `acr=2` y `auth_time` de hace 20 min recibe `401` con `max_age=900` en el `WWW-Authenticate`.
-- [ ] El mismo usuario con `acr=2` y `auth_time` de hace menos de 15 min recibe `200`, y queda una fila `LEER / REGISTRO_CLINICO / EXITO` en `auditoria.accesos`.
-- [ ] `calificador.arla` **no asignado** al caso, con `acr=2` reciente, recibe `403` con `Clinico.NoAsignado`.
-- [ ] `calificador.arla` sobre un caso de `ARL_B` recibe `404`.
-- [ ] `medico.ips` asignado por `coordinador.ips` a un caso remitido lee la HC (`200`). Al revocar la remisión, recibe `404`.
-- [ ] `coordinador.ips` no puede asignar sobre un caso que no está remitido a su IPS (`404`), y su asignación queda con `ips_id='110011234501'`.
-- [ ] La lista de la HC no incluye registros `DICTAMEN_PCL`, y `GET …/registros-clinicos/{idDelDictamen}` responde `404`.
-- [ ] La descarga del soporte devuelve exactamente los bytes del PDF original, con `Content-Type: application/pdf` y `Cache-Control: no-store`, y deja `LEER / SOPORTE`.
-- [ ] Si se altera un byte del archivo en disco, la descarga responde `500` con `Archivos.Corrupto` (falla el tag de GCM o el hash).
-- [ ] `POST /v1/casos/{id}/dictamen-pcl` con 32,50 % y componentes 20,00 + 12,50 responde `201`, y el caso queda en `EnCalificacionPcl` con `Calificacion.PorcentajePcl=32.50`.
-- [ ] Ese mismo POST con componentes que no suman responde `400`.
-- [ ] Un segundo POST sin `corrigeA` responde `409` con `Dictamen.YaExiste`. Con `corrigeA`, estando `PENDIENTE`, responde `201` y el anterior queda con `corregido_por`.
-- [ ] Después de `notificar`, el estado es `NOTIFICADO`, hay un `DictamenPclNotificadoIntegrationEvent` en el outbox, y un POST con `corrigeA` responde `409` con `Dictamen.YaNotificado`.
-- [ ] `GET /v1/casos/{id}` como `analista.arla` devuelve `porcentajePcl=32.50`, y ni ese endpoint ni ningún otro accesible para `analista-arl` contiene `fundamentos`.
-- [ ] `calificador.arla` no asignado, con `clinico:emergencia` y un `Halsa-Motivo-Acceso` de 25 caracteres, recibe `200`. Queda una fila con `motivo` y una revisión `PENDIENTE` con `vence_revision_en` a 72 h.
-- [ ] El mismo intento con un motivo de 10 caracteres recibe `403`. Con `clinico:emergencia` sobre un caso de `ARL_B`, recibe `404`.
-- [ ] `privacidad.arla` lista la revisión pendiente y la cierra como `JUSTIFICADO`. Un segundo cierre responde `409`.
-- [ ] Un token de `int-ips-110011234501` recibe `403` en todos los endpoints de lectura clínica.
+- [x] Un token `analista-arl` recibe `403` en `GET /v1/casos/{id}/dictamen-pcl` y en `GET /v1/casos/{id}/registros-clinicos`, y cada intento deja una fila `DENEGADO`.
+- [x] `calificador.arla` **asignado** al caso, con `acr=1`, recibe `401` con `error="insufficient_user_authentication"` en el dictamen.
+- [x] El mismo usuario con `acr=2` y `auth_time` de hace 20 min recibe `401` con `max_age=900` en el `WWW-Authenticate`.
+- [x] El mismo usuario con `acr=2` y `auth_time` de hace menos de 15 min recibe `200`, y queda una fila `LEER / REGISTRO_CLINICO / EXITO` en `auditoria.accesos`.
+- [x] `calificador.arla` **no asignado** al caso, con `acr=2` reciente, recibe `403` con `Clinico.NoAsignado`.
+- [x] `calificador.arla` sobre un caso de `ARL_B` recibe `404`.
+- [x] `medico.ips` asignado por `coordinador.ips` a un caso remitido lee la HC (`200`). Al revocar la remisión, recibe `404`.
+- [x] `coordinador.ips` no puede asignar sobre un caso que no está remitido a su IPS (`404`), y su asignación queda con `ips_id='110011234501'`.
+- [x] La lista de la HC no incluye registros `DICTAMEN_PCL`, y `GET …/registros-clinicos/{idDelDictamen}` responde `404`.
+- [x] La descarga del soporte devuelve exactamente los bytes del PDF original, con `Content-Type: application/pdf` y `Cache-Control: no-store`, y deja `LEER / SOPORTE`.
+- [x] Si se altera un byte del archivo en disco, la descarga responde `500` con `Archivos.Corrupto` (falla el tag de GCM o el hash).
+- [x] `POST /v1/casos/{id}/dictamen-pcl` con 32,50 % y componentes 20,00 + 12,50 responde `201`, y el caso queda en `EnCalificacionPcl` con `Calificacion.PorcentajePcl=32.50`.
+- [x] Ese mismo POST con componentes que no suman responde `400`.
+- [x] Un segundo POST sin `corrigeA` responde `409` con `Dictamen.YaExiste`. Con `corrigeA`, estando `PENDIENTE`, responde `201` y el anterior queda con `corregido_por`.
+- [x] Después de `notificar`, el estado es `NOTIFICADO`, hay un `DictamenPclNotificadoIntegrationEvent` en el outbox, y un POST con `corrigeA` responde `409` con `Dictamen.YaNotificado`.
+- [x] `GET /v1/casos/{id}` como `analista.arla` devuelve `porcentajePcl=32.50`, y ni ese endpoint ni ningún otro accesible para `analista-arl` contiene `fundamentos`.
+- [x] `calificador.arla` no asignado, con `clinico:emergencia` y un `Halsa-Motivo-Acceso` de 25 caracteres, recibe `200`. Queda una fila con `motivo` y una revisión `PENDIENTE` con `vence_revision_en` a 72 h.
+- [x] El mismo intento con un motivo de 10 caracteres recibe `403`. Con `clinico:emergencia` sobre un caso de `ARL_B`, recibe `404`.
+- [x] `privacidad.arla` lista la revisión pendiente y la cierra como `JUSTIFICADO`. Un segundo cierre responde `409`.
+- [x] Un token de `int-ips-110011234501` recibe `403` en todos los endpoints de lectura clínica.
 
 ---
 

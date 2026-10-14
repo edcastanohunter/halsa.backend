@@ -59,13 +59,49 @@ public sealed class RegistrarDictamenPclEndpointTests(ApiFactory factory)
         Guid caso = await CasoAsignadoAsync(factory);
         await RegistradoAsync(factory, caso, Dictamen());
 
-        HttpResponseMessage response = await Client(factory, AnalistaArlA()).GetAsync($"v1/casos/{caso}");
+        HttpClient analista = Client(factory, ConStepUp(AnalistaArlA(), "2", 1));
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        string cuerpo = await response.Content.ReadAsStringAsync();
-        cuerpo.ShouldContain("32.5");
-        cuerpo.ShouldNotContain("fundamentos", Case.Insensitive);
-        cuerpo.ShouldNotContain("Secuelas");
+        HttpResponseMessage detalle = await analista.GetAsync($"v1/casos/{caso}");
+
+        detalle.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await BodyAsync(detalle))["resumen"]!["porcentajePcl"]!.GetValue<decimal>().ShouldBe(32.50m);
+
+        // Every GET of the API that analista-arl can reach, with this case: none carries the motivation.
+        string[] accesibles = [$"v1/casos/{caso}", "v1/casos?page=1&pageSize=1000", $"v1/casos/{caso}/incapacidades"];
+        foreach (string ruta in accesibles)
+        {
+            HttpResponseMessage response = await analista.GetAsync(ruta);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, ruta);
+            string cuerpo = await response.Content.ReadAsStringAsync();
+            cuerpo.ShouldNotContain("fundamentos", Case.Insensitive, ruta);
+            cuerpo.ShouldNotContain("Secuelas", Case.Insensitive, ruta);
+        }
+
+        // And the clinical ones answer 403 without a body of data.
+        string[] clinicas = [RutaDictamen(caso), $"v1/casos/{caso}/registros-clinicos"];
+        foreach (string ruta in clinicas)
+        {
+            HttpResponseMessage response = await analista.GetAsync(ruta);
+            response.StatusCode.ShouldBe(HttpStatusCode.Forbidden, ruta);
+            (await response.Content.ReadAsStringAsync()).ShouldNotContain("Secuelas", Case.Insensitive, ruta);
+        }
+    }
+
+    [Fact]
+    public async Task ARealDictamen_ShouldNotAppearInTheHc_AndItsRecordShouldAnswer404ThroughTheHcRoute()
+    {
+        Guid caso = await CasoAsignadoAsync(factory);
+        Guid id = (await RegistradoAsync(factory, caso, Dictamen()))["id"]!.GetValue<Guid>();
+        Guid registro = (await EscalarAsync<Guid>(factory, "SELECT registro_clinico_id FROM atel.dictamenes_pcl WHERE id = @id", id));
+        HttpClient lector = Client(factory, ConStepUp(CalificadorArlA(), "2"));
+
+        HttpResponseMessage lista = await lector.GetAsync($"v1/casos/{caso}/registros-clinicos");
+        HttpResponseMessage uno = await lector.GetAsync($"v1/casos/{caso}/registros-clinicos/{registro}");
+
+        lista.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await lista.Content.ReadFromJsonAsync<JsonArray>(JsonOptions))!.ShouldBeEmpty();
+        uno.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await ErrorCodeAsync(uno)).ShouldBe("Clinico.RegistroNoEncontrado");
     }
 
     // ── Rules ─────────────────────────────────────────────────────────────────

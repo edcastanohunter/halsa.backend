@@ -1350,7 +1350,7 @@ components:
         WWW-Authenticate:
           schema:
             type: string
-            example: 'Bearer error="insufficient_user_authentication", acr_values="2", max_age=900'
+            example: 'Bearer error="insufficient_user_authentication", acr_values="2", max_age="900"'
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }

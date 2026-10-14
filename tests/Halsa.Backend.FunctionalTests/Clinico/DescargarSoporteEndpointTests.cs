@@ -149,6 +149,18 @@ public sealed class DescargarSoporteEndpointTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task AnIpsIntegrationToken_ShouldGet403()
+    {
+        // The same IPS that uploaded it: the integration writes clinical data, but never reads it.
+        (Guid caso, Guid incapacidad, _, _) = await IncapacidadCargadaAsync();
+
+        HttpResponseMessage response = await IntegracionIps(factory).GetAsync(RutaSoporte(caso, incapacidad));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync()).ShouldNotContain(TextoDelPdf);
+    }
+
+    [Fact]
     public async Task AnIncapacidadOfAnotherCase_ShouldAnswer404()
     {
         (_, Guid incapacidadAjena, _, _) = await IncapacidadCargadaAsync();
