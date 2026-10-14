@@ -107,6 +107,7 @@ public sealed class ClinicalAuthorizationTests
 
         requisitos.Length.ShouldBe(2);
         requisitos.OfType<AccesoClinicoRequirement>().ShouldBeEmpty();
+        Policies.AdmiteEmergencia(politica).ShouldBe(politica != Policies.DictamenPclEscritura);
         StepUpRequirement stepUp = requisitos.OfType<StepUpRequirement>().ShouldHaveSingleItem();
         stepUp.AcrMinimo.ShouldBe(2);
         stepUp.MaxAntiguedadAuth.ShouldBe(maxMinutos is int m ? TimeSpan.FromMinutes(m) : null);

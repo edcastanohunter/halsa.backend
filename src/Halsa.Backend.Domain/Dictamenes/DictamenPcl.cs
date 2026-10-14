@@ -14,6 +14,8 @@ namespace Halsa.Backend.Domain.Dictamenes;
 /// </summary>
 public sealed class DictamenPcl
 {
+    private static readonly TimeSpan ZonaColombia = TimeSpan.FromHours(-5);
+
     // Parameterless constructor required by EF Core materializer.
     private DictamenPcl() { }
 
@@ -97,6 +99,31 @@ public sealed class DictamenPcl
             EstadoNotificacion = EstadoNotificacionDictamen.Pendiente,
             CorrigeA = corrigeA
         });
+    }
+
+    /// <summary>
+    /// Registra la notificación al trabajador (SPEC 08): un dato administrativo del que colgará el plazo de
+    /// controversia (SPEC 09). Solo desde <see cref="EstadoNotificacionDictamen.Pendiente"/>; la fecha no puede ser
+    /// futura ni anterior a <see cref="FechaDictamen"/> (en Colombia).
+    /// </summary>
+    public Result Notificar(DateTimeOffset notificadoEn, MedioNotificacion medio, DateTimeOffset ahora)
+    {
+        if (!Vigente || EstadoNotificacion != EstadoNotificacionDictamen.Pendiente)
+        {
+            return Result.Failure(DictamenErrors.YaNotificado);
+        }
+
+        DateOnly fechaNotificacion = DateOnly.FromDateTime(notificadoEn.ToOffset(ZonaColombia).DateTime);
+        if (notificadoEn > ahora || fechaNotificacion < FechaDictamen)
+        {
+            return Result.Failure(DictamenErrors.NotificacionFueraDeRango);
+        }
+
+        EstadoNotificacion = EstadoNotificacionDictamen.Notificado;
+        NotificadoEn = notificadoEn;
+        MedioNotificacion = medio;
+
+        return Result.Success();
     }
 
     /// <summary>

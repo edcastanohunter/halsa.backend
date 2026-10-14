@@ -1,5 +1,6 @@
 using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
 
 namespace Halsa.Backend.Application.Abstractions.Data;
@@ -25,4 +26,10 @@ public interface IReadDbContext
     /// administrativa: el diagnóstico vive cifrado en <c>clinico</c>.
     /// </summary>
     IQueryable<Incapacidad> Incapacidades { get; }
+
+    /// <summary>
+    /// Los dictámenes PCL visibles (SPEC 08): solo la parte administrativa. La motivación es un registro
+    /// <c>DICTAMEN_PCL</c> cifrado en <c>clinico</c>.
+    /// </summary>
+    IQueryable<DictamenPcl> DictamenesPcl { get; }
 }

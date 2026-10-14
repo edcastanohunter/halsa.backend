@@ -109,6 +109,10 @@ public static class DictamenErrors
         Error.Problem("Dictamen.PorcentajeFueraDeRango",
             "El porcentaje de PCL va de 0 a 100, con dos decimales como máximo.");
 
+    public static readonly Error NotificacionFueraDeRango =
+        Error.Problem("Dictamen.NotificacionFueraDeRango",
+            "La notificación no puede ser futura ni anterior a la fecha del dictamen.");
+
     public static readonly Error FechasInvalidas =
         Error.Problem("Dictamen.FechasInvalidas",
             "La fecha de estructuración no puede ser posterior a la del dictamen, ni la del dictamen futura.");

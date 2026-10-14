@@ -45,6 +45,10 @@ public static class ClinicoErrors
         Error.Forbidden("Clinico.NoAsignado",
             "El caso es visible, pero el profesional no está asignado a él.");
 
+    public static readonly Error MotivoEmergenciaInvalido =
+        Error.Forbidden("Clinico.MotivoEmergenciaInvalido",
+            "El acceso de emergencia exige un Halsa-Motivo-Acceso de entre 20 y 500 caracteres.");
+
     public static readonly Error AccesoNoPermitido =
         Error.Forbidden("Clinico.AccesoNoPermitido",
             "El tipo de actor nunca accede a la historia clínica.");

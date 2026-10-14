@@ -2,6 +2,7 @@ using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Integraciones;
@@ -36,9 +37,13 @@ public sealed class ApplicationDbContext(
 
     internal DbSet<AccesoAuditado> AccesosAuditados => Set<AccesoAuditado>();
 
+    internal DbSet<RevisionEmergencia> RevisionesEmergencia => Set<RevisionEmergencia>();
+
     internal DbSet<SolicitudIntegracion> Solicitudes => Set<SolicitudIntegracion>();
 
     internal DbSet<Incapacidad> Incapacidades => Set<Incapacidad>();
+
+    internal DbSet<DictamenPcl> DictamenesPcl => Set<DictamenPcl>();
 
     // ── IReadDbContext ────────────────────────────────────────────────────────
 
@@ -47,6 +52,8 @@ public sealed class ApplicationDbContext(
     IQueryable<SolicitudIntegracion> IReadDbContext.Solicitudes => Solicitudes.AsNoTracking();
 
     IQueryable<Incapacidad> IReadDbContext.Incapacidades => Incapacidades.AsNoTracking();
+
+    IQueryable<DictamenPcl> IReadDbContext.DictamenesPcl => DictamenesPcl.AsNoTracking();
 
     // ── Model ─────────────────────────────────────────────────────────────────
 
@@ -64,6 +71,9 @@ public sealed class ApplicationDbContext(
 
         // Shared with ClinicalDbContext, so it lives outside the scanned namespace. This context owns the table.
         modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration());
+
+        // SPEC 08: the break-the-glass reviews, written with the audit row that creates them.
+        modelBuilder.ApplyConfiguration(new RevisionEmergenciaConfiguration());
 
         // Las tablas de la ingesta (SPEC 05): este contexto las crea en sus migraciones, IngestaDbContext las
         // escribe como halsa_ingesta. halsa_app solo tiene SELECT sobre integracion.solicitudes.
@@ -84,6 +94,11 @@ public sealed class ApplicationDbContext(
         modelBuilder.Entity<Incapacidad>().HasQueryFilter(i =>
             (TieneTenant && i.TenantId == CurrentTenant) ||
             (TieneIps && CasosMedicos.Any(c => c.Id == i.CasoMedicoId)));
+
+        // Mirrors the RLS of atel.dictamenes_pcl (SPEC 08): as the incapacidades.
+        modelBuilder.Entity<DictamenPcl>().HasQueryFilter(d =>
+            (TieneTenant && d.TenantId == CurrentTenant) ||
+            (TieneIps && CasosMedicos.Any(c => c.Id == d.CasoMedicoId)));
 
         // Mirrors the RLS of integracion.solicitudes: only the tenant's own requests.
         modelBuilder.Entity<SolicitudIntegracion>().HasQueryFilter(s => TieneTenant && s.TenantId == CurrentTenant);

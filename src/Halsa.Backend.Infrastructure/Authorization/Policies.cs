@@ -63,6 +63,9 @@ public static class Policies
         _ => throw new ArgumentOutOfRangeException(nameof(politica), politica, "No es una política clínica.")
     };
 
+    /// <summary>El break-the-glass solo abre las lecturas (SPEC 08): registrar o notificar un dictamen exige la asignación.</summary>
+    internal static bool AdmiteEmergencia(string politica) => politica is ClinicoLectura or DictamenPclLectura;
+
     /// <summary>Las tres políticas clínicas completas: el permiso, el step-up y el ABAC.</summary>
     internal static readonly string[] Clinicas = [ClinicoLectura, DictamenPclLectura, DictamenPclEscritura];
 }

@@ -136,7 +136,7 @@ internal static class AuthenticationInstaller
             {
                 options.AddPolicy(politica, policy => policy
                     .AddRequirements(Policies.RequisitosPrevios(politica))
-                    .AddRequirements(new AccesoClinicoRequirement()));
+                    .AddRequirements(new AccesoClinicoRequirement(Policies.AdmiteEmergencia(politica))));
             }
         });
 
@@ -144,6 +144,7 @@ internal static class AuthenticationInstaller
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddScoped<IAuthorizationHandler, StepUpHandler>();
         services.AddScoped<IAuthorizationHandler, AccesoClinicoHandler>();
+        services.AddScoped<AccesoEmergencia>();
         services.AddScoped<ICasoAccessReader, CasoAccessReader>();
         services.AddScoped<IClinicalAuthorization, ClinicalAuthorization>();
 

@@ -3,6 +3,7 @@ using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Caching;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Dictamenes;
+using Halsa.Backend.Application.Dictamenes;
 using Halsa.Backend.Application.Abstractions.Incapacidades;
 using Halsa.Backend.Application.Abstractions.Integraciones;
 using Halsa.Backend.Application.Auditoria;
@@ -107,6 +108,7 @@ public static class DependencyInjection
         services.AddScoped<IReadDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<ICasoMedicoRepository, CasoMedicoRepository>();
+        services.AddScoped<IDictamenPclRepository, DictamenPclRepository>();
 
         return services;
     }

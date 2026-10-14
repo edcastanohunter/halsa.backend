@@ -684,6 +684,77 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                     b.ToTable("accesos", "auditoria");
                 });
 
+            modelBuilder.Entity("Halsa.Backend.Infrastructure.Database.Auditoria.RevisionEmergencia", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccesoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("acceso_id");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("actor_id");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<string>("Conclusion")
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("conclusion");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("motivo");
+
+                    b.Property<string>("Observaciones")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("observaciones");
+
+                    b.Property<DateTimeOffset>("OcurridoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ocurrido_en");
+
+                    b.Property<DateTimeOffset?>("RevisadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revisado_en");
+
+                    b.Property<string>("RevisadoPor")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("revisado_por");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset>("VenceRevisionEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("vence_revision_en");
+
+                    b.HasKey("Id")
+                        .HasName("pk_revisiones_emergencia");
+
+                    b.HasIndex("ActorId", "CasoMedicoId", "OcurridoEn")
+                        .HasDatabaseName("ix_revisiones_emergencia_actor_caso");
+
+                    b.HasIndex("TenantId", "RevisadoEn", "VenceRevisionEn")
+                        .HasDatabaseName("ix_revisiones_emergencia_tenant_pendientes");
+
+                    b.ToTable("revisiones_emergencia", "auditoria");
+                });
+
             modelBuilder.Entity("Halsa.Backend.Infrastructure.EventSourcing.StoredEvent", b =>
                 {
                     b.Property<long>("Sequence")

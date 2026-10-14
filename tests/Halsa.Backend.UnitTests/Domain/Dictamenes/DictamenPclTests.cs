@@ -78,6 +78,61 @@ public sealed class DictamenPclTests
         dictamen.CorregirCon(DictamenPclId.New()).Error.ShouldBe(DictamenErrors.CorrigeANoVigente);
     }
 
+    // ── Notificar ─────────────────────────────────────────────────────────────
+
+    /// <summary>Hoy at 15:00 in Colombia.</summary>
+    private static readonly DateTimeOffset Ahora = new(2026, 10, 14, 15, 0, 0, TimeSpan.FromHours(-5));
+
+    [Fact]
+    public void Notificar_WhilePendiente_ShouldRecordIt()
+    {
+        DictamenPcl dictamen = Registrar().Value;
+
+        dictamen.Notificar(Ahora.AddHours(-2), MedioNotificacion.Personal, Ahora).IsSuccess.ShouldBeTrue();
+
+        dictamen.EstadoNotificacion.ShouldBe(EstadoNotificacionDictamen.Notificado);
+        dictamen.NotificadoEn.ShouldBe(Ahora.AddHours(-2));
+        dictamen.MedioNotificacion.ShouldBe(MedioNotificacion.Personal);
+    }
+
+    [Fact]
+    public void Notificar_Twice_ShouldFailWithYaNotificado()
+    {
+        DictamenPcl dictamen = Registrar().Value;
+        dictamen.Notificar(Ahora.AddHours(-2), MedioNotificacion.Personal, Ahora);
+
+        dictamen.Notificar(Ahora.AddHours(-1), MedioNotificacion.Electronico, Ahora).Error.ShouldBe(DictamenErrors.YaNotificado);
+    }
+
+    [Fact]
+    public void Notificar_ACorrectedOne_ShouldFail()
+    {
+        DictamenPcl dictamen = Registrar().Value;
+        dictamen.CorregirCon(DictamenPclId.New());
+
+        dictamen.Notificar(Ahora.AddHours(-2), MedioNotificacion.Personal, Ahora).IsFailure.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Notificar_InTheFuture_ShouldFail() =>
+        Registrar().Value.Notificar(Ahora.AddMinutes(1), MedioNotificacion.Personal, Ahora)
+            .Error.ShouldBe(DictamenErrors.NotificacionFueraDeRango);
+
+    [Fact]
+    public void Notificar_TheDayBeforeTheDictamen_InColombia_ShouldFail()
+    {
+        // The dictamen is dated Hoy - 1; 23:30 of Hoy - 2 in Colombia is already Hoy - 1 in UTC.
+        DateTimeOffset laVispera = new(2026, 10, 12, 23, 30, 0, TimeSpan.FromHours(-5));
+
+        Registrar().Value.Notificar(laVispera.ToUniversalTime(), MedioNotificacion.Personal, Ahora)
+            .Error.ShouldBe(DictamenErrors.NotificacionFueraDeRango);
+    }
+
+    [Fact]
+    public void Notificar_OnTheDictamensDate_ShouldSucceed() =>
+        Registrar().Value.Notificar(new DateTimeOffset(2026, 10, 13, 0, 5, 0, TimeSpan.FromHours(-5)), MedioNotificacion.Personal, Ahora)
+            .IsSuccess.ShouldBeTrue();
+
     // ── CasoMedico.Calificar ──────────────────────────────────────────────────
 
     private static CasoMedico Caso() =>
