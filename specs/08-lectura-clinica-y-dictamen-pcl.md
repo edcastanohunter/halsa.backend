@@ -1,6 +1,6 @@
 # SPEC 08 — Lectura clínica, dictamen PCL y break-the-glass
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03, SPEC 04, SPEC 06, SPEC 07
 > **Fecha:** 2026-10-09
 > **Objetivo:** Abrir la lectura de la historia clínica, la descarga de soportes y el registro y la consulta del dictamen PCL, solo para los profesionales asignados al caso y con MFA, auditando cada acceso. La excepción es el break-the-glass, que queda justificado y sometido a revisión.

@@ -10,6 +10,7 @@ namespace Halsa.Backend.Api.Endpoints.Casos;
 
 /// <summary>
 /// <c>DELETE /v1/casos/{casoId}/asignaciones/{sub}</c> — Quita un usuario del equipo del caso.
+/// Una IPS solo quita las asignaciones que hizo ella misma (SPEC 08).
 /// </summary>
 internal sealed class DesasignarCaso : IEndpoint
 {
@@ -32,6 +33,6 @@ internal sealed class DesasignarCaso : IEndpoint
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
-        .RequirePermission(Permissions.CasosWrite)
+        .RequirePermission(Permissions.CasosAsignar)
         .Auditable(RecursoAuditoria.Caso);
 }

@@ -19,7 +19,7 @@ internal sealed class AsignarCasoCommandHandler(
         AsignarCasoCommand command,
         CancellationToken cancellationToken)
     {
-        if (!tenantContext.PuedeEscribir())
+        if (!tenantContext.PuedeAsignar())
         {
             return Result.Failure(CasoMedicoErrors.ActorNoAutorizado);
         }
@@ -30,7 +30,7 @@ internal sealed class AsignarCasoCommandHandler(
             return Result.Failure(CasoMedicoErrors.NoEncontrado);
         }
 
-        caso.Asignar(command.Sub, tenantContext.Sub, time.GetUtcNow());
+        caso.Asignar(command.Sub, tenantContext.IpsQueAsigna(), tenantContext.Sub, time.GetUtcNow());
 
         // Audited even when the assignment already existed: the attempt is what matters.
         auditTrail.Registrar(

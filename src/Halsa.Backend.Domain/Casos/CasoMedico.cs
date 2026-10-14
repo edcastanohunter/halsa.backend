@@ -193,8 +193,9 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
 
     /// <summary>
     /// Asigna un usuario al caso. Idempotente: si el sub ya está asignado, no hace nada.
+    /// <paramref name="porIps"/> es la IPS del actor que asigna, o <c>null</c> si es la ARL (SPEC 08).
     /// </summary>
-    public void Asignar(string sub, string asignadoPor, DateTimeOffset ahora)
+    public void Asignar(string sub, IpsId? porIps, string asignadoPor, DateTimeOffset ahora)
     {
         bool yaAsignado = _asignaciones.Any(a => a.Sub == sub);
         if (yaAsignado)
@@ -202,15 +203,17 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
             return;
         }
 
-        _asignaciones.Add(new Asignacion(Id, TenantId, sub, asignadoPor, ahora));
+        _asignaciones.Add(new Asignacion(Id, TenantId, sub, porIps, asignadoPor, ahora));
     }
 
     /// <summary>
-    /// Elimina la asignación de un usuario. Falla si el sub no está asignado.
+    /// Elimina la asignación de un usuario. Falla si el sub no está asignado. Una IPS
+    /// (<paramref name="porIps"/> no nulo) solo ve, y por tanto solo borra, las asignaciones que hizo ella misma.
     /// </summary>
-    public Result Desasignar(string sub)
+    public Result Desasignar(string sub, IpsId? porIps)
     {
-        Asignacion? asignacion = _asignaciones.FirstOrDefault(a => a.Sub == sub);
+        Asignacion? asignacion = _asignaciones.FirstOrDefault(a =>
+            a.Sub == sub && (porIps is null || a.IpsId == porIps));
 
         if (asignacion is null)
         {

@@ -315,6 +315,62 @@ public sealed class RealmCatalogTests
             .ShouldBe(tieneOtp);
     }
 
+    // ── SPEC 08 ───────────────────────────────────────────────────────────────
+
+    private static Dictionary<string, JsonObject> ClientRoles(JsonObject realm) =>
+        realm["roles"]!["client"]!["halsa-api"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .ToDictionary(o => o["name"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase);
+
+    private static JsonObject Usuario(JsonObject realm, string username) =>
+        realm["users"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(u => u["username"]?.GetValue<string>() == username);
+
+    [Theory]
+    [InlineData("analista-arl", "casos:asignar")]
+    [InlineData("coordinador-ips", "casos:asignar")]
+    [InlineData("oficial-privacidad", "auditoria:revisar")]
+    public void TheSpec08Permissions_ShouldBelongToTheirCompositeRoles(string rol, string permiso)
+    {
+        Dictionary<string, JsonObject> roles = ClientRoles(LoadHalsaRealm());
+
+        roles.ShouldContainKey(permiso);
+        ExpandRolePermissions(rol, roles).ShouldContain(permiso);
+    }
+
+    [Fact]
+    public void CoordinadorIps_ShouldNotHaveClinico_PclOrAuditoria_Permissions()
+    {
+        HashSet<string> permissions = ExpandRolePermissions("coordinador-ips", ClientRoles(LoadHalsaRealm()));
+
+        permissions.Where(p =>
+                p.StartsWith("clinico:", StringComparison.OrdinalIgnoreCase) ||
+                p.StartsWith("pcl:", StringComparison.OrdinalIgnoreCase) ||
+                p.StartsWith("auditoria:", StringComparison.OrdinalIgnoreCase))
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void CoordinadorIps_ShouldBeAnIpsUser_WithTheCoordinatorRole()
+    {
+        JsonObject usuario = Usuario(LoadHalsaRealm(), "coordinador.ips");
+
+        usuario["id"]!.GetValue<string>().ShouldBe("01999000-0000-7000-8000-000000000c02");
+        usuario["attributes"]!["actor_tipo"]!.AsArray().Single()!.GetValue<string>().ShouldBe("ips");
+        usuario["attributes"]!["ips_id"]!.AsArray().Single()!.GetValue<string>().ShouldBe("110011234501");
+        usuario["clientRoles"]!["halsa-api"]!.AsArray().Select(r => r!.GetValue<string>()).ShouldBe(["coordinador-ips"]);
+    }
+
+    [Fact]
+    public void CalificadorArla_ShouldHoldClinicoEmergencia_Individually()
+    {
+        JsonObject usuario = Usuario(LoadHalsaRealm(), "calificador.arla");
+
+        usuario["clientRoles"]!["halsa-api"]!.AsArray().Select(r => r!.GetValue<string>())
+            .ShouldBe(["medico-calificador", "clinico:emergencia"], ignoreOrder: true);
+    }
+
     [Fact]
     public void ClinicoEmergencia_ShouldNotBelongToAnyCompositeRole()
     {

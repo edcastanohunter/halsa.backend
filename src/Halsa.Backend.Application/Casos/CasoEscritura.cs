@@ -19,6 +19,16 @@ internal static class CasoEscritura
         tenantContext.Resuelto && tenantContext.Tipo == ActorTipo.Arl;
 
     /// <summary>
+    /// Asignan la ARL y, sobre los casos que tiene remitidos, la IPS (SPEC 08). Qué casos ve cada una lo decide la RLS.
+    /// </summary>
+    public static bool PuedeAsignar(this ITenantContext tenantContext) =>
+        tenantContext.Resuelto && tenantContext.Tipo is ActorTipo.Arl or ActorTipo.Ips;
+
+    /// <summary>La IPS del actor que asigna, o <c>null</c> si es la ARL.</summary>
+    public static IpsId? IpsQueAsigna(this ITenantContext tenantContext) =>
+        tenantContext.Tipo == ActorTipo.Ips ? tenantContext.IpsId : null;
+
+    /// <summary>
     /// Guarda los cambios y traduce un choque de <c>xmin</c> a <see cref="CasoMedicoErrors.ConflictoConcurrencia"/>.
     /// </summary>
     public static async Task<Result> GuardarCasoAsync(this IUnitOfWork unitOfWork, CancellationToken cancellationToken)

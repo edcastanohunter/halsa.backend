@@ -18,7 +18,7 @@ internal sealed class DesasignarCasoCommandHandler(
         DesasignarCasoCommand command,
         CancellationToken cancellationToken)
     {
-        if (!tenantContext.PuedeEscribir())
+        if (!tenantContext.PuedeAsignar())
         {
             return Result.Failure(CasoMedicoErrors.ActorNoAutorizado);
         }
@@ -29,7 +29,7 @@ internal sealed class DesasignarCasoCommandHandler(
             return Result.Failure(CasoMedicoErrors.NoEncontrado);
         }
 
-        Result result = caso.Desasignar(command.Sub);
+        Result result = caso.Desasignar(command.Sub, tenantContext.IpsQueAsigna());
         if (result.IsFailure)
         {
             return result;

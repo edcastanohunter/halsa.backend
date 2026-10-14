@@ -225,6 +225,11 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("asignado_por");
 
+                    b.Property<string>("IpsId")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("ips_id");
+
                     b.Property<string>("TenantId")
                         .IsRequired()
                         .HasMaxLength(20)

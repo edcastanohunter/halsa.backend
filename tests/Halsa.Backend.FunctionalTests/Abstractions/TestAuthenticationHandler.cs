@@ -72,7 +72,8 @@ internal sealed class TestAuthenticationHandler(
                 new("actor_tipo", "arl"),
                 new("tenant_id", "ARL_A"),
                 new(CurrentUser.PermissionClaimType, Permissions.CasosRead),
-                new(CurrentUser.PermissionClaimType, Permissions.CasosWrite)
+                new(CurrentUser.PermissionClaimType, Permissions.CasosWrite),
+                new(CurrentUser.PermissionClaimType, Permissions.CasosAsignar)
             ];
         }
 

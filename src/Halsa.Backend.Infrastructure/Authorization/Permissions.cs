@@ -15,6 +15,12 @@ public static class Permissions
     public const string CasosRead = "casos:read";
     public const string CasosWrite = "casos:write";
 
+    /// <summary>
+    /// Asignar y desasignar personal a un caso (SPEC 08). Lo tienen <c>analista-arl</c> y <c>coordinador-ips</c>;
+    /// la IPS solo sobre los casos que tiene remitidos.
+    /// </summary>
+    public const string CasosAsignar = "casos:asignar";
+
     // ── Incapacidades ────────────────────────────────────────────────────────
     public const string IncapacidadesRead = "incapacidades:read";
     public const string IncapacidadesWrite = "incapacidades:write";
@@ -39,6 +45,9 @@ public static class Permissions
     // ── Auditoría ────────────────────────────────────────────────────────────
     public const string AuditoriaRead = "auditoria:read";
     public const string AuditoriaExport = "auditoria:export";
+
+    /// <summary>Revisar y cerrar los accesos de emergencia (SPEC 08). Separa revisar de consultar.</summary>
+    public const string AuditoriaRevisar = "auditoria:revisar";
 
     // ── Integración ──────────────────────────────────────────────────────────
     public const string IntegracionFuratWrite = "integracion:furat:write";

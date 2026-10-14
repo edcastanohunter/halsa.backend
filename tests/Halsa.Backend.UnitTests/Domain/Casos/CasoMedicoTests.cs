@@ -179,7 +179,7 @@ public sealed class CasoMedicoTests
     {
         CasoMedico caso = RadicarCaso();
 
-        caso.Asignar("sub-clinico", "sub-admin", Ahora);
+        caso.Asignar("sub-clinico", null, "sub-admin", Ahora);
 
         caso.Asignaciones.ShouldHaveSingleItem();
         caso.Asignaciones.Single().Sub.ShouldBe("sub-clinico");
@@ -189,9 +189,9 @@ public sealed class CasoMedicoTests
     public void Asignar_ShouldBeIdempotent_WhenSubAlreadyAssigned()
     {
         CasoMedico caso = RadicarCaso();
-        caso.Asignar("sub-clinico", "sub-admin", Ahora);
+        caso.Asignar("sub-clinico", null, "sub-admin", Ahora);
 
-        caso.Asignar("sub-clinico", "sub-admin", Ahora.AddMinutes(1));
+        caso.Asignar("sub-clinico", null, "sub-admin", Ahora.AddMinutes(1));
 
         caso.Asignaciones.ShouldHaveSingleItem();
     }
@@ -201,8 +201,8 @@ public sealed class CasoMedicoTests
     {
         CasoMedico caso = RadicarCaso();
 
-        caso.Asignar("sub-clinico-1", "sub-admin", Ahora);
-        caso.Asignar("sub-clinico-2", "sub-admin", Ahora);
+        caso.Asignar("sub-clinico-1", null, "sub-admin", Ahora);
+        caso.Asignar("sub-clinico-2", null, "sub-admin", Ahora);
 
         caso.Asignaciones.Count.ShouldBe(2);
     }
@@ -213,9 +213,9 @@ public sealed class CasoMedicoTests
     public void Desasignar_ShouldRemoveAsignacion_WhenSubIsAssigned()
     {
         CasoMedico caso = RadicarCaso();
-        caso.Asignar("sub-clinico", "sub-admin", Ahora);
+        caso.Asignar("sub-clinico", null, "sub-admin", Ahora);
 
-        var result = caso.Desasignar("sub-clinico");
+        var result = caso.Desasignar("sub-clinico", null);
 
         result.IsSuccess.ShouldBeTrue();
         caso.Asignaciones.ShouldBeEmpty();
@@ -226,7 +226,7 @@ public sealed class CasoMedicoTests
     {
         CasoMedico caso = RadicarCaso();
 
-        var result = caso.Desasignar("sub-inexistente");
+        var result = caso.Desasignar("sub-inexistente", null);
 
         result.IsFailure.ShouldBeTrue();
         result.Error.ShouldBe(CasoMedicoErrors.AsignacionNoEncontrada);
@@ -236,12 +236,43 @@ public sealed class CasoMedicoTests
     public void Desasignar_ShouldOnlyRemoveTargetSub_WhenMultipleAssigned()
     {
         CasoMedico caso = RadicarCaso();
-        caso.Asignar("sub-clinico-1", "sub-admin", Ahora);
-        caso.Asignar("sub-clinico-2", "sub-admin", Ahora);
+        caso.Asignar("sub-clinico-1", null, "sub-admin", Ahora);
+        caso.Asignar("sub-clinico-2", null, "sub-admin", Ahora);
 
-        caso.Desasignar("sub-clinico-1");
+        caso.Desasignar("sub-clinico-1", null);
 
         caso.Asignaciones.ShouldHaveSingleItem();
         caso.Asignaciones.Single().Sub.ShouldBe("sub-clinico-2");
+    }
+
+    [Fact]
+    public void Asignar_ByAnIps_ShouldKeepTheIpsOfWhoAssigned()
+    {
+        CasoMedico caso = RadicarCaso();
+        caso.Asignar("sub-medico", Ips1, "sub-coordinador", Ahora);
+
+        caso.Asignaciones.Single().IpsId.ShouldBe(Ips1);
+    }
+
+    [Fact]
+    public void Desasignar_ByAnIps_ShouldFail_WhenTheAssignmentIsNotItsOwn()
+    {
+        CasoMedico caso = RadicarCaso();
+        caso.Asignar("sub-arl", null, "sub-admin", Ahora);
+        caso.Asignar("sub-otra-ips", Ips2, "sub-coordinador-2", Ahora);
+
+        caso.Desasignar("sub-arl", Ips1).Error.ShouldBe(CasoMedicoErrors.AsignacionNoEncontrada);
+        caso.Desasignar("sub-otra-ips", Ips1).Error.ShouldBe(CasoMedicoErrors.AsignacionNoEncontrada);
+        caso.Asignaciones.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Desasignar_ByTheArl_ShouldRemoveAnAssignmentMadeByAnIps()
+    {
+        CasoMedico caso = RadicarCaso();
+        caso.Asignar("sub-medico", Ips1, "sub-coordinador", Ahora);
+
+        caso.Desasignar("sub-medico", null).IsSuccess.ShouldBeTrue();
+        caso.Asignaciones.ShouldBeEmpty();
     }
 }

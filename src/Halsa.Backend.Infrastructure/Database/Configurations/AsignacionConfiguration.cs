@@ -2,11 +2,15 @@ using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Halsa.Backend.Infrastructure.Database.Configurations;
 
 internal sealed class AsignacionConfiguration : IEntityTypeConfiguration<Asignacion>
 {
+    // EF applies a converter of the underlying struct to the nullable property, and leaves null as NULL.
+    private static readonly ValueConverter<IpsId, string> IpsConverter = new(v => v.Value, v => new IpsId(v));
+
     public void Configure(EntityTypeBuilder<Asignacion> builder)
     {
         builder.ToTable("asignaciones", Schemas.Atel);
@@ -30,6 +34,12 @@ internal sealed class AsignacionConfiguration : IEntityTypeConfiguration<Asignac
             .HasMaxLength(20)
             .IsRequired()
             .HasConversion(v => v.Value, v => new TenantId(v));
+
+        // SPEC 08: the IPS that assigned; null for the ARL's staff.
+        builder.Property(a => a.IpsId)
+            .HasColumnName("ips_id")
+            .HasMaxLength(12)
+            .HasConversion(IpsConverter);
 
         builder.Property(a => a.AsignadoEn)
             .HasColumnName("asignado_en")

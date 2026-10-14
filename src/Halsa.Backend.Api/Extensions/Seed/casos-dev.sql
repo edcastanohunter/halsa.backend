@@ -13,6 +13,10 @@
 -- Usuarios (sub de docker/keycloak/halsa-realm.json):
 --   calificador.arla  01999000-0000-7000-8000-000000000a02
 --   medico.ips        01999000-0000-7000-8000-000000000c01
+--   coordinador.ips   01999000-0000-7000-8000-000000000c02
+--
+-- SPEC 08: una asignación del personal de la IPS guarda su ips_id (la hace coordinador.ips) y la RLS solo la admite
+-- con app.ips_id de esa IPS, así que esos bloques fijan también app.ips_id.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ── ARL_A: 3 casos, 1 remitido a la IPS 110011234501 ────────────────────────
@@ -40,12 +44,18 @@ VALUES ('01999000-0000-7000-8002-00000000a001', '01999000-0000-7000-8001-0000000
 ON CONFLICT DO NOTHING;
 
 INSERT INTO atel.asignaciones (caso_medico_id, sub, tenant_id, asignado_en, asignado_por)
-VALUES
-    ('01999000-0000-7000-8001-00000000a001', '01999000-0000-7000-8000-000000000a02', 'ARL_A',
-     '2026-09-11 08:05:00+00', '01999000-0000-7000-8000-000000000a01'),
-    ('01999000-0000-7000-8001-00000000a001', '01999000-0000-7000-8000-000000000c01', 'ARL_A',
-     '2026-09-11 08:05:00+00', '01999000-0000-7000-8000-000000000a01')
+VALUES ('01999000-0000-7000-8001-00000000a001', '01999000-0000-7000-8000-000000000a02', 'ARL_A',
+        '2026-09-11 08:05:00+00', '01999000-0000-7000-8000-000000000a01')
 ON CONFLICT DO NOTHING;
+
+SELECT set_config('app.ips_id', '110011234501', false);
+
+INSERT INTO atel.asignaciones (caso_medico_id, sub, tenant_id, ips_id, asignado_en, asignado_por)
+VALUES ('01999000-0000-7000-8001-00000000a001', '01999000-0000-7000-8000-000000000c01', 'ARL_A', '110011234501',
+        '2026-09-11 08:05:00+00', '01999000-0000-7000-8000-000000000c02')
+ON CONFLICT DO NOTHING;
+
+SELECT set_config('app.ips_id', '', false);
 
 -- ── ARL_B: 2 casos, 1 remitido a la IPS 110011234501 ────────────────────────
 SELECT set_config('app.tenant_id', 'ARL_B', false);
@@ -68,9 +78,13 @@ VALUES ('01999000-0000-7000-8002-00000000b001', '01999000-0000-7000-8001-0000000
         '110011234501', '2026-09-21 09:00:00+00', '01999000-0000-7000-8000-000000000b01')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO atel.asignaciones (caso_medico_id, sub, tenant_id, asignado_en, asignado_por)
-VALUES ('01999000-0000-7000-8001-00000000b001', '01999000-0000-7000-8000-000000000c01', 'ARL_B',
-        '2026-09-21 09:05:00+00', '01999000-0000-7000-8000-000000000b01')
+SELECT set_config('app.ips_id', '110011234501', false);
+
+INSERT INTO atel.asignaciones (caso_medico_id, sub, tenant_id, ips_id, asignado_en, asignado_por)
+VALUES ('01999000-0000-7000-8001-00000000b001', '01999000-0000-7000-8000-000000000c01', 'ARL_B', '110011234501',
+        '2026-09-21 09:05:00+00', '01999000-0000-7000-8000-000000000c02')
 ON CONFLICT DO NOTHING;
+
+SELECT set_config('app.ips_id', '', false);
 
 SELECT set_config('app.tenant_id', '', false);
