@@ -75,6 +75,111 @@
 
   "clientScopes": [
     {
+      "name": "roles",
+      "description": "Emite realm_access y resource_access, de donde la API lee los permisos. Un realm importado con clientScopes propios no crea los scopes integrados de Keycloak.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "client roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "description": "Emite name y preferred_username: el nombre del profesional que firma sale del claim name.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "web-origins",
+      "description": "Emite allowed-origins, que Keycloak usa para el CORS del backoffice.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "allowed web origins",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-allowed-origins-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
       "name": "acr",
       "description": "Emite el claim acr (SPEC 07). Un realm importado con clientScopes propios no crea el scope integrado de Keycloak: sin él ningún token lleva acr y el step-up nunca se cumple.",
       "protocol": "openid-connect",
@@ -192,9 +297,7 @@
   ],
 
   "defaultDefaultClientScopes": [
-    "role_list",
     "profile",
-    "email",
     "roles",
     "web-origins",
     "acr",
@@ -202,10 +305,7 @@
   ],
 
   "defaultOptionalClientScopes": [
-    "offline_access",
-    "address",
-    "phone",
-    "microprofile-jwt"
+    "offline_access"
   ],
 
   "clients": [
@@ -615,16 +715,30 @@
       "clientRoles": {
         "halsa-api": ["medico-ips"]
       }
+    },
+    {
+      "username": "service-account-int-arl-arl_a",
+      "enabled": true,
+      "serviceAccountClientId": "int-arl-ARL_A",
+      "clientRoles": {
+        "halsa-api": ["integracion-arl"]
+      }
+    },
+    {
+      "username": "service-account-int-ips-110011234501",
+      "enabled": true,
+      "serviceAccountClientId": "int-ips-110011234501",
+      "clientRoles": {
+        "halsa-api": ["integracion-ips"]
+      }
     }
   ],
 
   "scopeMappings": [],
   "clientScopeMappings": {
-    "int-arl-ARL_A": {
-      "halsa-api": ["integracion-arl"]
-    },
-    "int-ips-110011234501": {
-      "halsa-api": ["integracion-ips"]
-    }
+    "halsa-api": [
+      { "client": "int-arl-ARL_A", "roles": ["integracion-arl"] },
+      { "client": "int-ips-110011234501", "roles": ["integracion-ips"] }
+    ]
   }
 }

@@ -216,6 +216,88 @@ public sealed class RealmCatalogTests
         realm["defaultDefaultClientScopes"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("acr");
     }
 
+    // ── Import (docker compose down -v && up) ─────────────────────────────────
+
+    private static string KeycloakDir => Path.GetDirectoryName(RealmJsonPath)!;
+
+    [Fact]
+    public void EveryImportedFile_ShouldBeNamedAfterItsRealm()
+    {
+        // Keycloak refuses to start when a file's name does not match the realm inside it.
+        string[] archivos = Directory.GetFiles(KeycloakDir, "*.json");
+
+        archivos.ShouldNotBeEmpty();
+        foreach (string archivo in archivos)
+        {
+            string realm = JsonNode.Parse(File.ReadAllText(archivo))!["realm"]!.GetValue<string>();
+            Path.GetFileName(archivo).ShouldBe($"{realm}-realm.json");
+        }
+    }
+
+    [Fact]
+    public void EveryDefaultScope_ShouldBeDeclared()
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        // With its own clientScopes, Keycloak creates none of its built-in scopes but offline_access, and silently
+        // drops a default that names a missing one.
+        HashSet<string> declarados = [.. realm["clientScopes"]!.AsArray().Select(s => s!["name"]!.GetValue<string>()), "offline_access"];
+
+        string[] defaults = [.. realm["defaultDefaultClientScopes"]!.AsArray()
+            .Concat(realm["defaultOptionalClientScopes"]!.AsArray())
+            .Select(n => n!.GetValue<string>())];
+
+        defaults.Where(d => !declarados.Contains(d)).ShouldBeEmpty();
+        defaults.ShouldContain("roles");
+        defaults.ShouldContain("profile");
+    }
+
+    [Fact]
+    public void TheRolesScope_ShouldIssueTheClientRoles_TheApiReadsAsPermissions()
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        JsonObject roles = realm["clientScopes"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(s => s["name"]!.GetValue<string>() == "roles");
+
+        JsonObject[] mappers = [.. roles["protocolMappers"]!.AsArray().Select(m => m!.AsObject())];
+        JsonObject clientRoles = mappers.Single(m => m["protocolMapper"]!.GetValue<string>() == "oidc-usermodel-client-role-mapper");
+        clientRoles["config"]!["claim.name"]!.GetValue<string>().ShouldBe("resource_access.${client_id}.roles");
+        clientRoles["config"]!["access.token.claim"]!.GetValue<string>().ShouldBe("true");
+    }
+
+    [Theory]
+    [InlineData("int-arl-ARL_A", "integracion-arl")]
+    [InlineData("int-ips-110011234501", "integracion-ips")]
+    public void EveryIntegrationClient_ShouldHaveItsRoleOnItsServiceAccount(string clientId, string rol)
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        // A client-credentials token carries only the roles of the client's service-account user.
+        JsonObject cuenta = realm["users"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(u => u["serviceAccountClientId"]?.GetValue<string>() == clientId);
+
+        cuenta["clientRoles"]!["halsa-api"]!.AsArray().Select(r => r!.GetValue<string>()).ShouldBe([rol]);
+    }
+
+    [Fact]
+    public void ClientScopeMappings_ShouldUseTheImportFormat()
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        // { "<client that owns the roles>": [ { "client": "<client that receives them>", "roles": [...] } ] }
+        foreach ((string _, JsonNode? mapeos) in realm["clientScopeMappings"]!.AsObject())
+        {
+            foreach (JsonNode? mapeo in mapeos.ShouldBeOfType<JsonArray>())
+            {
+                mapeo!["client"]!.GetValue<string>().ShouldNotBeNullOrWhiteSpace();
+                mapeo["roles"].ShouldBeOfType<JsonArray>().ShouldNotBeEmpty();
+            }
+        }
+    }
+
     [Theory]
     [InlineData("calificador.arla", true)]
     [InlineData("medico.ips", true)]
