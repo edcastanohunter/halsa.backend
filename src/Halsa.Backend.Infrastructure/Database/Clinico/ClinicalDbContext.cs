@@ -45,6 +45,8 @@ public sealed class ClinicalDbContext(
 
     IQueryable<HistoriaClinicaDetalle> IClinicalDbContext.Registros => HistoriaClinica;
 
+    IQueryable<Soporte> IClinicalDbContext.Soportes => Soportes;
+
     void IClinicalDbContext.Add(HistoriaClinicaDetalle registro) => HistoriaClinica.Add(registro);
 
     // ── Función de la RLS clínica ─────────────────────────────────────────────

@@ -13,6 +13,9 @@ public interface IClinicalDbContext
     /// <summary>Registros visibles para el actor actual (query filter y RLS clínica).</summary>
     IQueryable<HistoriaClinicaDetalle> Registros { get; }
 
+    /// <summary>La metadata de los archivos soporte visibles (SPEC 07); solo lectura (SPEC 08).</summary>
+    IQueryable<Soporte> Soportes { get; }
+
     void Add(HistoriaClinicaDetalle registro);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
