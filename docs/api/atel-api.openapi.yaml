@@ -26,7 +26,12 @@ tags:
   - name: Incapacidades
     description: Carga de certificados de incapacidad por IPS o personal médico.
   - name: Clinico
-    description: Historia clínica. La carga de conceptos (SPEC 06) y los accesos sensibles con step-up.
+    description: |
+      Historia clínica. La carga de conceptos (SPEC 06) y, con la SPEC 08, su lectura, el soporte de las incapacidades
+      y el dictamen PCL. Toda lectura exige el permiso, `acr >= 2` y estar asignado al caso (ABAC), salvo el acceso de
+      emergencia; un caso no visible responde `404` y uno visible sin asignación `403` (`Clinico.NoAsignado`).
+  - name: Auditoria
+    description: Revisión de los accesos de emergencia por el oficial de privacidad (SPEC 08).
 
 security:
   - personal: []
@@ -157,7 +162,7 @@ paths:
           description: Concepto registrado. Repetir la llave con el mismo cuerpo devuelve la misma respuesta.
           headers:
             Location:
-              description: El registro en la historia clínica del caso. Se podrá leer con la SPEC 08.
+              description: El registro en la historia clínica del caso (`GET`, SPEC 08).
               schema: { type: string, example: /v1/casos/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b/registros-clinicos/0192f1e5-0000-7000-8000-000000000001 }
           content:
             application/json:
@@ -199,7 +204,7 @@ paths:
           description: Registro creado.
           headers:
             Location:
-              description: El registro en la historia clínica del caso. Se podrá leer con la SPEC 08.
+              description: El registro en la historia clínica del caso (`GET`, SPEC 08).
               schema: { type: string, example: /v1/casos/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b/registros-clinicos/0192f1e5-0000-7000-8000-000000000001 }
           content:
             application/json:
@@ -209,6 +214,58 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/ConflictoRegistroClinico' }
+
+    get:
+      tags: [Clinico]
+      operationId: listarRegistrosClinicos
+      summary: Historia clínica del caso, descifrada y en orden cronológico (acceso auditado).
+      description: |
+        Requiere `clinico:read`, `acr >= 2` y la asignación al caso (o el acceso de emergencia). **Excluye** los
+        registros `DICTAMEN_PCL`: su motivación solo sale por `GET /casos/{casoId}/dictamen-pcl`. Un registro corregido
+        se sigue devolviendo, con `corregidoPor`. Cada lectura queda en `auditoria.accesos` (`LEER / REGISTRO_CLINICO`).
+      security:
+        - personal: [clinico:read]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+        - $ref: '#/components/parameters/MotivoAcceso'
+      responses:
+        '200':
+          description: Los registros del caso.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RegistroClinicoResponse' }
+        '401': { $ref: '#/components/responses/StepUpRequerido' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /casos/{casoId}/registros-clinicos/{registroId}:
+    get:
+      tags: [Clinico]
+      operationId: obtenerRegistroClinico
+      summary: Un registro de la historia clínica del caso (acceso auditado).
+      description: |
+        La misma política que la lista. Un registro `DICTAMEN_PCL`, o de otro caso, responde `404`
+        (`Clinico.RegistroNoEncontrado`).
+      security:
+        - personal: [clinico:read]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+        - name: registroId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/MotivoAcceso'
+      responses:
+        '200':
+          description: El registro.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistroClinicoResponse' }
+        '401': { $ref: '#/components/responses/StepUpRequerido' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
 
   /casos/{casoId}/incapacidades:
     get:
@@ -362,26 +419,63 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problema' }
 
+  /casos/{casoId}/incapacidades/{incapacidadId}/soporte:
+    get:
+      tags: [Clinico]
+      operationId: descargarSoporteIncapacidad
+      summary: Descarga el PDF soporte de la incapacidad, descifrado (acceso clínico auditado).
+      description: |
+        El PDF contiene el diagnóstico: la misma política que la historia clínica (`clinico:read`, `acr >= 2` y la
+        asignación, o el acceso de emergencia). La lectura queda en `auditoria.accesos` (`LEER / SOPORTE`) antes de abrir
+        el archivo. Si el archivo no descifra o su SHA-256 no es el del original, responde `500` con
+        `Archivos.Corrupto` y no entrega ningún byte.
+      security:
+        - personal: [clinico:read]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+        - name: incapacidadId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/MotivoAcceso'
+      responses:
+        '200':
+          description: El PDF original, byte a byte.
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="incapacidad-INC-2026-000123.pdf"' }
+            Cache-Control:
+              schema: { type: string, const: 'no-store' }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/StepUpRequerido' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: El caso, la incapacidad o su soporte no existen o no son visibles (`Clinico.SoporteNoEncontrado`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '500':
+          description: El archivo no pasó la verificación de integridad (`Archivos.Corrupto`). No se entrega.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
   /casos/{casoId}/dictamen-pcl:
     get:
       tags: [Clinico]
       operationId: obtenerDictamenPcl
-      summary: Dictamen de pérdida de capacidad laboral (acceso sensible y auditado).
+      summary: Dictamen de pérdida de capacidad laboral vigente (acceso sensible y auditado).
       description: |
-        Requiere `pcl:dictamen:read`, la asignación al caso, `acr >= 2` y `auth_time` de menos de 15 minutos.
-        Cada lectura, permitida o denegada, queda en `auditoria.accesos`.
+        Requiere `pcl:dictamen:read`, la asignación al caso (o el acceso de emergencia), `acr >= 2` y `auth_time` de 15
+        minutos o menos. Es la única salida de la motivación (el registro `DICTAMEN_PCL` de la historia clínica). Cada
+        lectura, permitida o denegada, queda en `auditoria.accesos`. Sin dictamen, `404` con `Dictamen.NoEncontrado`.
       security:
         - personal: [pcl:dictamen:read]
       parameters:
-        - name: casoId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-        - name: Halsa-Motivo-Acceso
-          in: header
-          required: false
-          description: Obligatorio solo para el acceso de emergencia (`clinico:emergencia`). Mínimo 20 caracteres.
-          schema: { type: string, minLength: 20, maxLength: 500 }
+        - $ref: '#/components/parameters/CasoId'
+        - $ref: '#/components/parameters/MotivoAcceso'
       responses:
         '200':
           description: Dictamen.
@@ -394,6 +488,153 @@ paths:
         '401': { $ref: '#/components/responses/StepUpRequerido' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+    post:
+      tags: [Clinico]
+      operationId: registrarDictamenPcl
+      summary: Registra el dictamen PCL del caso, o corrige el vigente.
+      description: |
+        Requiere `pcl:dictamen:write`, la asignación al caso (el acceso de emergencia no abre escrituras), `acr >= 2` y
+        `auth_time` de 15 minutos o menos. Solo el personal de la ARL del caso (`Dictamen.ActorNoAutorizado`).
+        El calificador sale del token.
+
+        En una sola transacción: el registro `DICTAMEN_PCL` de la historia clínica (cifrado; `fundamentos` va en
+        `analisis` y los `componentes` en `observaciones`), la parte administrativa, la calificación del caso
+        (porcentaje, fecha de estructuración y origen) y su paso a `EnCalificacionPcl`, y la auditoría (`CREAR` o
+        `CORREGIR` sobre `REGISTRO_CLINICO`).
+
+        Un solo dictamen vigente por caso: sin `corrigeA`, un segundo `POST` responde `409` con `Dictamen.YaExiste`.
+        Con `corrigeA` (el `id` del vigente) lo reemplaza, solo mientras esté `PENDIENTE` (si no, `409` con
+        `Dictamen.YaNotificado`).
+      security:
+        - personal: [pcl:dictamen:write]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistrarDictamenPclRequest' }
+      responses:
+        '201':
+          description: Dictamen registrado.
+          headers:
+            Location:
+              schema: { type: string, example: /v1/casos/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b/dictamen-pcl }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DictamenPclResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/StepUpRequerido' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: |
+            El caso no existe o no es visible (`Clinico.CasoNoEncontrado`), o `corrigeA` sin dictamen vigente
+            (`Dictamen.NoEncontrado`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '409': { $ref: '#/components/responses/ConflictoDictamen' }
+
+  /casos/{casoId}/dictamen-pcl/notificar:
+    post:
+      tags: [Clinico]
+      operationId: notificarDictamenPcl
+      summary: Registra la notificación del dictamen PCL vigente.
+      description: |
+        La misma política que el registro del dictamen. Es un dato administrativo: solo desde `PENDIENTE`, y
+        `notificadoEn` no puede ser futuro ni anterior a `fechaDictamen` (en hora de Colombia;
+        `Dictamen.NotificacionFueraDeRango`). Emite `DictamenPclNotificadoIntegrationEvent`, del que cuelga el plazo de
+        controversia (SPEC 09). Se audita como `ACTUALIZAR / CASO`.
+      security:
+        - personal: [pcl:dictamen:write]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificarDictamenPclRequest' }
+      responses:
+        '204': { description: Notificación registrada. }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/StepUpRequerido' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: El dictamen ya no está `PENDIENTE` (`Dictamen.YaNotificado`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
+  /auditoria/revisiones-emergencia:
+    get:
+      tags: [Auditoria]
+      operationId: listarRevisionesEmergencia
+      summary: Revisiones de los accesos de emergencia a los casos del tenant.
+      description: |
+        Para el oficial de privacidad de una ARL (`auditoria:revisar`), de la más reciente a la más antigua. Solo las
+        del tenant del token. La consulta queda auditada (`LEER / AUDITORIA`).
+      security:
+        - personal: [auditoria:revisar]
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          description: Sin `estado`, todas.
+          schema: { type: string, enum: [PENDIENTE, CERRADA] }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Una página de revisiones.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaRevisionesEmergencia' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /auditoria/revisiones-emergencia/{id}/cerrar:
+    post:
+      tags: [Auditoria]
+      operationId: cerrarRevisionEmergencia
+      summary: Cierra la revisión de un acceso de emergencia con su conclusión.
+      description: |
+        Una revisión cerrada no cambia: un segundo cierre responde `409` (`Auditoria.RevisionYaCerrada`). El cierre queda
+        auditado (`ACTUALIZAR / AUDITORIA`).
+      security:
+        - personal: [auditoria:revisar]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CerrarRevisionEmergenciaRequest' }
+      responses:
+        '204': { description: Revisión cerrada. }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: La revisión no existe o no es del tenant (`Auditoria.RevisionNoEncontrada`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '409':
+          description: La revisión ya está cerrada (`Auditoria.RevisionYaCerrada`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
 
 webhooks:
   plazoProximoAVencer:
@@ -444,10 +685,14 @@ components:
           authorizationUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/auth
           tokenUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/token
           scopes:
+            clinico:read: Leer la historia clínica y descargar los soportes de los casos asignados
             clinico:write: Registrar conceptos médicos, evoluciones y conceptos de rehabilitación
+            clinico:emergencia: Leer la historia clínica de un caso sin estar asignado (break-the-glass), con motivo y revisión
             incapacidades:read: Consultar las incapacidades de un caso
             incapacidades:write: Cargar incapacidades
             pcl:dictamen:read: Leer dictámenes PCL
+            pcl:dictamen:write: Registrar, corregir y notificar dictámenes PCL
+            auditoria:revisar: Revisar y cerrar los accesos de emergencia
     integracion:
       type: oauth2
       description: Realm `halsa`, clients `int-arl-*` o `int-ips-*`. Client Credentials con `private_key_jwt` y token ligado a certificado mTLS (RFC 8705).
@@ -473,6 +718,22 @@ components:
       required: false
       description: Se propaga a los logs y a la auditoría. Si falta, la API genera uno y lo devuelve.
       schema: { type: string, maxLength: 64 }
+    MotivoAcceso:
+      name: Halsa-Motivo-Acceso
+      in: header
+      required: false
+      description: |
+        Solo para el acceso de emergencia (break-the-glass): con el permiso `clinico:emergencia`, un profesional no
+        asignado lee el caso si justifica el acceso con entre 20 y 500 caracteres (si no, `403` con
+        `Clinico.MotivoEmergenciaInvalido`). Nunca salta el tenant ni la remisión. El motivo queda en
+        `auditoria.accesos` y abre una revisión que vence a las 72 h; los accesos del mismo actor al mismo caso en 1 h
+        comparten la revisión. Un profesional asignado puede enviarlo: se ignora.
+      schema: { type: string, minLength: 20, maxLength: 500 }
+    CasoId:
+      name: casoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     HalsaSignature:
       name: Halsa-Signature
       in: header
@@ -827,10 +1088,110 @@ components:
         casoId: { type: string, format: uuid }
         registradoEn: { type: string, format: date-time }
 
+    RegistroClinicoResponse:
+      type: object
+      description: |
+        Un registro de la historia clínica, descifrado (SPEC 08). Nunca un `DICTAMEN_PCL`. El profesional es el que firmó
+        el registro; su nombre no se guarda en la historia clínica.
+      required: [id, casoId, tipo, profesional, atendidoEn, registradoEn, retenerHasta, contenido]
+      properties:
+        id: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        tipo: { type: string, enum: [REPORTE_INICIAL, CONCEPTO_MEDICO, EVOLUCION, CONCEPTO_REHABILITACION, CERTIFICADO_INCAPACIDAD] }
+        profesional: { $ref: '#/components/schemas/ProfesionalFirma' }
+        atendidoEn: { type: string, format: date-time }
+        registradoEn: { type: string, format: date-time }
+        retenerHasta:
+          type: string
+          format: date
+          description: Res. 839/2017, 15 años desde el registro.
+        corrigeA: { type: [string, 'null'], format: uuid }
+        corregidoPor:
+          type: [string, 'null']
+          format: uuid
+          description: La corrección más reciente de este registro, si la hay.
+        contenido: { $ref: '#/components/schemas/ContenidoClinico' }
+
+    ProfesionalFirma:
+      type: object
+      description: Quien firma un registro clínico. `registroRethus` solo es nulo en un `REPORTE_INICIAL`.
+      required: [sub, tipoDocumento, numeroDocumento]
+      properties:
+        sub:
+          type: string
+          description: El `sub` del token del backoffice, o la service account de la integración.
+        tipoDocumento: { type: string, maxLength: 10 }
+        numeroDocumento: { type: string, maxLength: 30 }
+        registroRethus: { type: [string, 'null'], maxLength: 30 }
+
+    RegistrarDictamenPclRequest:
+      type: object
+      description: El calificador sale del token, nunca del cuerpo.
+      required: [porcentajePcl, origen, fechaEstructuracion, fechaDictamen, fundamentos, diagnosticos]
+      properties:
+        porcentajePcl: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
+        origen: { type: string, enum: [LABORAL, COMUN, MIXTO] }
+        fechaEstructuracion:
+          type: string
+          format: date
+          description: No puede ser posterior a `fechaDictamen` (`Dictamen.FechasInvalidas`).
+        fechaDictamen:
+          type: string
+          format: date
+          description: No puede ser futura (hoy en Colombia).
+        componentes:
+          type: [object, 'null']
+          description: Si vienen, `deficiencias + rolLaboralYOtrasAreas = porcentajePcl` (±0,01; `Dictamen.ComponentesNoSuman`).
+          required: [deficiencias, rolLaboralYOtrasAreas]
+          properties:
+            deficiencias: { type: number, minimum: 0 }
+            rolLaboralYOtrasAreas: { type: number, minimum: 0 }
+        fundamentos:
+          type: string
+          minLength: 50
+          maxLength: 20000
+          x-clasificacion: clinico
+        diagnosticos:
+          type: array
+          minItems: 1
+          x-clasificacion: clinico
+          description: Solo CIE-10, validado por formato.
+          items:
+            type: object
+            required: [sistema, codigo]
+            properties:
+              sistema: { type: string, const: CIE-10 }
+              codigo: { type: string, pattern: '^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$', example: S62.6 }
+              descripcion: { type: [string, 'null'], maxLength: 250 }
+        corrigeA:
+          type: [string, 'null']
+          format: uuid
+          description: El `id` del dictamen vigente, para corregirlo mientras esté `PENDIENTE`.
+
+    NotificarDictamenPclRequest:
+      type: object
+      required: [notificadoEn, medio]
+      properties:
+        notificadoEn: { type: string, format: date-time }
+        medio: { type: string, enum: [CORREO_CERTIFICADO, ELECTRONICO, PERSONAL] }
+
+    Calificador:
+      type: object
+      description: El calificador del dictamen. `nombreCompleto` es el claim `name` del token, si lo traía.
+      required: [identificacion, registroRethus]
+      properties:
+        identificacion: { $ref: '#/components/schemas/Identificacion' }
+        nombreCompleto: { type: [string, 'null'], maxLength: 200 }
+        registroRethus: { type: string, maxLength: 30 }
+
     DictamenPclResponse:
       type: object
-      required: [casoId, porcentajePcl, origen, fechaEstructuracion, fechaDictamen, calificador]
+      required: [id, casoId, porcentajePcl, origen, fechaEstructuracion, fechaDictamen, manual, fundamentos, diagnosticos, calificador, estadoNotificacion]
       properties:
+        id:
+          type: string
+          format: uuid
+          description: El que se indica en `corrigeA` para corregirlo.
         casoId: { type: string, format: uuid }
         porcentajePcl: { type: number, minimum: 0, maximum: 100, multipleOf: 0.01 }
         origen: { type: string, enum: [LABORAL, COMUN, MIXTO] }
@@ -838,7 +1199,7 @@ components:
         fechaDictamen: { type: string, format: date }
         manual: { type: string, const: 'Decreto 1507/2014' }
         componentes:
-          type: object
+          type: [object, 'null']
           properties:
             deficiencias: { type: number }
             rolLaboralYOtrasAreas: { type: number }
@@ -847,10 +1208,65 @@ components:
           description: Motivación clínica. Es el contenido más sensible del sistema.
         diagnosticos:
           type: array
-          items: { $ref: '#/components/schemas/Codificado' }
-        calificador: { $ref: '#/components/schemas/Profesional' }
+          items:
+            type: object
+            required: [sistema, codigo]
+            properties:
+              sistema: { type: string }
+              codigo: { type: string }
+        calificador: { $ref: '#/components/schemas/Calificador' }
         estadoNotificacion: { type: string, enum: [PENDIENTE, NOTIFICADO, EN_CONTROVERSIA, EN_FIRME] }
-        venceControversiaEn: { type: string, format: date }
+        venceControversiaEn:
+          type: [string, 'null']
+          format: date
+          description: Nulo hasta que lo calcule la SPEC 09.
+        corrigeA:
+          type: [string, 'null']
+          format: uuid
+          description: El dictamen que este corrigió, si lo hay.
+
+    # ---------- Auditoría ----------
+    RevisionEmergenciaResponse:
+      type: object
+      description: La revisión de un acceso de emergencia (break-the-glass). Vence a las 72 h de abrirse.
+      required: [id, casoMedicoId, accesoId, actorId, motivo, ocurridoEn, venceRevisionEn, estado]
+      properties:
+        id: { type: string, format: uuid }
+        casoMedicoId: { type: string, format: uuid }
+        accesoId:
+          type: string
+          format: uuid
+          description: La fila de `auditoria.accesos` que la abrió. Los accesos agrupados tienen su propia fila con el motivo.
+        actorId: { type: string }
+        motivo: { type: string, minLength: 20, maxLength: 500 }
+        ocurridoEn: { type: string, format: date-time }
+        venceRevisionEn: { type: string, format: date-time }
+        estado: { type: string, enum: [PENDIENTE, CERRADA] }
+        revisadoEn: { type: [string, 'null'], format: date-time }
+        revisadoPor: { type: [string, 'null'] }
+        conclusion: { type: [string, 'null'], enum: [JUSTIFICADO, INJUSTIFICADO, null] }
+        observaciones: { type: [string, 'null'], maxLength: 2000 }
+
+    PaginaRevisionesEmergencia:
+      type: object
+      required: [items, page, pageSize, totalCount]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RevisionEmergenciaResponse' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalCount: { type: integer }
+        totalPages: { type: integer }
+        hasNextPage: { type: boolean }
+        hasPreviousPage: { type: boolean }
+
+    CerrarRevisionEmergenciaRequest:
+      type: object
+      required: [conclusion]
+      properties:
+        conclusion: { type: string, enum: [JUSTIFICADO, INJUSTIFICADO] }
+        observaciones: { type: [string, 'null'], maxLength: 2000 }
 
     # ---------- Eventos ----------
     PlazoResumen:
@@ -959,6 +1375,13 @@ components:
       description: |
         La `Idempotency-Key` ya se usó con un cuerpo distinto (`Integracion.IdempotenciaConflicto`, solo en la
         integración), o el caso está rechazado o cerrado y no admite registros (`Clinico.CasoNoAdmiteRegistros`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+    ConflictoDictamen:
+      description: |
+        El caso ya tiene un dictamen vigente y no se indicó `corrigeA` (`Dictamen.YaExiste`), el vigente ya se notificó
+        (`Dictamen.YaNotificado`), o `corrigeA` no es el vigente (`Dictamen.CorrigeANoVigente`).
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }

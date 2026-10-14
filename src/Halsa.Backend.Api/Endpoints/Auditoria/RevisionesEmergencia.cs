@@ -52,7 +52,7 @@ internal sealed class CerrarRevisionEmergencia : IEndpoint
     public void MapEndpoint(IEndpointRouteBuilder app) =>
         app.MapPost("auditoria/revisiones-emergencia/{id:guid}/cerrar", async (
                 Guid id,
-                Request request,
+                CerrarRevisionEmergenciaRequest request,
                 ISender sender,
                 CancellationToken ct) =>
             {
@@ -72,6 +72,4 @@ internal sealed class CerrarRevisionEmergencia : IEndpoint
         .ProducesProblem(StatusCodes.Status409Conflict)
         .RequirePermission(Permissions.AuditoriaRevisar)
         .Auditable(RecursoAuditoria.Auditoria, AccionAuditoria.Actualizar);
-
-    internal sealed record Request(string? Conclusion, string? Observaciones);
 }

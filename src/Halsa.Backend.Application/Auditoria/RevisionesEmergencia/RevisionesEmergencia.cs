@@ -140,6 +140,10 @@ internal sealed class ListRevisionesEmergenciaQueryHandler(
 
 // ── Cerrar ────────────────────────────────────────────────────────────────────
 
+/// <summary>El cuerpo de <c>POST /v1/auditoria/revisiones-emergencia/{id}/cerrar</c>.</summary>
+/// <param name="Conclusion"><c>JUSTIFICADO</c> o <c>INJUSTIFICADO</c>.</param>
+public sealed record CerrarRevisionEmergenciaRequest(string? Conclusion, string? Observaciones);
+
 /// <summary>
 /// Cierra una revisión de emergencia con su conclusión (SPEC 08). Una vez cerrada no cambia: un segundo cierre
 /// responde <see cref="RevisionEmergenciaErrors.YaCerrada"/>.
