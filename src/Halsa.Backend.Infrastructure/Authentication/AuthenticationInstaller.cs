@@ -124,10 +124,14 @@ internal static class AuthenticationInstaller
 
     internal static IServiceCollection AddAuthorizationInternal(this IServiceCollection services)
     {
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+            options.AddPolicy(Policies.IncapacidadEscritura, policy => policy.AddRequirements(
+                new PermissionRequirement(Permissions.IncapacidadesWrite),
+                new StepUpRequirement(Policies.AcrIncapacidadEscritura, MaxAntiguedadAuth: null))));
 
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddScoped<IAuthorizationHandler, StepUpHandler>();
 
         // Records policy denials on .Auditable routes (SPEC 04), then answers as the default handler would.
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuditingAuthorizationResultHandler>();

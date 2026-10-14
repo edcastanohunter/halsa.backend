@@ -57,6 +57,21 @@ curl -s -X POST http://localhost:8080/realms/halsa/protocol/openid-connect/token
   -d grant_type=password -d client_id=halsa-dev-cli -d username=analista.arla -d password=dev
 ```
 
+Some endpoints (loading an incapacidad, SPEC 07) require step-up: a human token with `acr="2"`. The `halsa`
+realm's browser flow (`browser-loa`) asks for the password at level 1 and an OTP at level 2, so an
+authorization code flow of `halsa-backoffice` with `acr_values=2` prompts for the OTP. Only
+`calificador.arla` and `medico.ips` have one. **Development only** - these secrets live in
+`docker/keycloak/halsa-realm.json` and the production realm is never imported from it:
+
+| User | TOTP secret (base32, for an authenticator app) |
+| --- | --- |
+| `calificador.arla` | `NBQWY43BMRSXMY3BNRUWM2LDMFSG64RR` |
+| `medico.ips` | `NBQWY43BMRSXM3LFMRUWG33JOBZTAMBR` |
+
+TOTP, SHA-1, 6 digits, 30 seconds. `analista.arla` has no OTP and can never reach `acr="2"`. With an OTP
+configured, the password grant of `halsa-dev-cli` also needs the current code (`-d totp=123456`) and still issues
+`acr="1"`: only the browser flow reaches level 2.
+
 ## The mediator
 
 `Halsa.Backend.Mediation` is a small, dependency-free reimplementation of the pattern MediatR made

@@ -367,6 +367,113 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                     b.ToTable("remisiones", "atel");
                 });
 
+            modelBuilder.Entity("Halsa.Backend.Domain.Incapacidades.Incapacidad", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CadenaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cadena_id");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("client_id");
+
+                    b.Property<byte[]>("DiagnosticoCategoriaIndice")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("diagnostico_categoria_indice");
+
+                    b.Property<int>("Dias")
+                        .HasColumnType("integer")
+                        .HasColumnName("dias");
+
+                    b.Property<int>("DiasAcumulados")
+                        .HasColumnType("integer")
+                        .HasColumnName("dias_acumulados");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("estado");
+
+                    b.Property<DateOnly>("FechaFin")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_fin");
+
+                    b.Property<DateOnly>("FechaInicio")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_inicio");
+
+                    b.Property<string>("Modalidad")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("modalidad");
+
+                    b.Property<string>("NumeroCertificado")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("numero_certificado");
+
+                    b.Property<Guid?>("ProrrogaDe")
+                        .HasColumnType("uuid")
+                        .HasColumnName("prorroga_de");
+
+                    b.Property<DateTimeOffset>("RegistradaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registrada_en");
+
+                    b.Property<string>("RegistradaPor")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("registrada_por");
+
+                    b.Property<Guid>("RegistroClinicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("registro_clinico_id");
+
+                    b.Property<Guid>("SoporteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("soporte_id");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("tipo");
+
+                    b.HasKey("Id")
+                        .HasName("pk_incapacidades");
+
+                    b.HasIndex("CasoMedicoId")
+                        .HasDatabaseName("ix_incapacidades_caso_medico_id");
+
+                    b.HasIndex("ProrrogaDe")
+                        .HasDatabaseName("ix_incapacidades_prorroga_de");
+
+                    b.HasIndex("TenantId", "CasoMedicoId", "FechaInicio")
+                        .HasDatabaseName("ix_incapacidades_tenant_caso_fecha_inicio");
+
+                    b.ToTable("incapacidades", "atel");
+                });
+
             modelBuilder.Entity("Halsa.Backend.Infrastructure.Database.Auditoria.AccesoAuditado", b =>
                 {
                     b.Property<Guid>("Id")
@@ -773,6 +880,92 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_remisiones_casos_medicos");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Incapacidades.Incapacidad", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Casos.CasoMedico", null)
+                        .WithMany()
+                        .HasForeignKey("CasoMedicoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_incapacidades_casos_medicos");
+
+                    b.HasOne("Halsa.Backend.Domain.Incapacidades.Incapacidad", null)
+                        .WithMany()
+                        .HasForeignKey("ProrrogaDe")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_incapacidades_prorroga_de");
+
+                    b.OwnsOne("Halsa.Backend.Domain.Incapacidades.IpsEmisora", "IpsEmisora", b1 =>
+                        {
+                            b1.Property<Guid>("IncapacidadId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("id");
+
+                            b1.Property<string>("Nombre")
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("ips_emisora_nombre");
+
+                            b1.Property<string>("Reps")
+                                .IsRequired()
+                                .HasMaxLength(12)
+                                .HasColumnType("character varying(12)")
+                                .HasColumnName("ips_emisora_reps");
+
+                            b1.HasKey("IncapacidadId");
+
+                            b1.ToTable("incapacidades", "atel");
+
+                            b1.WithOwner()
+                                .HasForeignKey("IncapacidadId")
+                                .HasConstraintName("fk_incapacidades_incapacidades_id");
+                        });
+
+                    b.OwnsOne("Halsa.Backend.Domain.Incapacidades.ProfesionalIncapacidad", "Profesional", b1 =>
+                        {
+                            b1.Property<Guid>("IncapacidadId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("id");
+
+                            b1.Property<string>("Nombre")
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("profesional_nombre");
+
+                            b1.Property<string>("NumeroDocumento")
+                                .IsRequired()
+                                .HasMaxLength(30)
+                                .HasColumnType("character varying(30)")
+                                .HasColumnName("profesional_numero_documento");
+
+                            b1.Property<string>("RegistroRethus")
+                                .IsRequired()
+                                .HasMaxLength(30)
+                                .HasColumnType("character varying(30)")
+                                .HasColumnName("profesional_registro_rethus");
+
+                            b1.Property<string>("TipoDocumento")
+                                .IsRequired()
+                                .HasMaxLength(10)
+                                .HasColumnType("character varying(10)")
+                                .HasColumnName("profesional_tipo_documento");
+
+                            b1.HasKey("IncapacidadId");
+
+                            b1.ToTable("incapacidades", "atel");
+
+                            b1.WithOwner()
+                                .HasForeignKey("IncapacidadId")
+                                .HasConstraintName("fk_incapacidades_incapacidades_id");
+                        });
+
+                    b.Navigation("IpsEmisora")
+                        .IsRequired();
+
+                    b.Navigation("Profesional")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Halsa.Backend.Domain.Casos.CasoMedico", b =>

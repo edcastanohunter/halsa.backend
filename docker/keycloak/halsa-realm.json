@@ -12,7 +12,89 @@
   "bruteForceProtected": false,
   "accessTokenLifespan": 300,
 
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyLookAheadWindow": 1,
+
+  "attributes": {
+    "acr.loa.map": "{\"1\":1,\"2\":2}"
+  },
+
+  "browserFlow": "browser-loa",
+  "authenticationFlows": [
+    {
+      "alias": "browser-loa",
+      "description": "Navegador con step-up (SPEC 07): nivel 1 = contraseña, nivel 2 = OTP. El nivel lo pide acr_values.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "flowAlias": "browser-loa niveles", "requirement": "REQUIRED", "priority": 10, "authenticatorFlow": true, "autheticatorFlow": true, "userSetupAllowed": false }
+      ]
+    },
+    {
+      "alias": "browser-loa niveles",
+      "description": "Un subflujo condicional por nivel de autenticación.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "flowAlias": "browser-loa nivel 1", "requirement": "CONDITIONAL", "priority": 10, "authenticatorFlow": true, "autheticatorFlow": true, "userSetupAllowed": false },
+        { "flowAlias": "browser-loa nivel 2", "requirement": "CONDITIONAL", "priority": 20, "authenticatorFlow": true, "autheticatorFlow": true, "userSetupAllowed": false }
+      ]
+    },
+    {
+      "alias": "browser-loa nivel 1",
+      "description": "LoA 1: usuario y contraseña. Una sesión de menos de 10 h no la vuelve a pedir.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "conditional-level-of-authentication", "authenticatorConfig": "loa-nivel-1", "requirement": "REQUIRED", "priority": 10, "authenticatorFlow": false, "autheticatorFlow": false, "userSetupAllowed": false },
+        { "authenticator": "auth-username-password-form", "requirement": "REQUIRED", "priority": 20, "authenticatorFlow": false, "autheticatorFlow": false, "userSetupAllowed": false }
+      ]
+    },
+    {
+      "alias": "browser-loa nivel 2",
+      "description": "LoA 2: OTP. Se pide cada vez que el cliente envía acr_values=2.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "conditional-level-of-authentication", "authenticatorConfig": "loa-nivel-2", "requirement": "REQUIRED", "priority": 10, "authenticatorFlow": false, "autheticatorFlow": false, "userSetupAllowed": false },
+        { "authenticator": "auth-otp-form", "requirement": "REQUIRED", "priority": 20, "authenticatorFlow": false, "autheticatorFlow": false, "userSetupAllowed": false }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    { "alias": "loa-nivel-1", "config": { "loa-condition-level": "1", "loa-max-age": "36000" } },
+    { "alias": "loa-nivel-2", "config": { "loa-condition-level": "2", "loa-max-age": "0" } }
+  ],
+
   "clientScopes": [
+    {
+      "name": "acr",
+      "description": "Emite el claim acr (SPEC 07). Un realm importado con clientScopes propios no crea el scope integrado de Keycloak: sin él ningún token lleva acr y el step-up nunca se cumple.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "acr loa level",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-acr-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
     {
       "name": "halsa-claims",
       "description": "Mappers de atributos de usuario: tenant_id, ips_id, actor_tipo y la identidad del profesional (rethus, tipo_documento, numero_documento)",
@@ -379,7 +461,7 @@
           "clientRole": true,
           "composites": {
             "client": {
-              "halsa-api": ["casos:read", "clinico:read", "clinico:write", "incapacidades:write"]
+              "halsa-api": ["casos:read", "clinico:read", "clinico:write", "incapacidades:read", "incapacidades:write"]
             }
           }
         },
@@ -449,7 +531,13 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "dev", "temporary": false }
+        { "type": "password", "value": "dev", "temporary": false },
+        {
+          "type": "otp",
+          "userLabel": "dev-otp",
+          "secretData": "{\"value\":\"halsadevcalificador1\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"period\":30,\"algorithm\":\"HmacSHA1\",\"counter\":0}"
+        }
       ],
       "attributes": {
         "actor_tipo": ["arl"],
@@ -509,7 +597,13 @@
       "enabled": true,
       "emailVerified": true,
       "credentials": [
-        { "type": "password", "value": "dev", "temporary": false }
+        { "type": "password", "value": "dev", "temporary": false },
+        {
+          "type": "otp",
+          "userLabel": "dev-otp",
+          "secretData": "{\"value\":\"halsadevmedicoips001\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"period\":30,\"algorithm\":\"HmacSHA1\",\"counter\":0}"
+        }
       ],
       "attributes": {
         "actor_tipo": ["ips"],

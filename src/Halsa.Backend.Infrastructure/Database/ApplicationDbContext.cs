@@ -2,6 +2,7 @@ using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Domain.Incapacidades;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Integraciones;
 using Halsa.Backend.Infrastructure.EventSourcing;
@@ -37,11 +38,15 @@ public sealed class ApplicationDbContext(
 
     internal DbSet<SolicitudIntegracion> Solicitudes => Set<SolicitudIntegracion>();
 
+    internal DbSet<Incapacidad> Incapacidades => Set<Incapacidad>();
+
     // ── IReadDbContext ────────────────────────────────────────────────────────
 
     IQueryable<CasoMedico> IReadDbContext.CasosMedicos => CasosMedicos;
 
     IQueryable<SolicitudIntegracion> IReadDbContext.Solicitudes => Solicitudes.AsNoTracking();
+
+    IQueryable<Incapacidad> IReadDbContext.Incapacidades => Incapacidades.AsNoTracking();
 
     // ── Model ─────────────────────────────────────────────────────────────────
 
@@ -73,6 +78,12 @@ public sealed class ApplicationDbContext(
         modelBuilder.Entity<CasoMedico>().HasQueryFilter(c =>
             (TieneTenant && c.TenantId == CurrentTenant) ||
             (TieneIps && c.Remisiones.Any(r => r.IpsId == CurrentIps && r.RevocadaEn == null)));
+
+        // Mirrors the RLS of atel.incapacidades (SPEC 07): the tenant's own, or those of a case remitted to the IPS.
+        // The case's own filter already encodes the live remission.
+        modelBuilder.Entity<Incapacidad>().HasQueryFilter(i =>
+            (TieneTenant && i.TenantId == CurrentTenant) ||
+            (TieneIps && CasosMedicos.Any(c => c.Id == i.CasoMedicoId)));
 
         // Mirrors the RLS of integracion.solicitudes: only the tenant's own requests.
         modelBuilder.Entity<SolicitudIntegracion>().HasQueryFilter(s => TieneTenant && s.TenantId == CurrentTenant);

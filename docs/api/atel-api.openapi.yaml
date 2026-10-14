@@ -211,6 +211,42 @@ paths:
         '409': { $ref: '#/components/responses/ConflictoRegistroClinico' }
 
   /casos/{casoId}/incapacidades:
+    get:
+      tags: [Incapacidades]
+      operationId: listarIncapacidades
+      summary: Lista las incapacidades de un caso con sus alertas.
+      description: |
+        Lo consume el backoffice. Devuelve las incapacidades del caso ordenadas por `fechaInicio`, con las alertas de
+        días acumulados calculadas en el momento (no se guardan).
+
+        Solo datos administrativos: ni diagnósticos, ni observaciones, ni el profesional que firmó.
+
+        Autorización:
+        - Permiso `incapacidades:read`.
+        - Actor ARL: el caso pertenece a su tenant.
+        - Actor IPS: existe una remisión vigente del caso hacia su IPS.
+        - Las integraciones no consultan por aquí (`403` con `Incapacidades.ActorNoAutorizado`).
+
+        La lectura queda auditada como `LEER / INCAPACIDAD`.
+      security:
+        - personal: [incapacidades:read]
+      parameters:
+        - name: casoId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Las incapacidades del caso. Una lista vacía si no tiene.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IncapacidadResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
     post:
       tags: [Incapacidades]
       operationId: cargarIncapacidad
@@ -222,14 +258,26 @@ paths:
         - Permiso `incapacidades:write`.
         - Actor ARL: el caso pertenece a su tenant.
         - Actor IPS: existe una remisión vigente del caso hacia su IPS.
+        - Integración: solo la de una IPS (`int-ips-*`). Está exenta del step-up.
         - Usuarios humanos: `acr >= 2` (MFA). Si no se cumple, la respuesta es `401` con step-up.
 
-        El diagnóstico se almacena cifrado en el esquema clínico. La respuesta solo devuelve datos
+        El diagnóstico y las observaciones se guardan cifrados en la historia clínica, como un registro de tipo
+        `CERTIFICADO_INCAPACIDAD`. Ese tipo solo nace por este endpoint. La respuesta solo devuelve datos
         administrativos y alertas.
 
-        El cuerpo es `multipart/form-data` con exactamente dos partes:
+        El profesional que firma sale del token en el backoffice (claims `rethus`, `tipo_documento` y
+        `numero_documento`; si falta alguno, `403` con `Clinico.ProfesionalSinRegistro`) y del campo `profesional` en
+        la integración, donde es obligatorio.
+
+        El cuerpo es `multipart/form-data` con exactamente dos partes (el request completo admite 12 MB):
         - `datos` (`application/json`): metadatos del certificado.
         - `soporte` (`application/pdf`): documento firmado, máximo 10 MB.
+
+        El soporte se analiza con antivirus antes de guardarse, y se guarda cifrado. Si el antivirus no responde,
+        la carga falla cerrada con `503`.
+
+        El emisor de la `Idempotency-Key` es la IPS en la integración (`ips:{REPS}`) y la persona en el backoffice
+        (`sub:{sub}`).
       security:
         - personal: [incapacidades:write]
         - integracion: [incapacidades:write]
@@ -258,28 +306,58 @@ paths:
               soporte: { contentType: application/pdf }
       responses:
         '201':
-          description: Incapacidad registrada.
+          description: Incapacidad registrada. Repetir la misma llave con el mismo cuerpo devuelve la misma respuesta.
           headers:
             Location:
               schema: { type: string, example: /v1/casos/0192f1e4-7c1a-7b2e-9f00-3c1d2e4f5a6b/incapacidades/0192f1e5-0000-7000-8000-000000000001 }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/IncapacidadResponse' }
-        '400': { $ref: '#/components/responses/Validacion' }
+        '400':
+          description: |
+            La `Idempotency-Key` falta o no es un UUID, las partes no son exactamente `datos` y `soporte`
+            (`Incapacidades.PartesInvalidas`), o `datos` no pasa la validación (las rutas de `errors` empiezan por
+            `datos.`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
         '401': { $ref: '#/components/responses/StepUpRequerido' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
-        '409': { $ref: '#/components/responses/ConflictoIdempotencia' }
-        '413': { $ref: '#/components/responses/DemasiadoGrande' }
+        '409':
+          description: |
+            La `Idempotency-Key` ya se usó con un cuerpo distinto, o la IPS emisora ya cargó ese
+            `numeroCertificado` para la ARL del caso (`Incapacidades.CertificadoDuplicado`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '413':
+          description: El soporte supera 10 MB o el request 12 MB (`Archivos.SoporteDemasiadoGrande`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
         '415':
-          description: El soporte no es un PDF válido.
+          description: El soporte no empieza por `%PDF-` (`Archivos.NoEsPdf`).
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problema' }
         '422':
           description: |
-            Regla de negocio incumplida. Ejemplos de `code`: `INCAPACIDAD_SOLAPADA`,
-            `PRORROGA_SIN_INICIAL`, `CASO_CERRADO`.
+            El antivirus encontró una amenaza en el soporte (`Archivos.SoporteInfectado`; no se guarda nada), o se
+            incumple una regla. Las reglas están pendientes de validación jurídica:
+            - `CASO_CERRADO`: el caso está cerrado o rechazado.
+            - `INCAPACIDAD_SOLAPADA`: el periodo se cruza con otra incapacidad del caso.
+            - `PRORROGA_SIN_INICIAL`: `tipo=PRORROGA` sin `prorrogaDe`, o `prorrogaDe` no existe en el caso.
+            - `PRORROGA_NO_ES_ULTIMA`: `prorrogaDe` no es la última incapacidad de su cadena.
+            - `PRORROGA_DISCONTINUA`: hay más de 30 días entre el fin de `prorrogaDe` y el inicio (D. 1427/2022).
+            - `PRORROGA_DIAGNOSTICO_NO_RELACIONADO`: la categoría CIE-10 (tres primeros caracteres) del diagnóstico
+              principal no es la de la incapacidad inicial de la cadena.
+            - `FECHA_ANTERIOR_AL_EVENTO`: `fechaInicio` es anterior a la fecha del evento del caso.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '503':
+          description: El antivirus no está disponible (`Archivos.AntivirusNoDisponible`). Reintente más tarde.
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problema' }
@@ -367,6 +445,7 @@ components:
           tokenUrl: https://auth.halsa.co/realms/halsa/protocol/openid-connect/token
           scopes:
             clinico:write: Registrar conceptos médicos, evoluciones y conceptos de rehabilitación
+            incapacidades:read: Consultar las incapacidades de un caso
             incapacidades:write: Cargar incapacidades
             pcl:dictamen:read: Leer dictámenes PCL
     integracion:
@@ -595,7 +674,7 @@ components:
     # ---------- Incapacidad ----------
     IncapacidadRequest:
       type: object
-      required: [numeroCertificado, tipo, fechaInicio, dias, diagnosticoPrincipal, profesional, ipsEmisora, modalidad]
+      required: [numeroCertificado, tipo, fechaInicio, dias, diagnosticoPrincipal, ipsEmisora, modalidad]
       properties:
         numeroCertificado: { type: string, maxLength: 40 }
         tipo: { type: string, enum: [INICIAL, PRORROGA] }
@@ -618,7 +697,10 @@ components:
           maxItems: 3
           x-clasificacion: clinico
           items: { $ref: '#/components/schemas/Codificado' }
-        profesional: { $ref: '#/components/schemas/Profesional' }
+        profesional:
+          allOf: [{ $ref: '#/components/schemas/Profesional' }]
+          description: |
+            Obligatorio en la integración. En el backoffice se ignora: el profesional sale de los claims del token.
         ipsEmisora:
           type: object
           required: [codigoReps]
@@ -633,8 +715,8 @@ components:
 
     IncapacidadResponse:
       type: object
-      description: Solo datos administrativos. No incluye diagnósticos.
-      required: [id, casoId, tipo, fechaInicio, fechaFin, dias, diasAcumulados, estado]
+      description: Solo datos administrativos. No incluye diagnósticos, observaciones ni el profesional.
+      required: [id, casoId, tipo, fechaInicio, fechaFin, dias, diasAcumulados, estado, soporteId, alertas]
       properties:
         id: { type: string, format: uuid }
         casoId: { type: string, format: uuid }
@@ -645,10 +727,14 @@ components:
         diasAcumulados:
           type: integer
           description: Suma de los días de la cadena inicial + prórrogas del caso.
-        estado: { type: string, enum: [REGISTRADA, EN_REVISION, APROBADA_PAGO, RECHAZADA] }
+        estado:
+          type: string
+          enum: [REGISTRADA]
+          description: Por ahora solo `REGISTRADA`. Los estados de revisión y pago pertenecen a la liquidación.
         soporteId: { type: string, format: uuid }
         alertas:
           type: array
+          description: Se calculan en cada respuesta y no bloquean la carga.
           items:
             type: object
             required: [code, mensaje]
@@ -661,7 +747,7 @@ components:
                   - `ACUMULADO_150_DIAS`: alerta temprana.
                   - `ACUMULADO_180_DIAS`: se requiere concepto de rehabilitación para la prórroga.
                   - `ACUMULADO_540_DIAS`: alerta de seguimiento de largo plazo, pendiente de validación jurídica.
-                  - `CARGA_EXTEMPORANEA`: el certificado se cargó tarde.
+                  - `CARGA_EXTEMPORANEA`: el certificado se cargó más de 30 días (configurable) después de su inicio.
               mensaje: { type: string }
 
     # ---------- Clínico ----------
@@ -877,7 +963,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problema' }
     DemasiadoGrande:
-      description: El cuerpo supera el límite (2 MB en integraciones, 10 MB en el soporte PDF).
+      description: El cuerpo supera el límite (2 MB en integraciones; 10 MB el soporte PDF y 12 MB su request).
     LimiteExcedido:
       description: Se superó el rate limit del cliente.
       headers:

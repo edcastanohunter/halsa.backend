@@ -1,5 +1,6 @@
 using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
+using Halsa.Backend.Domain.Incapacidades;
 
 namespace Halsa.Backend.Application.Abstractions.Data;
 
@@ -18,4 +19,10 @@ public interface IReadDbContext
 
     /// <summary>Las radicaciones del tenant actual (SPEC 05), para la consulta de estado.</summary>
     IQueryable<SolicitudIntegracion> Solicitudes { get; }
+
+    /// <summary>
+    /// Las incapacidades visibles (SPEC 07): las del tenant, o las de un caso remitido a la IPS. Solo la parte
+    /// administrativa: el diagnóstico vive cifrado en <c>clinico</c>.
+    /// </summary>
+    IQueryable<Incapacidad> Incapacidades { get; }
 }

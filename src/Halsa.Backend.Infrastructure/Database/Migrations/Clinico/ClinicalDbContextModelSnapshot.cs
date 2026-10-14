@@ -81,6 +81,66 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations.Clinico
                     b.ToTable("historia_clinica_detalle", "clinico");
                 });
 
+            modelBuilder.Entity("Halsa.Backend.Domain.Clinico.Soporte", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<string>("KeyId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("key_id");
+
+                    b.Property<DateOnly>("RetenerHasta")
+                        .HasColumnType("date")
+                        .HasColumnName("retener_hasta");
+
+                    b.Property<string>("Ruta")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("ruta");
+
+                    b.Property<byte[]>("Sha256Claro")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("sha256_claro");
+
+                    b.Property<DateTimeOffset>("SubidoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("subido_en");
+
+                    b.Property<long>("Tamano")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tipo");
+
+                    b.HasKey("Id")
+                        .HasName("pk_soportes");
+
+                    b.HasIndex("TenantId", "CasoMedicoId")
+                        .HasDatabaseName("ix_soportes_tenant_caso");
+
+                    b.ToTable("soportes", "clinico");
+                });
+
             modelBuilder.Entity("Halsa.Backend.Infrastructure.Clinico.Crypto.LlaveTenant", b =>
                 {
                     b.Property<string>("KeyId")

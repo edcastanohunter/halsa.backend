@@ -119,6 +119,8 @@ public sealed class RealmCatalogTests
 
         permissions.ShouldContain("casos:read",
             "medico-ips necesita casos:read para listar los casos que le remitieron (SPEC 02)");
+        permissions.ShouldContain("incapacidades:read",
+            "medico-ips consulta las incapacidades de los casos que le remitieron (SPEC 07)");
 
         string[] forbidden = [.. permissions
             .Where(p =>
@@ -169,6 +171,66 @@ public sealed class RealmCatalogTests
         attributes["tipo_documento"]!.AsArray().Single()!.GetValue<string>().ShouldBe(tipoDocumento);
         attributes["numero_documento"]!.AsArray().Single()!.GetValue<string>().ShouldBe(numeroDocumento);
         attributes["rethus"]!.AsArray().Single()!.GetValue<string>().ShouldBe(rethus);
+    }
+
+    // ── Step-up (SPEC 07) ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void BrowserFlow_ShouldMapAcr1ToThePassword_AndAcr2ToTheOtp()
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        realm["attributes"]!["acr.loa.map"]!.GetValue<string>().ShouldBe("{\"1\":1,\"2\":2}");
+
+        string browserFlow = realm["browserFlow"]!.GetValue<string>();
+        JsonObject[] flows = [.. realm["authenticationFlows"]!.AsArray().Select(n => n!.AsObject())];
+        flows.ShouldContain(f => f["alias"]!.GetValue<string>() == browserFlow && f["topLevel"]!.GetValue<bool>());
+
+        Dictionary<string, string> niveles = realm["authenticatorConfig"]!.AsArray()
+            .Select(n => n!["config"]!.AsObject())
+            .ToDictionary(c => c["loa-condition-level"]!.GetValue<string>(), c => c["loa-max-age"]!.GetValue<string>());
+        niveles.Keys.ShouldBe(["1", "2"], ignoreOrder: true);
+
+        // Each level's sub-flow is the condition plus one authenticator: the password at 1, the OTP at 2.
+        string[] autenticadores = [.. flows
+            .SelectMany(f => f["authenticationExecutions"]!.AsArray())
+            .Select(e => e!["authenticator"]?.GetValue<string>())
+            .Where(a => a is not null && a != "conditional-level-of-authentication")
+            .Select(a => a!)];
+        autenticadores.ShouldBe(["auth-username-password-form", "auth-otp-form"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void TheTokens_ShouldCarryTheAcrClaim()
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        // The realm declares its own client scopes, so Keycloak does not create its built-in "acr" scope on import.
+        JsonObject acr = realm["clientScopes"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(s => s["name"]!.GetValue<string>() == "acr");
+        JsonObject mapper = acr["protocolMappers"]!.AsArray().Single()!.AsObject();
+        mapper["protocolMapper"]!.GetValue<string>().ShouldBe("oidc-acr-mapper");
+        mapper["config"]!["access.token.claim"]!.GetValue<string>().ShouldBe("true");
+
+        realm["defaultDefaultClientScopes"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("acr");
+    }
+
+    [Theory]
+    [InlineData("calificador.arla", true)]
+    [InlineData("medico.ips", true)]
+    [InlineData("analista.arla", false)]
+    public void OnlyTheSeedDoctors_ShouldHaveAnOtpCredential(string username, bool tieneOtp)
+    {
+        JsonObject realm = LoadHalsaRealm();
+
+        JsonObject usuario = realm["users"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(u => u["username"]!.GetValue<string>() == username);
+
+        usuario["credentials"]!.AsArray()
+            .Any(c => c!["type"]!.GetValue<string>() == "otp")
+            .ShouldBe(tieneOtp);
     }
 
     [Fact]

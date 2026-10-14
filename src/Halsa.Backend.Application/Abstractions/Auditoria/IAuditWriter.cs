@@ -9,10 +9,12 @@ namespace Halsa.Backend.Application.Abstractions.Auditoria;
 /// </summary>
 public interface IAuditWriter
 {
+    /// <param name="motivo">La columna <c>motivo</c>: por ejemplo <c>step-up</c> en un denegado por MFA (SPEC 07).</param>
     Task RegistrarAsync(
         AccionAuditoria accion,
         ObjetivoAuditoria objetivo,
         TenantId? tenant,
         ResultadoAuditoria resultado,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? motivo = null);
 }

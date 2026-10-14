@@ -7,4 +7,5 @@ internal static class Tags
     internal const string Auditoria = "Auditoria";
     internal const string Integraciones = "Integraciones";
     internal const string Clinico = "Clinico";
+    internal const string Incapacidades = "Incapacidades";
 }

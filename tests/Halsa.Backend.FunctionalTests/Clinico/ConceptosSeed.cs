@@ -34,7 +34,7 @@ internal static class ConceptosSeed
         ["tipo_documento"] = "CC",
         ["numero_documento"] = "80000222",
         ["rethus"] = "RM-DEV-0002",
-        ["permissions"] = new[] { "casos:read", "clinico:read", "clinico:write", "incapacidades:write" }
+        ["permissions"] = new[] { "casos:read", "clinico:read", "clinico:write", "incapacidades:read", "incapacidades:write" }
     };
 
     /// <summary><c>calificador.arla</c>, with the professional claims of the realm seed.</summary>

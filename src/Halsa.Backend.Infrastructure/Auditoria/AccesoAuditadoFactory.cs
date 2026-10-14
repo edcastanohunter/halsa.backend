@@ -13,11 +13,13 @@ internal sealed class AccesoAuditadoFactory(IAuditActorProvider actorProvider, I
 {
     private const long TicksPorMicrosegundo = TimeSpan.TicksPerMillisecond / 1000;
 
+    /// <param name="motivo">Por qué se denegó o se permitió excepcionalmente (<c>step-up</c>, SPEC 07). Casi siempre <c>null</c>.</param>
     public AccesoAuditado Crear(
         AccionAuditoria accion,
         ObjetivoAuditoria objetivo,
         TenantId? tenant,
-        ResultadoAuditoria resultado)
+        ResultadoAuditoria resultado,
+        string? motivo = null)
     {
         ArgumentNullException.ThrowIfNull(objetivo);
 
@@ -42,6 +44,7 @@ internal sealed class AccesoAuditadoFactory(IAuditActorProvider actorProvider, I
             RecursoTipo = AuditoriaCodigos.Codigo(objetivo.Tipo),
             RecursoId = objetivo.RecursoId,
             CasoMedicoId = objetivo.CasoMedicoId,
+            Motivo = motivo,
             Acr = actor.Acr
         };
 

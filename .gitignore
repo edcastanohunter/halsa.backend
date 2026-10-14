@@ -6,3 +6,6 @@ artifacts/
 *.user
 *.suo
 .env
+
+# Encrypted support files in development (SPEC 07, Archivos:Raiz).
+.data/

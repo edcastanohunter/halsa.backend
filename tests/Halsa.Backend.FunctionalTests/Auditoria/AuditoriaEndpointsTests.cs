@@ -332,7 +332,8 @@ public sealed class AuditoriaEndpointsTests(ApiFactory factory)
             ObjetivoAuditoria objetivo,
             TenantId? tenant,
             ResultadoAuditoria resultado,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            string? motivo = null) =>
             throw new InvalidOperationException("Audit store unavailable (test).");
     }
 }

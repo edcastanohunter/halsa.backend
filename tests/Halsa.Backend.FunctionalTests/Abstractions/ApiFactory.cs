@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using Halsa.Backend.Api.Endpoints;
+using Halsa.Backend.Application.Abstractions.Archivos;
 using Halsa.Backend.Infrastructure.Database;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -29,6 +31,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     // A random KEK per run (SPEC 03): never written anywhere.
     private readonly string _kekBase64 = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
+    /// <summary>The encrypted supports of this run (SPEC 07, <c>Archivos:Raiz</c>): a temporary folder.</summary>
+    public string ArchivosRaiz { get; } = Path.Combine(Path.GetTempPath(), $"halsa-api-archivos-{Guid.NewGuid():N}");
+
+    /// <summary>
+    /// The antivirus every upload goes through (SPEC 07): clean unless a test says otherwise, and a test that changes
+    /// it puts it back. No real clamd runs in the tests.
+    /// </summary>
+    public FakeAntivirus Antivirus { get; } = new();
+
     /// <summary>Connection string using <c>halsa_owner</c> — tests seed their own rows with it.</summary>
     public string OwnerConnectionString => _ownerConnectionString;
 
@@ -53,6 +64,10 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         // The FURAT/FUREP ingestion connects as halsa_ingesta (SPEC 05).
         builder.UseSetting("ConnectionStrings:Ingesta",    _ingestaConnectionString);
         builder.UseSetting("Clinico:KekBase64",            _kekBase64);
+        builder.UseSetting("Archivos:Raiz",                ArchivosRaiz);
+        // Nothing listens there, so /health reports the antivirus as Degraded whatever runs on the host.
+        builder.UseSetting("Antivirus:Host",               "127.0.0.1");
+        builder.UseSetting("Antivirus:Puerto",             "9");
 
         // Opciones de Keycloak necesarias para que TenantContextResolver compare el iss.
         builder.UseSetting("Keycloak:PersonalAuthority",   TestAuthenticationHandler.DefaultIssuer);
@@ -72,6 +87,12 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
             // The outbox dispatcher would race with assertions; drain it explicitly instead.
             services.RemoveAll<IHostedService>();
+
+            // Test-only routes (SPEC 07): the step-up policy on its own.
+            services.AddTransient<IEndpoint, StepUpProbeEndpoint>();
+
+            services.RemoveAll<IAntivirusScanner>();
+            services.AddSingleton<IAntivirusScanner>(Antivirus);
         });
     }
 
@@ -105,7 +126,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     // Explicit implementation: WebApplicationFactory already exposes ValueTask DisposeAsync(),
     // and two methods cannot differ by return type alone.
-    async Task IAsyncLifetime.DisposeAsync() => await _container.DisposeAsync();
+    async Task IAsyncLifetime.DisposeAsync()
+    {
+        await _container.DisposeAsync();
+
+        if (Directory.Exists(ArchivosRaiz))
+        {
+            Directory.Delete(ArchivosRaiz, recursive: true);
+        }
+    }
 
     /// <summary>
     /// Creates a <see cref="HttpClient"/> that injects the provided headers in every request.

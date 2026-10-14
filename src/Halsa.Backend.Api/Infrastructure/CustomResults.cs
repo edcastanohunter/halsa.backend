@@ -50,6 +50,10 @@ public static class CustomResults
         ErrorType.Conflict => "Conflict",
         ErrorType.Forbidden => "Forbidden",
         ErrorType.Unauthorized => "Unauthorized",
+        ErrorType.Unprocessable => "Unprocessable content",
+        ErrorType.Unavailable => "Service unavailable",
+        ErrorType.UnsupportedMediaType => "Unsupported media type",
+        ErrorType.PayloadTooLarge => "Content too large",
         _ => "Server failure"
     };
 
@@ -67,6 +71,10 @@ public static class CustomResults
         ErrorType.Conflict => "https://tools.ietf.org/html/rfc9110#section-15.5.10",
         ErrorType.Forbidden => "https://tools.ietf.org/html/rfc9110#section-15.5.4",
         ErrorType.Unauthorized => "https://tools.ietf.org/html/rfc9110#section-15.5.2",
+        ErrorType.Unprocessable => "https://tools.ietf.org/html/rfc9110#section-15.5.21",
+        ErrorType.Unavailable => "https://tools.ietf.org/html/rfc9110#section-15.6.4",
+        ErrorType.UnsupportedMediaType => "https://tools.ietf.org/html/rfc9110#section-15.5.16",
+        ErrorType.PayloadTooLarge => "https://tools.ietf.org/html/rfc9110#section-15.5.14",
         _ => "https://tools.ietf.org/html/rfc9110#section-15.6.1"
     };
 
@@ -78,6 +86,10 @@ public static class CustomResults
         ErrorType.Conflict => StatusCodes.Status409Conflict,
         ErrorType.Forbidden => StatusCodes.Status403Forbidden,
         ErrorType.Unauthorized => StatusCodes.Status401Unauthorized,
+        ErrorType.Unprocessable => StatusCodes.Status422UnprocessableEntity,
+        ErrorType.Unavailable => StatusCodes.Status503ServiceUnavailable,
+        ErrorType.UnsupportedMediaType => StatusCodes.Status415UnsupportedMediaType,
+        ErrorType.PayloadTooLarge => StatusCodes.Status413PayloadTooLarge,
         _ => StatusCodes.Status500InternalServerError
     };
 

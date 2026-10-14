@@ -1,14 +1,18 @@
+using Halsa.Backend.Application.Abstractions.Archivos;
 using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Caching;
 using Halsa.Backend.Application.Abstractions.Clinico;
+using Halsa.Backend.Application.Abstractions.Incapacidades;
 using Halsa.Backend.Application.Abstractions.Integraciones;
 using Halsa.Backend.Application.Auditoria;
 using Halsa.Backend.Application.Casos;
+using Halsa.Backend.Application.Incapacidades;
 using Halsa.Backend.Application.Integraciones;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain;
+using Halsa.Backend.Infrastructure.Archivos;
 using Halsa.Backend.Infrastructure.Auditoria;
 using Halsa.Backend.Infrastructure.Authentication;
 using Halsa.Backend.Infrastructure.Caching;
@@ -56,6 +60,7 @@ public static class DependencyInjection
             .AddPersistence(configuration)
             .AddClinico(configuration)
             .AddIngesta(configuration)
+            .AddArchivos(configuration)
             .AddAuditoria()
             .AddEventSourcing()
             .AddOutbox(configuration)
@@ -169,6 +174,13 @@ public static class DependencyInjection
         services.AddScoped<IRadicadoGenerator, RadicadoGenerator>();
         services.AddScoped<IIngestaAuditTrail, IngestaAuditTrail>();
 
+        // SPEC 07: the incapacidad upload writes through the same context and role ("mixed writing").
+        services.AddScoped<IIncapacidadesDbContext>(sp => sp.GetRequiredService<IngestaDbContext>());
+        services
+            .AddOptions<IncapacidadesOptions>()
+            .Bind(configuration.GetSection(IncapacidadesOptions.SectionName));
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<IncapacidadesOptions>>().Value);
+
         // The asynchronous validation: the duplicate window and the affiliation gateway. Only the dev stub exists
         // yet, so outside Development and Testing the API refuses to start instead of approving real cases.
         services
@@ -186,6 +198,21 @@ public static class DependencyInjection
                 ? new DevAfiliacionGateway()
                 : throw new InvalidOperationException($"No hay un IAfiliacionGateway real para '{environmentName}'.");
         });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Los soportes de la SPEC 07: el antivirus (<c>clamd</c>), síncrono y que falla cerrado, y el almacenamiento cifrado.
+    /// </summary>
+    private static IServiceCollection AddArchivos(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<AntivirusOptions>(configuration.GetSection(AntivirusOptions.SectionName));
+        services.AddSingleton<IAntivirusScanner, ClamAvScanner>();
+
+        // Encrypted with the tenant's SOPORTES DEK (IDekStore, registered by AddClinico).
+        services.Configure<ArchivosOptions>(configuration.GetSection(ArchivosOptions.SectionName));
+        services.AddSingleton<IFileStore, LocalEncryptedFileStore>();
 
         return services;
     }
@@ -285,7 +312,9 @@ public static class DependencyInjection
     {
         IHealthChecksBuilder healthChecks = services
             .AddHealthChecks()
-            .AddNpgSql(configuration.GetConnectionString("Database")!, name: "postgres");
+            .AddNpgSql(configuration.GetConnectionString("Database")!, name: "postgres")
+            // Degraded: without clamd the API answers everything but the uploads of supports (SPEC 07).
+            .AddCheck<AntivirusHealthCheck>(AntivirusHealthCheck.Nombre, failureStatus: HealthStatus.Degraded);
 
         string? redis = configuration.GetConnectionString("Cache");
 

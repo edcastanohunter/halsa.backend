@@ -17,9 +17,10 @@ internal sealed class AuditWriter(AccesoAuditadoFactory factory, IServiceScopeFa
         ObjetivoAuditoria objetivo,
         TenantId? tenant,
         ResultadoAuditoria resultado,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? motivo = null)
     {
-        var acceso = factory.Crear(accion, objetivo, tenant, resultado);
+        var acceso = factory.Crear(accion, objetivo, tenant, resultado, motivo);
 
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         ApplicationDbContext db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

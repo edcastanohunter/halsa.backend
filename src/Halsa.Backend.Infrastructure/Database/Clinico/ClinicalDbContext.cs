@@ -35,6 +35,9 @@ public sealed class ClinicalDbContext(
 
     internal DbSet<LlaveTenant> LlavesTenant => Set<LlaveTenant>();
 
+    /// <summary>La metadata de los archivos soporte (SPEC 07). La ingesta los inserta; la SPEC 08 los lee aquí.</summary>
+    internal DbSet<Soporte> Soportes => Set<Soporte>();
+
     /// <summary>Solo para insertar la auditoría de las escrituras clínicas en su misma transacción (SPEC 04).</summary>
     internal DbSet<AccesoAuditado> AccesosAuditados => Set<AccesoAuditado>();
 
@@ -85,6 +88,11 @@ public sealed class ClinicalDbContext(
         modelBuilder.Entity<HistoriaClinicaDetalle>().HasQueryFilter(h =>
             (TieneTenant && h.TenantId == CurrentTenant) ||
             (TieneIps && h.TenantId == TenantDelCasoRemitido(h.CasoMedicoId, CurrentIps)));
+
+        // The same rule for the supports: their RLS policy is the clinical history's.
+        modelBuilder.Entity<Soporte>().HasQueryFilter(s =>
+            (TieneTenant && s.TenantId == CurrentTenant) ||
+            (TieneIps && s.TenantId == TenantDelCasoRemitido(s.CasoMedicoId, CurrentIps)));
 
         base.OnModelCreating(modelBuilder);
     }

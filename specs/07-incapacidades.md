@@ -1,6 +1,6 @@
 # SPEC 07 — Carga de incapacidades con soporte PDF y step-up
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03, SPEC 04, SPEC 05, SPEC 06
 > **Fecha:** 2026-10-09
 > **Objetivo:** Que una IPS o un médico con MFA reciente carguen un certificado de incapacidad temporal con su PDF a `POST /v1/casos/{casoId}/incapacidades`. El PDF se analiza con antivirus y se guarda cifrado; las reglas de prórroga se validan sin descifrar diagnósticos; y la ARL ve solo los datos administrativos y las alertas de días acumulados.
@@ -192,25 +192,25 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] Con el token de `int-ips-110011234501`, la carga de una `INICIAL` de 10 días sobre un caso remitido responde `201` con `fechaFin = fechaInicio + 9`, `diasAcumulados=10` y `estado=REGISTRADA`.
-- [ ] El archivo en `Archivos:Raiz` no empieza por `%PDF-` ni contiene el texto del PDF de prueba, y `clinico.soportes.sha256_claro` coincide con el SHA-256 del PDF original.
-- [ ] La respuesta `201` no contiene el código del diagnóstico ni las observaciones, y `atel.incapacidades` tampoco contiene el código en claro.
-- [ ] Con un principal `medico.ips` con `acr=1`, la carga responde `401`, con `WWW-Authenticate` que incluye `error="insufficient_user_authentication"` y `acr_values="2"`, y deja una fila de auditoría `DENEGADO` con `motivo='step-up'`.
-- [ ] El mismo principal con `acr=2` responde `201`, y el registro de HC lleva el RETHUS de los claims.
-- [ ] Manual: en el realm de desarrollo, un *authorization code flow* de `halsa-backoffice` con `acr_values=2` pide OTP a `medico.ips` y emite un token con `acr="2"`.
-- [ ] Un archivo que no empieza por `%PDF-` responde `415`. Uno de 11 MB responde `413`.
-- [ ] Un PDF con la firma EICAR responde `422` con `Archivos.SoporteInfectado` y no deja ni archivo ni filas (verificado contra un escáner falso, y de forma manual con ClamAV real).
-- [ ] Con ClamAV detenido, la carga responde `503` con `Archivos.AntivirusNoDisponible`, y `/health` reporta `antivirus: Degraded`.
-- [ ] Una incapacidad que se cruza con otra del mismo caso responde `422` con `INCAPACIDAD_SOLAPADA`.
-- [ ] Una `PRORROGA` sin `prorrogaDe` responde `422` con `PRORROGA_SIN_INICIAL`.
-- [ ] Una prórroga que inicia 31 días después del fin de la anterior responde `422` con `PRORROGA_DISCONTINUA`. Si inicia 30 días después, se acepta.
-- [ ] Una prórroga con un diagnóstico `S62.6` sobre una inicial con `S62.0` se acepta. Con `M54.5`, responde `422` con `PRORROGA_DIAGNOSTICO_NO_RELACIONADO`.
-- [ ] Una cadena que llega a 150 días devuelve la alerta `ACUMULADO_150_DIAS`, y una que llega a 180 devuelve las alertas de 150 y de 180.
-- [ ] Repetir la carga con la misma `Idempotency-Key` y el mismo cuerpo responde `201` con el mismo `id`, y no crea un segundo archivo ni una segunda fila.
-- [ ] El mismo `numeroCertificado` de la misma IPS con otra llave responde `409`.
-- [ ] `GET /v1/casos/{id}/incapacidades` como `analista.arla` devuelve la lista sin diagnósticos ni profesional, y deja una fila `LEER / INCAPACIDAD`.
-- [ ] Con un token de `ARL_B`, sobre un caso de `ARL_A`, el `GET` y el `POST` responden `404`.
-- [ ] Cada carga exitosa deja un `IncapacidadRegistradaIntegrationEvent` en el outbox.
+- [x] Con el token de `int-ips-110011234501`, la carga de una `INICIAL` de 10 días sobre un caso remitido responde `201` con `fechaFin = fechaInicio + 9`, `diasAcumulados=10` y `estado=REGISTRADA`.
+- [x] El archivo en `Archivos:Raiz` no empieza por `%PDF-` ni contiene el texto del PDF de prueba, y `clinico.soportes.sha256_claro` coincide con el SHA-256 del PDF original.
+- [x] La respuesta `201` no contiene el código del diagnóstico ni las observaciones, y `atel.incapacidades` tampoco contiene el código en claro.
+- [x] Con un principal `medico.ips` con `acr=1`, la carga responde `401`, con `WWW-Authenticate` que incluye `error="insufficient_user_authentication"` y `acr_values="2"`, y deja una fila de auditoría `DENEGADO` con `motivo='step-up'`.
+- [x] El mismo principal con `acr=2` responde `201`, y el registro de HC lleva el RETHUS de los claims.
+- [x] Manual: en el realm de desarrollo, un *authorization code flow* de `halsa-backoffice` con `acr_values=2` pide OTP a `medico.ips` y emite un token con `acr="2"`.
+- [x] Un archivo que no empieza por `%PDF-` responde `415`. Uno de 11 MB responde `413`.
+- [x] Un PDF con la firma EICAR responde `422` con `Archivos.SoporteInfectado` y no deja ni archivo ni filas (verificado contra un escáner falso, y de forma manual con ClamAV real).
+- [x] Con ClamAV detenido, la carga responde `503` con `Archivos.AntivirusNoDisponible`, y `/health` reporta `antivirus: Degraded`.
+- [x] Una incapacidad que se cruza con otra del mismo caso responde `422` con `INCAPACIDAD_SOLAPADA`.
+- [x] Una `PRORROGA` sin `prorrogaDe` responde `422` con `PRORROGA_SIN_INICIAL`.
+- [x] Una prórroga que inicia 31 días después del fin de la anterior responde `422` con `PRORROGA_DISCONTINUA`. Si inicia 30 días después, se acepta.
+- [x] Una prórroga con un diagnóstico `S62.6` sobre una inicial con `S62.0` se acepta. Con `M54.5`, responde `422` con `PRORROGA_DIAGNOSTICO_NO_RELACIONADO`.
+- [x] Una cadena que llega a 150 días devuelve la alerta `ACUMULADO_150_DIAS`, y una que llega a 180 devuelve las alertas de 150 y de 180.
+- [x] Repetir la carga con la misma `Idempotency-Key` y el mismo cuerpo responde `201` con el mismo `id`, y no crea un segundo archivo ni una segunda fila.
+- [x] El mismo `numeroCertificado` de la misma IPS con otra llave responde `409`.
+- [x] `GET /v1/casos/{id}/incapacidades` como `analista.arla` devuelve la lista sin diagnósticos ni profesional, y deja una fila `LEER / INCAPACIDAD`.
+- [x] Con un token de `ARL_B`, sobre un caso de `ARL_A`, el `GET` y el `POST` responden `404`.
+- [x] Cada carga exitosa deja un `IncapacidadRegistradaIntegrationEvent` en el outbox.
 
 ---
 

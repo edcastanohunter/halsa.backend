@@ -1,10 +1,12 @@
 using Halsa.Backend.Application.Abstractions.Clinico;
+using Halsa.Backend.Application.Abstractions.Incapacidades;
 using Halsa.Backend.Application.Abstractions.Integraciones;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Application.Integraciones.Canonico;
 using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Clinico;
+using Halsa.Backend.Domain.Incapacidades;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Clinico;
 using Halsa.Backend.Infrastructure.Database.Configurations;
@@ -29,7 +31,7 @@ namespace Halsa.Backend.Infrastructure.Database.Integraciones;
 public sealed class IngestaDbContext(
     DbContextOptions<IngestaDbContext> options,
     ITenantContext tenantContext)
-    : DbContext(options), IIngestaDbContext
+    : DbContext(options), IIngestaDbContext, IIncapacidadesDbContext
 {
     internal DbSet<CasoMedico> CasosMedicos => Set<CasoMedico>();
 
@@ -42,6 +44,10 @@ public sealed class IngestaDbContext(
     internal DbSet<MensajeEntrante> MensajesEntrantes => Set<MensajeEntrante>();
 
     internal DbSet<HistoriaClinicaDetalle> HistoriaClinica => Set<HistoriaClinicaDetalle>();
+
+    internal DbSet<Soporte> Soportes => Set<Soporte>();
+
+    internal DbSet<Incapacidad> Incapacidades => Set<Incapacidad>();
 
     internal DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
@@ -124,6 +130,69 @@ public sealed class IngestaDbContext(
             .SqlQuery<bool>($"SELECT clinico.registro_del_caso_visible({registroId.Value}, {casoId.Value}) AS \"Value\"")
             .SingleAsync(ct);
 
+    // ── IIncapacidadesDbContext (SPEC 07) ─────────────────────────────────────
+
+    void IIncapacidadesDbContext.Add(Incapacidad incapacidad) => Incapacidades.Add(incapacidad);
+
+    void IIncapacidadesDbContext.Add(Soporte soporte) => Soportes.Add(soporte);
+
+    void IIncapacidadesDbContext.Add(HistoriaClinicaDetalle registro) => HistoriaClinica.Add(registro);
+
+    void IIncapacidadesDbContext.Encolar(IIntegrationEvent evento) => OutboxMessages.Add(OutboxMessage.Desde(evento));
+
+    Task<IDbContextTransaction> IIncapacidadesDbContext.BeginTransactionAsync(CancellationToken ct) =>
+        Database.BeginTransactionAsync(ct);
+
+    /// <summary>
+    /// A transaction-scoped advisory lock on the case: <c>halsa_ingesta</c> has no <c>UPDATE</c> on
+    /// <c>casos_medicos</c>, so <c>SELECT ... FOR UPDATE</c> is not an option, and it needs no privilege.
+    /// </summary>
+    async Task IIncapacidadesDbContext.BloquearCasoAsync(CasoMedicoId casoId, CancellationToken ct)
+    {
+        if (Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("El caso se bloquea dentro de la transacción de la carga.");
+        }
+
+        string clave = $"incapacidades:{casoId.Value}";
+        await Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({clave}, 0))", ct);
+    }
+
+    Task<CasoVisible?> IIncapacidadesDbContext.CasoVisibleAsync(CasoMedicoId casoId, CancellationToken ct) =>
+        ((IIngestaDbContext)this).CasoVisibleAsync(casoId, ct);
+
+    async Task<IReadOnlyList<Incapacidad>> IIncapacidadesDbContext.IncapacidadesDelCasoAsync(
+        CasoMedicoId casoId, CancellationToken ct) =>
+        await Incapacidades.AsNoTracking().Where(i => i.CasoMedicoId == casoId).ToListAsync(ct);
+
+    async Task<ResultadoGuardadoIncapacidad> IIncapacidadesDbContext.GuardarAsync(CancellationToken ct)
+    {
+        try
+        {
+            await SaveChangesAsync(ct);
+            return ResultadoGuardadoIncapacidad.Guardado;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: IncapacidadConfiguration.CertificadoUnico
+        })
+        {
+            ChangeTracker.Clear();
+            return ResultadoGuardadoIncapacidad.CertificadoDuplicado;
+        }
+        catch (DbUpdateException ex) when (EsRls(ex))
+        {
+            // A WITH CHECK: the remission was revoked after the case was read.
+            ChangeTracker.Clear();
+            return ResultadoGuardadoIncapacidad.FueraDeAlcance;
+        }
+    }
+
+    private static bool EsRls(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.InsufficientPrivilege, MessageText: var mensaje } &&
+        mensaje.Contains("row-level security", StringComparison.Ordinal);
+
     // ── Model ─────────────────────────────────────────────────────────────────
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -147,6 +216,10 @@ public sealed class IngestaDbContext(
         modelBuilder.ApplyConfiguration(new SolicitudIdempotenteConfiguration());
         modelBuilder.ApplyConfiguration(new MensajeEntranteConfiguration());
         modelBuilder.ApplyConfiguration(new HistoriaClinicaDetalleConfiguration());
+
+        // SPEC 07: the incapacidad, its clinical record and its support, in the same transaction.
+        modelBuilder.ApplyConfiguration(new SoporteConfiguration());
+        modelBuilder.ApplyConfiguration(new IncapacidadConfiguration());
         modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
         modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration(excluirDeMigraciones: true));
 

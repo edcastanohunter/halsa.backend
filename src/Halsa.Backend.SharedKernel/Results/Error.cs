@@ -54,5 +54,14 @@ public record Error
 
     public static Error Unauthorized(string code, string description) => new(code, description, ErrorType.Unauthorized);
 
+    public static Error Unprocessable(string code, string description) => new(code, description, ErrorType.Unprocessable);
+
+    public static Error Unavailable(string code, string description) => new(code, description, ErrorType.Unavailable);
+
+    public static Error UnsupportedMediaType(string code, string description) =>
+        new(code, description, ErrorType.UnsupportedMediaType);
+
+    public static Error PayloadTooLarge(string code, string description) => new(code, description, ErrorType.PayloadTooLarge);
+
     public override string ToString() => $"{Code}: {Description}";
 }

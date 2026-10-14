@@ -37,6 +37,17 @@ services:
     ports:
       - "8080:8080"
 
+  # SPEC 07: every PDF support is scanned synchronously before it is stored; without clamd the upload answers 503.
+  # The first start downloads the signatures (several minutes); the volume keeps them across restarts.
+  halsa.backend.antivirus:
+    image: clamav/clamav:1.4
+    container_name: halsa.backend.antivirus
+    volumes:
+      - halsa.backend-antivirus:/var/lib/clamav
+    # Loopback only: in development the API runs on the host. Never published on a public interface.
+    ports:
+      - "127.0.0.1:3310:3310"
+
   halsa.backend.seq:
     image: datalust/seq:latest
     container_name: halsa.backend.seq
@@ -55,3 +66,4 @@ services:
 volumes:
   halsa.backend-db:
   halsa.backend-identity:
+  halsa.backend-antivirus:
