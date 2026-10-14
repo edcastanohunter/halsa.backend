@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Application.Abstractions.Messaging;
@@ -6,7 +7,10 @@ using Halsa.Backend.Domain.Clinico;
 
 namespace Halsa.Backend.Application.Clinico.Queries.GetRegistrosClinicos;
 
-/// <summary>La historia clínica del caso, descifrada y en orden cronológico.</summary>
+/// <summary>
+/// La historia clínica del caso, descifrada y en orden cronológico. Sin los registros <c>DICTAMEN_PCL</c> (SPEC 08):
+/// esos solo salen por el endpoint del dictamen.
+/// </summary>
 public sealed record GetRegistrosClinicosQuery(CasoMedicoId CasoId)
     : IQuery<IReadOnlyList<RegistroClinicoResponse>>, IClinicalQuery
 {
@@ -22,7 +26,7 @@ public sealed record GetRegistrosClinicosQuery(CasoMedicoId CasoId)
 public sealed record RegistroClinicoResponse(
     Guid Id,
     Guid CasoId,
-    TipoRegistroClinico Tipo,
+    [property: JsonConverter(typeof(TipoRegistroClinicoJsonConverter))] TipoRegistroClinico Tipo,
     ProfesionalRef Profesional,
     DateTimeOffset AtendidoEn,
     DateTimeOffset RegistradoEn,

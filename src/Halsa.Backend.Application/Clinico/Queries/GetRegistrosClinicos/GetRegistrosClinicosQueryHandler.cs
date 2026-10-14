@@ -30,6 +30,7 @@ internal sealed class GetRegistrosClinicosQueryHandler(
         List<HistoriaClinicaDetalle> registros = await db.Registros
             .AsNoTracking()
             .Where(r => r.CasoMedicoId == query.CasoId)
+            .DeLaHistoriaGeneral()
             .OrderBy(r => r.RegistradoEn)
             .ThenBy(r => r.Id)
             .ToListAsync(cancellationToken);
@@ -44,21 +45,8 @@ internal sealed class GetRegistrosClinicosQueryHandler(
 
         foreach (HistoriaClinicaDetalle registro in registros)
         {
-            byte[] claro = await cipher.DescifrarAsync(
-                registro.TenantId, registro.Id.Value, RegistroClinicoEscritura.CampoContenido,
-                registro.Contenido, cancellationToken);
-
-            respuesta.Add(new RegistroClinicoResponse(
-                registro.Id.Value,
-                registro.CasoMedicoId.Value,
-                registro.Tipo,
-                registro.Profesional,
-                registro.AtendidoEn,
-                registro.RegistradoEn,
-                registro.RetenerHasta,
-                registro.CorrigeA?.Value,
-                corregidoPor.TryGetValue(registro.Id, out Guid nuevo) ? nuevo : null,
-                RegistroClinicoEscritura.Deserializar<ContenidoClinico>(claro)));
+            respuesta.Add(await RegistroClinicoLectura.LeerAsync(
+                cipher, registro, corregidoPor.TryGetValue(registro.Id, out Guid nuevo) ? nuevo : null, cancellationToken));
         }
 
         return Result.Success<IReadOnlyList<RegistroClinicoResponse>>(respuesta);

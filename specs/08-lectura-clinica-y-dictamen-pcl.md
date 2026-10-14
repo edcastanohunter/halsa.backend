@@ -82,7 +82,7 @@ Reglas de `AccesoClinicoHandler`:
 
 ### Lectura de la HC
 
-- `GET /v1/casos/{id}/registros-clinicos` devuelve `RegistroClinicoResponse[]`: `id`, `tipo`, `atendidoEn`, `registradoEn`, `profesional` (nombre, documento y RETHUS), `contenido` (`ContenidoClinico`), `corrigeA` y `corregidoPor`. **Excluye** los registros `DICTAMEN_PCL`, que solo salen por el endpoint del dictamen.
+- `GET /v1/casos/{id}/registros-clinicos` devuelve `RegistroClinicoResponse[]`: `id`, `tipo`, `atendidoEn`, `registradoEn`, `profesional` (`sub`, documento y RETHUS; el nombre no se guarda en el registro), `contenido` (`ContenidoClinico`), `corrigeA` y `corregidoPor`. **Excluye** los registros `DICTAMEN_PCL`, que solo salen por el endpoint del dictamen.
 - `GET …/registros-clinicos/{registroId}` devuelve un registro. Un registro `DICTAMEN_PCL` responde `404` por esta ruta.
 - Los dos usan `GetRegistrosClinicosQuery` y `GetRegistroClinicoQuery` (`IClinicalQuery`, con auditoría que falla cerrada).
 

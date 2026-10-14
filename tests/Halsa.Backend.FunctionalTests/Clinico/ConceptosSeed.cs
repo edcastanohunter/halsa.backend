@@ -173,6 +173,56 @@ internal static class ConceptosSeed
         (await cmd.ExecuteNonQueryAsync()).ShouldBeGreaterThan(0);
     }
 
+    /// <summary>
+    /// Assigns <paramref name="sub"/> to the case (SPEC 08). With <paramref name="porIps"/>, as that IPS's coordinator
+    /// would: the row keeps its <c>ips_id</c>, and the RLS only admits it with <c>app.ips_id</c> of that IPS.
+    /// </summary>
+    public static async Task AsignarAsync(ApiFactory factory, Guid casoId, string tenantId, string sub, string? porIps = null)
+    {
+        await using NpgsqlConnection conn = await OpenOwnerAsync(factory, tenantId);
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT set_config('app.ips_id', coalesce(@ips, ''), false);
+            INSERT INTO atel.asignaciones (caso_medico_id, sub, tenant_id, ips_id, asignado_en, asignado_por)
+            VALUES (@id, @sub, @tid, @ips, now(), 'sub-seed');
+            """;
+        cmd.Parameters.AddWithValue("id", casoId);
+        cmd.Parameters.AddWithValue("sub", sub);
+        cmd.Parameters.AddWithValue("tid", tenantId);
+        cmd.Parameters.Add(new NpgsqlParameter("ips", NpgsqlTypes.NpgsqlDbType.Text) { Value = (object?)porIps ?? DBNull.Value });
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>The actor with an <c>acr</c> and, optionally, an <c>auth_time</c> that many minutes ago.</summary>
+    public static Dictionary<string, object> ConStepUp(Dictionary<string, object> actor, string acr, int? autenticadoHaceMinutos = null)
+    {
+        actor["acr"] = acr;
+        if (autenticadoHaceMinutos is int minutos)
+        {
+            actor["auth_time"] = DateTimeOffset.UtcNow.AddMinutes(-minutos).ToUnixTimeSeconds()
+                .ToString(CultureInfo.InvariantCulture);
+        }
+
+        return actor;
+    }
+
+    /// <summary>
+    /// Turns a record into a <c>DICTAMEN_PCL</c> until SPEC 08's dictamen endpoint exists. The clinical table is
+    /// immutable by trigger, so the superuser's session skips triggers; the ciphertext's AAD does not include the type.
+    /// </summary>
+    public static async Task RetipificarAsync(ApiFactory factory, Guid registroId, string tipo)
+    {
+        await using NpgsqlConnection conn = await OpenSuperuserAsync(factory);
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SET session_replication_role = replica;
+            UPDATE clinico.historia_clinica_detalle SET tipo = @tipo WHERE id = @id;
+            """;
+        cmd.Parameters.AddWithValue("tipo", tipo);
+        cmd.Parameters.AddWithValue("id", registroId);
+        (await cmd.ExecuteNonQueryAsync()).ShouldBe(1);
+    }
+
     // ── Assertions (as the superuser) ─────────────────────────────────────────
 
     /// <summary>The clinical records of the case, oldest first, with the columns the spec checks.</summary>
