@@ -9,4 +9,6 @@ internal static class Tags
     internal const string Clinico = "Clinico";
     internal const string Incapacidades = "Incapacidades";
     internal const string Plazos = "Plazos";
+    internal const string Paciente = "Paciente";
+    internal const string SolicitudesCopiaHc = "SolicitudesCopiaHc";
 }

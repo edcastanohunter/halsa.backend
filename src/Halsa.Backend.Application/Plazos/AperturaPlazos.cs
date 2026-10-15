@@ -4,8 +4,10 @@ using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Application.Dictamenes;
 using Halsa.Backend.Application.Incapacidades;
 using Halsa.Backend.Application.Integraciones.Eventos;
+using Halsa.Backend.Application.Pacientes;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Incapacidades;
+using Halsa.Backend.Domain.Pacientes;
 using Halsa.Backend.Domain.Terminos;
 using Halsa.Backend.SharedKernel.Abstractions;
 using Halsa.Backend.SharedKernel.Tenancy;
@@ -227,5 +229,70 @@ internal sealed class SuspenderPlazosCasoRechazadoHandler(
         {
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
+    }
+}
+
+/// <summary>
+/// Una solicitud de copia de la HC (SPEC 12) abre su <c>SOLICITUD_COPIA_HC</c> (<c>referencia_id</c> = la solicitud), que
+/// inicia al solicitarla. El cierre de la solicitud lo cumple; si la ARL la cerró antes de que este evento llegara, el
+/// plazo nace cumplido, con el instante y el actor del cierre.
+/// </summary>
+internal sealed class AbrirPlazoSolicitudCopiaHcHandler(
+    ISystemTenantScope systemTenantScope,
+    ITenantContext tenantContext,
+    IReadDbContext readDb,
+    IPlazosRepository plazos,
+    ICatalogoTerminos catalogo,
+    IUnitOfWork unitOfWork,
+    TimeProvider time)
+    : IIntegrationEventHandler<SolicitudCopiaHcCreadaIntegrationEvent>
+{
+    public async Task HandleAsync(SolicitudCopiaHcCreadaIntegrationEvent evento, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(evento);
+
+        var tenant = new TenantId(evento.TenantId);
+        using IDisposable _ = systemTenantScope.Entrar(tenant);
+
+        var casoId = new CasoMedicoId(evento.CasoMedicoId);
+
+        bool existe = (await plazos.DelCasoAsync(casoId, cancellationToken))
+            .Any(p => p.ReglaCodigo == CodigosRegla.SolicitudCopiaHc && p.ReferenciaId == evento.SolicitudId);
+        if (existe)
+        {
+            return;
+        }
+
+        var solicitudId = new SolicitudCopiaHcId(evento.SolicitudId);
+        var solicitud = await readDb.SolicitudesCopiaHc
+            .Where(s => s.Id == solicitudId)
+            .Select(s => new { s.Estado, s.AtendidaEn, s.AtendidaPor })
+            .FirstOrDefaultAsync(cancellationToken)
+            // Committed in the same transaction as the event: if it is not visible, something is wrong. Retry.
+            ?? throw new InvalidOperationException($"La solicitud {evento.SolicitudId} no existe en {evento.TenantId}.");
+
+        string radicado = await readDb.CasosMedicos
+            .AsNoTracking()
+            .Where(c => c.Id == casoId)
+            .Select(c => c.Radicado)
+            .FirstAsync(cancellationToken);
+
+        ReglaTermino regla = await catalogo.ReglaVigenteAsync(CodigosRegla.SolicitudCopiaHc, evento.SolicitadaEn, cancellationToken);
+        CalculadoraTerminos calculadora = await catalogo.CalculadoraAsync(cancellationToken);
+
+        var plazo = Plazo.Abrir(tenant, casoId, radicado, regla, evento.SolicitudId, evento.SolicitadaEn, calculadora);
+
+        if (solicitud.Estado is EstadoSolicitudCopiaHc.Entregada or EstadoSolicitudCopiaHc.Rechazada)
+        {
+            DateTimeOffset ahora = time.GetUtcNow();
+            plazo.Cumplir(
+                CodigosSolicitudCopiaHc.NotaPlazo(solicitud.Estado),
+                solicitud.AtendidaEn ?? ahora,
+                solicitud.AtendidaPor ?? tenantContext.Sub,
+                ahora);
+        }
+
+        plazos.Agregar(plazo);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }

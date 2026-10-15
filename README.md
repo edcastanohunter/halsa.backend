@@ -14,11 +14,13 @@ src/
   Halsa.Backend.Application    CQRS contracts, use cases, validators, behaviours, read models.
   Halsa.Backend.Infrastructure EF Core + Npgsql, event store, outbox, projections, Keycloak, cache.
   Halsa.Backend.Api            Minimal API endpoints, Result -> HTTP translation, health, OpenAPI.
+  Halsa.Bff.Paciente           The patient portal's BFF (SPEC 12): OIDC, the session cookie, YARP to /v1/paciente/*.
 tests/
   Halsa.Backend.UnitTests         Domain, mediator and behaviours. xUnit + NSubstitute + Shouldly.
   Halsa.Backend.ArchitectureTests Layer rules enforced with NetArchTest.
   Halsa.Backend.IntegrationTests  Real PostgreSQL via Testcontainers: store, concurrency, outbox.
   Halsa.Backend.FunctionalTests   The API end to end through WebApplicationFactory.
+  Halsa.Bff.Paciente.Tests        The BFF in memory, against stub API and Keycloak handlers. No Docker needed.
 ```
 
 The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain -> SharedKernel`.
@@ -79,6 +81,49 @@ authorization code flow of `halsa-backoffice` with `acr_values=2` prompts for th
 TOTP, SHA-1, 6 digits, 30 seconds. `analista.arla` has no OTP and can never reach `acr="2"`. With an OTP
 configured, the password grant of `halsa-dev-cli` also needs the current code (`-d totp=123456`) and still issues
 `acr="1"`: only the browser flow reaches level 2.
+
+## The patient portal (SPEC 12)
+
+The portal never holds a token. `Halsa.Bff.Paciente` (`https://localhost:5610`) signs the patient in against the
+`halsa-pacientes` realm as the confidential client `halsa-bff-paciente` (code + PKCE), keeps the tokens in a Redis
+session (Data Protection keys in Redis too) and gives the browser only `__Host-halsa-paciente`, an `HttpOnly`, `Secure`,
+`SameSite=Strict` cookie with the session key. `/paciente/api/{**rest}` is proxied to `{Api}/v1/paciente/{**rest}` with
+the access token, refreshed in the server; nothing else is forwarded. Every proxied request and the logout need the
+header `X-Halsa-Csrf: 1`. The `halsa-pacientes` realm allows self-registration (email verification is off in
+development, which has no SMTP), but an account sees nothing until it redeems an activation code issued by the ARL.
+
+```bash
+# The BFF's client secret lives in user-secrets outside Development (appsettings.Development.json has the dev one).
+dotnet dev-certs https --trust
+dotnet run --project src/Halsa.Backend.Api        # http://localhost:5600
+dotnet run --project src/Halsa.Bff.Paciente       # https://localhost:5610, Redis from docker compose
+```
+
+1. **A `Validado` case.** The dev seed only has `Radicado` cases: radicate a FURAT with `int-arl-ARL_A`
+   (`POST /v1/integraciones/furat`, see `docs/api/atel-api.openapi.yaml`). The Worker (`Ambos` in Development)
+   validates it within seconds.
+2. **The code.** As `analista.arla` (token from `halsa-dev-cli`), `POST /v1/casos/{id}/codigos-activacion`. The answer
+   is the only time the whole code (`ABC123-K7Q2M9XD4P`) exists: the database keeps its salt and hash.
+3. **Sign in.** Open `https://localhost:5610/paciente/bff/login?returnUrl=/` and log in as `paciente.dev` / `dev`
+   (or register a new account). Keycloak sends you back to `/`, which the BFF does not serve: that is expected.
+4. **Redeem and look around**, from the DevTools console of that tab (same site, so the cookie goes along):
+
+   ```js
+   const api = (path, init = {}) => fetch(`/paciente/api/${path}`,
+     { ...init, headers: { 'X-Halsa-Csrf': '1', 'Content-Type': 'application/json', ...init.headers } });
+   await (await api('vinculos', { method: 'POST', body: JSON.stringify({ codigo: 'ABC123-K7Q2M9XD4P' }) })).json();
+   await (await fetch('/paciente/bff/usuario')).json();          // { nombre, correo, vinculado: true }
+   await (await api('mis-casos')).json();
+   await fetch('/paciente/bff/logout', { method: 'POST', headers: { 'X-Halsa-Csrf': '1' } });   // 204
+   ```
+
+   The logout ends the Keycloak session through the server channel (the refresh token never reaches the browser):
+   opening the login again asks for the password. Neither `localStorage`, `sessionStorage` nor any BFF response holds
+   a token.
+
+The ARL works the HC copy requests at `GET /v1/solicitudes-copia-hc` (`privacidad.arla`, permission
+`solicitudes-hc:gestionar`); each one runs the legal deadline `SOLICITUD_COPIA_HC` (10 business days, pending legal
+validation) until it is closed as `ENTREGADA` or `RECHAZADA`.
 
 ## The mediator
 

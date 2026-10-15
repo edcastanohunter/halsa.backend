@@ -63,5 +63,9 @@ public record Error
 
     public static Error PayloadTooLarge(string code, string description) => new(code, description, ErrorType.PayloadTooLarge);
 
+    public static Error Locked(string code, string description) => new(code, description, ErrorType.Locked);
+
+    public static Error TooManyRequests(string code, string description) => new(code, description, ErrorType.TooManyRequests);
+
     public override string ToString() => $"{Code}: {Description}";
 }

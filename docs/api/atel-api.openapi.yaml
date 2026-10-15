@@ -37,6 +37,16 @@ tags:
       Plazos legales de cada caso (SPEC 09), calculados sobre el calendario laboral colombiano. Los abre un evento, los
       alerta y los vence el Worker, y los cumple otro evento o una persona de la ARL. Las reglas son las de
       `sst.reglas_termino`, pendientes de validación jurídica.
+  - name: Paciente
+    description: |
+      El portal del paciente (SPEC 12), siempre detrás del BFF `halsa-bff-paciente`: el navegador nunca tiene un token.
+      Ninguna ruta recibe ids de trabajador; todo se resuelve desde el `sub` del token y los vínculos de la cuenta, que se
+      crean canjeando un código de activación de la ARL. Solo hitos administrativos: ni diagnósticos, ni porcentajes,
+      ni fundamentos. Un token del personal responde `403`.
+  - name: SolicitudesCopiaHc
+    description: |
+      La bandeja de solicitudes de copia de la historia clínica del tenant (SPEC 12; Res. 1995/1999, art. 14). La copia
+      se entrega por el canal formal; cada solicitud corre el plazo `SOLICITUD_COPIA_HC` hasta que se cierra.
 
 security:
   - personal: []
@@ -748,6 +758,315 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problema' }
 
+  /casos/{casoId}/codigos-activacion:
+    post:
+      tags: [Paciente]
+      operationId: emitirCodigoActivacion
+      summary: Emite un código de activación del portal para el trabajador del caso.
+      description: |
+        Solo para un caso `Validado` o posterior (`Paciente.CasoNoValidado`). Emitir otro para el mismo caso vence el
+        `ACTIVO` anterior. El código completo se muestra una sola vez: en la base solo quedan su sal y su hash. Vale 30
+        días. La emisión queda auditada (`CREAR / CODIGO_ACTIVACION`).
+      security:
+        - personal: [pacientes:activar]
+        - integracion: [pacientes:activar]
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+      responses:
+        '201':
+          description: El código emitido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodigoActivacionResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: El caso no está `Validado` ni en un estado posterior (`Paciente.CasoNoValidado`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
+  /paciente/vinculos:
+    post:
+      tags: [Paciente]
+      operationId: canjearCodigoActivacion
+      summary: Vincula la cuenta del paciente al documento del trabajador con un código de activación.
+      description: |
+        El vínculo es por documento: la cuenta ve los casos de ese documento en cualquier ARL. Cada intento queda
+        auditado (`CREAR / VINCULO`) con su resultado. Límites: 5 secretos equivocados bloquean el código, y 5 canjes
+        fallidos de la misma cuenta en 24 h bloquean la cuenta para canjear, aunque el código sea válido.
+      security:
+        - paciente: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CanjearCodigoRequest' }
+      responses:
+        '201':
+          description: La cuenta quedó vinculada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VinculoCreadoResponse' }
+        '400':
+          description: |
+            `Paciente.CodigoInvalido`, el mismo para un código inexistente, vencido, usado o mal tecleado: no se pueden
+            enumerar códigos.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '409':
+          description: La cuenta ya está vinculada a otro documento (`Paciente.VinculoDistinto`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '423':
+          description: El código acumuló 5 secretos equivocados (`Paciente.CodigoBloqueado`). La ARL puede emitir otro.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '429':
+          description: La cuenta acumuló 5 canjes fallidos en 24 h (`Paciente.DemasiadosIntentos`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
+  /paciente/mis-casos:
+    get:
+      tags: [Paciente]
+      operationId: listarMisCasos
+      summary: Los casos del paciente.
+      description: Los casos de los documentos vinculados, de cualquier ARL. Sin vínculo, `[]`.
+      security:
+        - paciente: []
+      responses:
+        '200':
+          description: Los casos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CasoPacienteResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /paciente/resumen:
+    get:
+      tags: [Paciente]
+      operationId: obtenerResumenPaciente
+      summary: El resumen del paciente.
+      description: |
+        Los casos activos (ni cerrados ni rechazados), las incapacidades vigentes hoy (en Colombia) y los próximos hitos:
+        el fin de cada incapacidad vigente y el vencimiento de la controversia de un dictamen notificado. Sin el estado de
+        los pagos (la liquidación está fuera de ARQ 01).
+      security:
+        - paciente: []
+      responses:
+        '200':
+          description: El resumen.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResumenPacienteResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /paciente/casos/{casoId}/linea-tiempo:
+    get:
+      tags: [Paciente]
+      operationId: obtenerLineaTiempoPaciente
+      summary: La línea de tiempo de un caso del paciente.
+      description: |
+        Los hitos administrativos del caso, del más antiguo al más reciente. **Sin** diagnósticos, porcentajes ni
+        fundamentos: el detalle clínico sigue el flujo formal de copia. La consulta queda auditada (`LEER / CASO`).
+      security:
+        - paciente: []
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+      responses:
+        '200':
+          description: Los hitos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HitoResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: El caso no existe o no es de un documento vinculado. No se distingue entre ambos.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
+  /paciente/incapacidades:
+    get:
+      tags: [Paciente]
+      operationId: listarIncapacidadesPaciente
+      summary: Las incapacidades del paciente.
+      description: Todas las de los casos vinculados, de la más reciente a la más antigua, sin diagnóstico.
+      security:
+        - paciente: []
+      responses:
+        '200':
+          description: Las incapacidades.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IncapacidadPacienteResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /paciente/casos/{casoId}/solicitudes-copia-hc:
+    post:
+      tags: [Paciente]
+      operationId: crearSolicitudCopiaHc
+      summary: Solicita la copia de la historia clínica de un caso.
+      description: |
+        La atiende la ARL del caso por el canal formal; el portal nunca entrega la copia. Abre el plazo
+        `SOLICITUD_COPIA_HC` (10 días hábiles, pendiente de validación jurídica). La creación queda auditada
+        (`CREAR / SOLICITUD_COPIA_HC`).
+      security:
+        - paciente: []
+      parameters:
+        - $ref: '#/components/parameters/CasoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CrearSolicitudCopiaHcRequest' }
+      responses:
+        '201':
+          description: La solicitud, `RECIBIDA`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SolicitudCopiaHcPacienteResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: El caso no existe o no es de un documento vinculado.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '409':
+          description: Ya hay una solicitud abierta (`RECIBIDA` o `EN_TRAMITE`) para el caso (`SolicitudCopiaHc.YaAbierta`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
+  /paciente/solicitudes-copia-hc:
+    get:
+      tags: [Paciente]
+      operationId: listarSolicitudesCopiaHcPaciente
+      summary: Las solicitudes de copia de la HC del paciente.
+      security:
+        - paciente: []
+      responses:
+        '200':
+          description: Las solicitudes, de la más reciente a la más antigua.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SolicitudCopiaHcPacienteResponse' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /solicitudes-copia-hc:
+    get:
+      tags: [SolicitudesCopiaHc]
+      operationId: listarSolicitudesCopiaHc
+      summary: La bandeja de solicitudes de copia de la HC del tenant.
+      description: |
+        De la más antigua a la más reciente (el orden en que corre su plazo). Solo personal de la ARL. La consulta queda
+        auditada (`LEER / SOLICITUD_COPIA_HC`).
+      security:
+        - personal: [solicitudes-hc:gestionar]
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          schema: { type: string, enum: [RECIBIDA, EN_TRAMITE, ENTREGADA, RECHAZADA] }
+      responses:
+        '200':
+          description: Las solicitudes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SolicitudCopiaHcResponse' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /solicitudes-copia-hc/{id}/tramitar:
+    post:
+      tags: [SolicitudesCopiaHc]
+      operationId: tramitarSolicitudCopiaHc
+      summary: Pasa la solicitud de `RECIBIDA` a `EN_TRAMITE`.
+      description: La gestión queda auditada (`ACTUALIZAR / SOLICITUD_COPIA_HC`).
+      security:
+        - personal: [solicitudes-hc:gestionar]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Solicitud en trámite. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: La solicitud no existe o no es del tenant (`SolicitudCopiaHc.NoEncontrada`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '409':
+          description: La solicitud no está `RECIBIDA` (`SolicitudCopiaHc.TransicionInvalida`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
+  /solicitudes-copia-hc/{id}/cerrar:
+    post:
+      tags: [SolicitudesCopiaHc]
+      operationId: cerrarSolicitudCopiaHc
+      summary: Cierra la solicitud como `ENTREGADA` o `RECHAZADA` y cumple su plazo.
+      description: |
+        Desde `RECIBIDA` o `EN_TRAMITE`. En la misma transacción cumple el plazo `SOLICITUD_COPIA_HC` (extemporáneo si ya
+        venció). La gestión queda auditada (`ACTUALIZAR / SOLICITUD_COPIA_HC`).
+      security:
+        - personal: [solicitudes-hc:gestionar]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CerrarSolicitudCopiaHcRequest' }
+      responses:
+        '204': { description: Solicitud cerrada. }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404':
+          description: La solicitud no existe o no es del tenant (`SolicitudCopiaHc.NoEncontrada`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+        '409':
+          description: La solicitud ya estaba cerrada (`SolicitudCopiaHc.TransicionInvalida`).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problema' }
+
 webhooks:
   plazoProximoAVencer:
     post:
@@ -937,6 +1256,8 @@ components:
             pcl:dictamen:read: Leer dictámenes PCL
             pcl:dictamen:write: Registrar, corregir y notificar dictámenes PCL
             auditoria:revisar: Revisar y cerrar los accesos de emergencia
+            pacientes:activar: Emitir códigos de activación del portal del paciente
+            solicitudes-hc:gestionar: Gestionar la bandeja de solicitudes de copia de la HC
     integracion:
       type: oauth2
       description: Realm `halsa`, clients `int-arl-*` o `int-ips-*`. Client Credentials con `private_key_jwt` y token ligado a certificado mTLS (RFC 8705).
@@ -949,6 +1270,15 @@ components:
             integracion:clinico:write: Enviar conceptos médicos desde una IPS
             incapacidades:write: Cargar incapacidades
             webhooks:manage: Gestionar las suscripciones a webhooks salientes (ARL e IPS)
+            pacientes:activar: Emitir códigos de activación del portal del paciente (solo ARL)
+    paciente:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Realm `halsa-pacientes`. El navegador nunca ve este token: el BFF `halsa-bff-paciente` (client confidencial,
+        Authorization Code + PKCE) lo guarda en su sesión y lo añade al reenviar `/paciente/api/*` a `/v1/paciente/*`.
+        Audiencia `halsa-api`. Un token del realm `halsa` responde `403` en estas rutas.
 
   parameters:
     IdempotencyKey:
@@ -1590,6 +1920,165 @@ components:
           type: [string, 'null']
           format: date-time
           description: Sin valor, el instante de la solicitud.
+
+    # ---------- Portal del paciente (SPEC 12) ----------
+    CodigoActivacionResponse:
+      type: object
+      required: [codigo, expiraEn]
+      properties:
+        codigo:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{6}-[0-9A-HJKMNP-TV-Z]{10}$'
+          example: ABC123-K7Q2M9XD4P
+          description: El id (6) y el secreto (10, unos 50 bits), en base32 de Crockford. Se muestra una sola vez.
+        expiraEn: { type: string, format: date-time }
+
+    CanjearCodigoRequest:
+      type: object
+      required: [codigo]
+      properties:
+        codigo:
+          type: string
+          example: ABC123-K7Q2M9XD4P
+          description: Sin distinguir mayúsculas; los espacios se ignoran, y `O`, `I` y `L` se leen como `0`, `1` y `1`.
+
+    VinculoCreadoResponse:
+      type: object
+      required: [trabajador]
+      properties:
+        trabajador: { $ref: '#/components/schemas/TrabajadorVinculadoResponse' }
+
+    TrabajadorVinculadoResponse:
+      type: object
+      required: [tipo, numeroEnmascarado]
+      properties:
+        tipo: { type: string, example: CC }
+        numeroEnmascarado: { type: string, example: '******4050' }
+
+    CasoPacienteResponse:
+      type: object
+      required: [casoId, radicado, tipoEvento, estado, fechaEvento, arl, ultimoHitoEn]
+      properties:
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        tipoEvento: { type: string, enum: [AccidenteTrabajo, EnfermedadLaboral] }
+        estado: { type: string, example: Validado }
+        fechaEvento: { type: string, format: date-time }
+        arl:
+          type: string
+          example: ARL_A
+          description: El código de la ARL del caso.
+        ultimoHitoEn:
+          type: string
+          format: date-time
+          description: La fecha del hito más reciente de su línea de tiempo.
+
+    ResumenPacienteResponse:
+      type: object
+      required: [casosActivos, incapacidadesVigentes, proximosHitos]
+      properties:
+        casosActivos:
+          type: array
+          items: { $ref: '#/components/schemas/CasoPacienteResponse' }
+        incapacidadesVigentes:
+          type: array
+          items: { $ref: '#/components/schemas/IncapacidadVigenteResponse' }
+        proximosHitos:
+          type: array
+          items: { $ref: '#/components/schemas/ProximoHitoResponse' }
+
+    IncapacidadVigenteResponse:
+      type: object
+      required: [casoId, fechaInicio, fechaFin, dias]
+      properties:
+        casoId: { type: string, format: uuid }
+        fechaInicio: { type: string, format: date }
+        fechaFin: { type: string, format: date }
+        dias: { type: integer }
+
+    ProximoHitoResponse:
+      type: object
+      required: [casoId, tipo, fecha]
+      properties:
+        casoId: { type: string, format: uuid }
+        tipo: { type: string, enum: [FIN_INCAPACIDAD, VENCE_CONTROVERSIA] }
+        fecha: { type: string, format: date }
+
+    HitoResponse:
+      type: object
+      required: [tipo, fecha, descripcion]
+      properties:
+        tipo:
+          type: string
+          enum: [RADICADO, VALIDADO, RECHAZADO, REMITIDO_A_IPS, INCAPACIDAD_REGISTRADA, DICTAMEN_NOTIFICADO, DICTAMEN_EN_FIRME]
+        fecha: { type: string, format: date-time }
+        descripcion: { type: string, example: La ARL validó la radicación del caso. }
+
+    IncapacidadPacienteResponse:
+      type: object
+      required: [id, casoId, tipo, fechaInicio, fechaFin, dias, diasAcumulados, estado]
+      properties:
+        id: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        tipo: { type: string, enum: [INICIAL, PRORROGA] }
+        fechaInicio: { type: string, format: date }
+        fechaFin: { type: string, format: date }
+        dias: { type: integer }
+        diasAcumulados: { type: integer }
+        estado: { type: string, enum: [REGISTRADA] }
+
+    CrearSolicitudCopiaHcRequest:
+      type: object
+      required: [medioEntrega]
+      properties:
+        medioEntrega: { type: string, enum: [CORREO_CERTIFICADO, PRESENCIAL, ELECTRONICO] }
+        direccionOCorreo:
+          type: [string, 'null']
+          maxLength: 500
+          description: Obligatorio salvo con `PRESENCIAL`; un correo con `ELECTRONICO`.
+        observaciones: { type: [string, 'null'], maxLength: 1000 }
+
+    SolicitudCopiaHcPacienteResponse:
+      type: object
+      required: [id, casoId, medioEntrega, estado, solicitadaEn]
+      properties:
+        id: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        medioEntrega: { type: string, enum: [CORREO_CERTIFICADO, PRESENCIAL, ELECTRONICO] }
+        direccionOCorreo: { type: [string, 'null'] }
+        observaciones: { type: [string, 'null'] }
+        estado: { type: string, enum: [RECIBIDA, EN_TRAMITE, ENTREGADA, RECHAZADA] }
+        solicitadaEn: { type: string, format: date-time }
+        atendidaEn: { type: [string, 'null'], format: date-time }
+        notaAtencion:
+          type: [string, 'null']
+          description: La nota del cierre de la ARL.
+
+    SolicitudCopiaHcResponse:
+      type: object
+      required: [id, casoId, radicado, pacienteSub, medioEntrega, estado, solicitadaEn]
+      properties:
+        id: { type: string, format: uuid }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        pacienteSub:
+          type: string
+          description: La cuenta de `halsa-pacientes` que la hizo.
+        medioEntrega: { type: string, enum: [CORREO_CERTIFICADO, PRESENCIAL, ELECTRONICO] }
+        direccionOCorreo: { type: [string, 'null'] }
+        observaciones: { type: [string, 'null'] }
+        estado: { type: string, enum: [RECIBIDA, EN_TRAMITE, ENTREGADA, RECHAZADA] }
+        solicitadaEn: { type: string, format: date-time }
+        atendidaEn: { type: [string, 'null'], format: date-time }
+        atendidaPor: { type: [string, 'null'] }
+        notaAtencion: { type: [string, 'null'] }
+
+    CerrarSolicitudCopiaHcRequest:
+      type: object
+      required: [resultado, nota]
+      properties:
+        resultado: { type: string, enum: [ENTREGADA, RECHAZADA] }
+        nota: { type: string, minLength: 10, maxLength: 1000 }
 
     # ---------- Eventos ----------
     PlazoResumen:

@@ -14,6 +14,9 @@ public static class Policies
     /// </summary>
     public const string IncapacidadEscritura = "politica:incapacidad-escritura";
 
+    /// <summary>Las rutas <c>/v1/paciente/*</c> (SPEC 12): solo el actor paciente (<see cref="ActorPacienteRequirement"/>).</summary>
+    public const string Paciente = "politica:paciente";
+
     /// <summary>El <c>acr</c> mínimo de una persona para <see cref="IncapacidadEscritura"/>.</summary>
     public const int AcrIncapacidadEscritura = 2;
 

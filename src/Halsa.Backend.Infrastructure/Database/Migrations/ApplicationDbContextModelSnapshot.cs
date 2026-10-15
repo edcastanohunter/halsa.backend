@@ -286,6 +286,10 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("radicado_en");
 
+                    b.Property<DateTimeOffset?>("RechazadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rechazado_en");
+
                     b.Property<string>("TenantId")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -297,6 +301,10 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("tipo_evento");
+
+                    b.Property<DateTimeOffset?>("ValidadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("validado_en");
 
                     b.Property<uint>("Version")
                         .IsConcurrencyToken()
@@ -566,6 +574,205 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .HasDatabaseName("ix_incapacidades_tenant_caso_fecha_inicio");
 
                     b.ToTable("incapacidades", "atel");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Pacientes.CodigoActivacion", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("char(6)")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<DateTimeOffset>("EmitidoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("emitido_en");
+
+                    b.Property<string>("EmitidoPor")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("emitido_por");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTimeOffset>("ExpiraEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expira_en");
+
+                    b.Property<int>("IntentosFallidos")
+                        .HasColumnType("integer")
+                        .HasColumnName("intentos_fallidos");
+
+                    b.Property<byte[]>("SecretoHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("secreto_hash");
+
+                    b.Property<byte[]>("SecretoSal")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("secreto_sal");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TrabajadorNumero")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("trabajador_numero");
+
+                    b.Property<string>("TrabajadorTipo")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("trabajador_tipo");
+
+                    b.Property<DateTimeOffset?>("UsadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("usado_en");
+
+                    b.Property<string>("UsadoPor")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("usado_por");
+
+                    b.HasKey("Id")
+                        .HasName("pk_codigos_activacion");
+
+                    b.HasIndex("CasoMedicoId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_codigos_activacion_caso_activo")
+                        .HasFilter("estado = 'ACTIVO'");
+
+                    b.ToTable("codigos_activacion", "atel");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Pacientes.SolicitudCopiaHc", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AtendidaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("atendida_en");
+
+                    b.Property<string>("AtendidaPor")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("atendida_por");
+
+                    b.Property<Guid>("CasoMedicoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caso_medico_id");
+
+                    b.Property<string>("DireccionOCorreo")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("direccion_o_correo");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("estado");
+
+                    b.Property<string>("MedioEntrega")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("medio_entrega");
+
+                    b.Property<string>("NotaAtencion")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("nota_atencion");
+
+                    b.Property<string>("Observaciones")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("observaciones");
+
+                    b.Property<string>("PacienteSub")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("paciente_sub");
+
+                    b.Property<DateTimeOffset>("SolicitadaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("solicitada_en");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_solicitudes_copia_hc");
+
+                    b.HasIndex("CasoMedicoId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_solicitudes_copia_hc_caso_abierta")
+                        .HasFilter("estado IN ('RECIBIDA', 'EN_TRAMITE')");
+
+                    b.HasIndex("PacienteSub", "SolicitadaEn")
+                        .HasDatabaseName("ix_solicitudes_copia_hc_paciente_solicitada_en");
+
+                    b.HasIndex("TenantId", "Estado", "SolicitadaEn")
+                        .HasDatabaseName("ix_solicitudes_copia_hc_tenant_estado_solicitada_en");
+
+                    b.ToTable("solicitudes_copia_hc", "atel");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Pacientes.VinculoPaciente", b =>
+                {
+                    b.Property<string>("PacienteSub")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("paciente_sub");
+
+                    b.Property<string>("TrabajadorTipo")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("trabajador_tipo");
+
+                    b.Property<string>("TrabajadorNumero")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("trabajador_numero");
+
+                    b.Property<string>("CodigoId")
+                        .IsRequired()
+                        .HasColumnType("char(6)")
+                        .HasColumnName("codigo_id");
+
+                    b.Property<DateTimeOffset>("VinculadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("vinculado_en");
+
+                    b.HasKey("PacienteSub", "TrabajadorTipo", "TrabajadorNumero")
+                        .HasName("pk_vinculos_paciente");
+
+                    b.HasIndex("CodigoId")
+                        .HasDatabaseName("ix_vinculos_paciente_codigo_id");
+
+                    b.HasIndex("TrabajadorTipo", "TrabajadorNumero")
+                        .HasDatabaseName("ix_vinculos_paciente_trabajador");
+
+                    b.ToTable("vinculos_paciente", "atel");
                 });
 
             modelBuilder.Entity("Halsa.Backend.Domain.Terminos.Plazo", b =>
@@ -1481,6 +1688,36 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
 
                     b.Navigation("Profesional")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Pacientes.CodigoActivacion", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Casos.CasoMedico", null)
+                        .WithMany()
+                        .HasForeignKey("CasoMedicoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_codigos_activacion_casos_medicos");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Pacientes.SolicitudCopiaHc", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Casos.CasoMedico", null)
+                        .WithMany()
+                        .HasForeignKey("CasoMedicoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_solicitudes_copia_hc_casos_medicos");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Pacientes.VinculoPaciente", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Pacientes.CodigoActivacion", null)
+                        .WithMany()
+                        .HasForeignKey("CodigoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_vinculos_paciente_codigos_activacion");
                 });
 
             modelBuilder.Entity("Halsa.Backend.Domain.Terminos.Plazo", b =>

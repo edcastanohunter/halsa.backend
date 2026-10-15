@@ -516,15 +516,20 @@
         { "name": "integracion:furep:write",   "description": "Enviar FUREP a través de integración",      "composite": false, "clientRole": true },
         { "name": "integracion:clinico:write", "description": "Enviar datos clínicos a través de integración", "composite": false, "clientRole": true },
         { "name": "webhooks:manage",           "description": "Gestionar webhooks salientes",              "composite": false, "clientRole": true },
+        { "name": "pacientes:activar",         "description": "Emitir códigos de activación del portal del paciente", "composite": false, "clientRole": true },
+        { "name": "solicitudes-hc:gestionar",  "description": "Gestionar la bandeja de solicitudes de copia de la HC", "composite": false, "clientRole": true },
 
         {
           "name": "analista-arl",
-          "description": "Analista de la ARL: gestión de casos e incapacidades",
+          "description": "Analista de la ARL: gestión de casos, incapacidades y códigos del portal del paciente",
           "composite": true,
           "clientRole": true,
           "composites": {
             "client": {
-              "halsa-api": ["casos:read", "casos:write", "casos:asignar", "incapacidades:read", "plazos:read", "plazos:write"]
+              "halsa-api": [
+                "casos:read", "casos:write", "casos:asignar", "incapacidades:read", "plazos:read", "plazos:write",
+                "pacientes:activar"
+              ]
             }
           }
         },
@@ -570,12 +575,12 @@
         },
         {
           "name": "oficial-privacidad",
-          "description": "Oficial de privacidad: auditoría completa",
+          "description": "Oficial de privacidad: auditoría completa y solicitudes de copia de la HC",
           "composite": true,
           "clientRole": true,
           "composites": {
             "client": {
-              "halsa-api": ["auditoria:read", "auditoria:export", "auditoria:revisar"]
+              "halsa-api": ["auditoria:read", "auditoria:export", "auditoria:revisar", "solicitudes-hc:gestionar"]
             }
           }
         },
@@ -592,12 +597,12 @@
         },
         {
           "name": "integracion-arl",
-          "description": "Cuenta de integración de ARL: FURAT, FUREP y webhooks",
+          "description": "Cuenta de integración de ARL: FURAT, FUREP, webhooks y códigos del portal del paciente",
           "composite": true,
           "clientRole": true,
           "composites": {
             "client": {
-              "halsa-api": ["integracion:furat:write", "integracion:furep:write", "webhooks:manage"]
+              "halsa-api": ["integracion:furat:write", "integracion:furep:write", "webhooks:manage", "pacientes:activar"]
             }
           }
         },

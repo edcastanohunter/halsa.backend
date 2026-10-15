@@ -2,6 +2,7 @@ using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Behaviors;
 using Halsa.Backend.Application.Integraciones.Canonico;
+using Halsa.Backend.Application.Pacientes;
 using Halsa.Backend.Mediation.DependencyInjection;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +40,9 @@ public static class DependencyInjection
         // Ingesta (SPEC 05): un adaptador por formato de reporte; la radicación elige por tipo.
         services.AddScoped<IReporteAdapter, FuratV1Adapter>();
         services.AddScoped<IReporteAdapter, FurepV1Adapter>();
+
+        // Portal del paciente (SPEC 12): la lectura común de sus casos y su línea de tiempo.
+        services.AddScoped<PortalPaciente>();
 
         // Handlers of the integration events the outbox delivers in-process (SPEC 05).
         foreach (Type handler in typeof(DependencyInjection).Assembly.GetTypes()

@@ -4,6 +4,7 @@ using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
+using Halsa.Backend.Domain.Pacientes;
 using Halsa.Backend.Domain.Terminos;
 using Halsa.Backend.Domain.Webhooks;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
@@ -25,7 +26,7 @@ namespace Halsa.Backend.Infrastructure.Database;
 /// RLS policies — defence in depth. Use <see cref="Tenancy.NullTenantContext"/> when creating
 /// the context outside a request (migrations, seeds).
 /// </summary>
-public sealed class ApplicationDbContext(
+public sealed partial class ApplicationDbContext(
     DbContextOptions<ApplicationDbContext> options,
     ITenantContext tenantContext)
     : DbContext(options), IReadDbContext, IUnitOfWork
@@ -58,6 +59,12 @@ public sealed class ApplicationDbContext(
 
     internal DbSet<EntregaWebhook> EntregasWebhook => Set<EntregaWebhook>();
 
+    internal DbSet<CodigoActivacion> CodigosActivacion => Set<CodigoActivacion>();
+
+    internal DbSet<VinculoPaciente> VinculosPaciente => Set<VinculoPaciente>();
+
+    internal DbSet<SolicitudCopiaHc> SolicitudesCopiaHc => Set<SolicitudCopiaHc>();
+
     // ── IReadDbContext ────────────────────────────────────────────────────────
 
     IQueryable<CasoMedico> IReadDbContext.CasosMedicos => CasosMedicos;
@@ -71,6 +78,10 @@ public sealed class ApplicationDbContext(
     IQueryable<Plazo> IReadDbContext.Plazos => Plazos.AsNoTracking();
 
     IQueryable<ReglaTermino> IReadDbContext.ReglasTermino => ReglasTermino.AsNoTracking();
+
+    IQueryable<VinculoPaciente> IReadDbContext.VinculosPaciente => VinculosPaciente.AsNoTracking();
+
+    IQueryable<SolicitudCopiaHc> IReadDbContext.SolicitudesCopiaHc => SolicitudesCopiaHc.AsNoTracking();
 
     // ── Model ─────────────────────────────────────────────────────────────────
 
@@ -102,20 +113,33 @@ public sealed class ApplicationDbContext(
         // ── Query filter: mirrors the PostgreSQL RLS policies for CasoMedico. ────
         // Fails closed: with no resolved context neither branch matches and no rows
         // come back, exactly like RLS with empty app.* variables.
+        // SPEC 12: a patient sees the cases of the documents it is linked to, from any tenant (the links' own filter
+        // limits them to app.sub).
         modelBuilder.Entity<CasoMedico>().HasQueryFilter(c =>
             (TieneTenant && c.TenantId == CurrentTenant) ||
-            (TieneIps && c.Remisiones.Any(r => r.IpsId == CurrentIps && r.RevocadaEn == null)));
+            (TieneIps && c.Remisiones.Any(r => r.IpsId == CurrentIps && r.RevocadaEn == null)) ||
+            (EsPaciente && VinculosPaciente.Any(v =>
+                v.TrabajadorTipo == c.Trabajador.Tipo && v.TrabajadorNumero == c.Trabajador.Numero)));
 
-        // Mirrors the RLS of atel.incapacidades (SPEC 07): the tenant's own, or those of a case remitted to the IPS.
-        // The case's own filter already encodes the live remission.
+        // Mirrors the RLS of atel.incapacidades (SPEC 07): the tenant's own, or those of a case remitted to the IPS
+        // or linked to the patient (SPEC 12). The case's own filter already encodes the live remission and the link.
         modelBuilder.Entity<Incapacidad>().HasQueryFilter(i =>
             (TieneTenant && i.TenantId == CurrentTenant) ||
-            (TieneIps && CasosMedicos.Any(c => c.Id == i.CasoMedicoId)));
+            ((TieneIps || EsPaciente) && CasosMedicos.Any(c => c.Id == i.CasoMedicoId)));
 
         // Mirrors the RLS of atel.dictamenes_pcl (SPEC 08): as the incapacidades.
         modelBuilder.Entity<DictamenPcl>().HasQueryFilter(d =>
             (TieneTenant && d.TenantId == CurrentTenant) ||
-            (TieneIps && CasosMedicos.Any(c => c.Id == d.CasoMedicoId)));
+            ((TieneIps || EsPaciente) && CasosMedicos.Any(c => c.Id == d.CasoMedicoId)));
+
+        // Mirrors the RLS of atel.codigos_activacion and atel.vinculos_paciente (SPEC 12): the ARL sees the codes it
+        // issued; a patient, only its own links. The redemption goes through the SECURITY DEFINER function.
+        modelBuilder.Entity<CodigoActivacion>().HasQueryFilter(c => TieneTenant && c.TenantId == CurrentTenant);
+        modelBuilder.Entity<VinculoPaciente>().HasQueryFilter(v => EsPaciente && v.PacienteSub == CurrentSub);
+
+        // Mirrors the RLS of atel.solicitudes_copia_hc (SPEC 12): the ARL of the case, or the patient that made it.
+        modelBuilder.Entity<SolicitudCopiaHc>().HasQueryFilter(s =>
+            (TieneTenant && s.TenantId == CurrentTenant) || (EsPaciente && s.PacienteSub == CurrentSub));
 
         // Mirrors the RLS of sst.plazos (SPEC 09): only the tenant's own. The IPS has no read channel on them.
         modelBuilder.Entity<Plazo>().HasQueryFilter(p => TieneTenant && p.TenantId == CurrentTenant);
@@ -140,6 +164,10 @@ public sealed class ApplicationDbContext(
     private bool TieneIps => tenantContext.Resuelto && tenantContext.IpsId is not null;
 
     private IpsId CurrentIps => TieneIps ? tenantContext.IpsId!.Value : default;
+
+    private bool EsPaciente => tenantContext.Resuelto && tenantContext.Tipo == ActorTipo.Paciente;
+
+    private string CurrentSub => EsPaciente ? tenantContext.Sub : string.Empty;
 
     private string EmisorTenant => TieneTenant ? SuscripcionWebhook.EmisorDe(CurrentTenant) : string.Empty;
 

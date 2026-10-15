@@ -60,5 +60,15 @@ public static class Permissions
     // ── Webhooks ─────────────────────────────────────────────────────────────
     public const string WebhooksManage = "webhooks:manage";
 
+    // ── Portal del paciente ──────────────────────────────────────────────────
+
+    /// <summary>Emitir códigos de activación del portal (SPEC 12). Lo tienen <c>analista-arl</c> e <c>integracion-arl</c>.</summary>
+    public const string PacientesActivar = "pacientes:activar";
+
+    /// <summary>
+    /// La bandeja de solicitudes de copia de la HC del tenant: listarlas, tramitarlas y cerrarlas (SPEC 12). Lo tiene
+    /// <c>oficial-privacidad</c>.
+    /// </summary>
+    public const string SolicitudesHcGestionar = "solicitudes-hc:gestionar";
 
 }

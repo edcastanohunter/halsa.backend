@@ -83,7 +83,11 @@ public static class CodigosRegla
     public const string ControversiaDictamen = "CONTROVERSIA_DICTAMEN";
     public const string TopeIt180 = "TOPE_IT_180";
 
+    /// <summary>SPEC 12: la copia de la HC que pide el paciente. Pendiente de validación jurídica, como las demás.</summary>
+    public const string SolicitudCopiaHc = "SOLICITUD_COPIA_HC";
+
     public const string CasoRadicado = "CasoRadicado";
     public const string IncapacidadRegistrada = "IncapacidadRegistrada";
     public const string DictamenPclNotificado = "DictamenPclNotificado";
+    public const string SolicitudCopiaHcCreada = "SolicitudCopiaHcCreada";
 }

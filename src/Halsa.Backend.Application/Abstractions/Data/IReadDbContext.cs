@@ -2,6 +2,7 @@ using Halsa.Backend.Application.Integraciones.Registros;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
+using Halsa.Backend.Domain.Pacientes;
 using Halsa.Backend.Domain.Terminos;
 
 namespace Halsa.Backend.Application.Abstractions.Data;
@@ -39,4 +40,12 @@ public interface IReadDbContext
 
     /// <summary>Las reglas de término (SPEC 09), globales: todas sus versiones.</summary>
     IQueryable<ReglaTermino> ReglasTermino { get; }
+
+    /// <summary>Los vínculos del paciente actual con el documento de un trabajador (SPEC 12). El personal no ve ninguno.</summary>
+    IQueryable<VinculoPaciente> VinculosPaciente { get; }
+
+    /// <summary>
+    /// Las solicitudes de copia de la HC (SPEC 12): las del tenant, para su bandeja, o las del paciente actual.
+    /// </summary>
+    IQueryable<SolicitudCopiaHc> SolicitudesCopiaHc { get; }
 }

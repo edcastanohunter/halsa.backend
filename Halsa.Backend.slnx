@@ -6,12 +6,14 @@
     <Project Path="src/Halsa.Backend.Infrastructure/Halsa.Backend.Infrastructure.csproj" />
     <Project Path="src/Halsa.Backend.Mediation/Halsa.Backend.Mediation.csproj" />
     <Project Path="src/Halsa.Backend.SharedKernel/Halsa.Backend.SharedKernel.csproj" />
+    <Project Path="src/Halsa.Bff.Paciente/Halsa.Bff.Paciente.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Halsa.Backend.ArchitectureTests/Halsa.Backend.ArchitectureTests.csproj" />
     <Project Path="tests/Halsa.Backend.FunctionalTests/Halsa.Backend.FunctionalTests.csproj" />
     <Project Path="tests/Halsa.Backend.IntegrationTests/Halsa.Backend.IntegrationTests.csproj" />
     <Project Path="tests/Halsa.Backend.UnitTests/Halsa.Backend.UnitTests.csproj" />
+    <Project Path="tests/Halsa.Bff.Paciente.Tests/Halsa.Bff.Paciente.Tests.csproj" />
   </Folder>
   <Folder Name="/solution items/">
     <File Path="Directory.Build.props" />

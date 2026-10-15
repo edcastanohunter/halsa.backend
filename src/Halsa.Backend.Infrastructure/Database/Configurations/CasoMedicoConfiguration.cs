@@ -61,6 +61,14 @@ internal sealed class CasoMedicoConfiguration : IEntityTypeConfiguration<CasoMed
             .HasColumnName("radicado_en")
             .HasColumnType("timestamp with time zone");
 
+        builder.Property(c => c.ValidadoEn)
+            .HasColumnName("validado_en")
+            .HasColumnType("timestamp with time zone");
+
+        builder.Property(c => c.RechazadoEn)
+            .HasColumnName("rechazado_en")
+            .HasColumnType("timestamp with time zone");
+
         builder.Property(c => c.MotivoRechazo)
             .HasColumnName("motivo_rechazo")
             .HasMaxLength(30)

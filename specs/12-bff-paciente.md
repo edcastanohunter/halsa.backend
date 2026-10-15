@@ -1,6 +1,6 @@
 # SPEC 12 — BFF y endpoints del portal del paciente
 
-> **Estado:** Borrador
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 04, SPEC 05, SPEC 07, SPEC 08, SPEC 09
 > **Fecha:** 2026-10-09
 > **Objetivo:** Que un trabajador, autenticado en `halsa-pacientes` a través de un BFF con cookie y vinculado a su documento con un código de activación de un solo uso, consulte sus casos, su línea de tiempo y sus incapacidades, y solicite la copia de su historia clínica sin acceder nunca al detalle clínico en línea.

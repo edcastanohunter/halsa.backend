@@ -54,6 +54,8 @@ public static class CustomResults
         ErrorType.Unavailable => "Service unavailable",
         ErrorType.UnsupportedMediaType => "Unsupported media type",
         ErrorType.PayloadTooLarge => "Content too large",
+        ErrorType.Locked => "Locked",
+        ErrorType.TooManyRequests => "Too many requests",
         _ => "Server failure"
     };
 
@@ -75,6 +77,8 @@ public static class CustomResults
         ErrorType.Unavailable => "https://tools.ietf.org/html/rfc9110#section-15.6.4",
         ErrorType.UnsupportedMediaType => "https://tools.ietf.org/html/rfc9110#section-15.5.16",
         ErrorType.PayloadTooLarge => "https://tools.ietf.org/html/rfc9110#section-15.5.14",
+        ErrorType.Locked => "https://www.rfc-editor.org/rfc/rfc4918#section-11.3",
+        ErrorType.TooManyRequests => "https://www.rfc-editor.org/rfc/rfc6585#section-4",
         _ => "https://tools.ietf.org/html/rfc9110#section-15.6.1"
     };
 
@@ -90,6 +94,8 @@ public static class CustomResults
         ErrorType.Unavailable => StatusCodes.Status503ServiceUnavailable,
         ErrorType.UnsupportedMediaType => StatusCodes.Status415UnsupportedMediaType,
         ErrorType.PayloadTooLarge => StatusCodes.Status413PayloadTooLarge,
+        ErrorType.Locked => StatusCodes.Status423Locked,
+        ErrorType.TooManyRequests => StatusCodes.Status429TooManyRequests,
         _ => StatusCodes.Status500InternalServerError
     };
 

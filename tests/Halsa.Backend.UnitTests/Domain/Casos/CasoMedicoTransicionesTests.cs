@@ -33,6 +33,8 @@ public sealed class CasoMedicoTransicionesTests
         result.IsSuccess.ShouldBeTrue();
         caso.Estado.ShouldBe(EstadoCaso.Validado);
         caso.MotivoRechazo.ShouldBeNull();
+        caso.ValidadoEn.ShouldBe(Ahora);
+        caso.RechazadoEn.ShouldBeNull();
 
         var ev = caso.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<CasoValidadoDomainEvent>();
         ev.CasoId.ShouldBe(caso.Id);
@@ -78,6 +80,8 @@ public sealed class CasoMedicoTransicionesTests
         caso.Estado.ShouldBe(EstadoCaso.Rechazado);
         caso.MotivoRechazo.ShouldBe(MotivoRechazo.Duplicado);
         caso.DuplicadoDe.ShouldBe(original);
+        caso.RechazadoEn.ShouldBe(Ahora);
+        caso.ValidadoEn.ShouldBeNull();
 
         var ev = caso.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<CasoRechazadoDomainEvent>();
         ev.Motivo.ShouldBe(MotivoRechazo.Duplicado);

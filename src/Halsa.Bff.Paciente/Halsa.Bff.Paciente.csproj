@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Halsa.Bff.Paciente</RootNamespace>
+    <AssemblyName>Halsa.Bff.Paciente</AssemblyName>
+    <UserSecretsId>halsa.bff-paciente</UserSecretsId>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+  </PropertyGroup>
+
+  <!-- On purpose, no reference to the backend: the BFF only knows the API's public contract (/v1/paciente/*). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Yarp.ReverseProxy" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Halsa.Bff.Paciente.Tests" />
+  </ItemGroup>
+
+</Project>

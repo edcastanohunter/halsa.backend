@@ -67,6 +67,12 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
 
     public DateTimeOffset RadicadoEn { get; private set; }
 
+    /// <summary>Cuándo pasó la validación asíncrona (SPEC 05). Lo muestra la línea de tiempo del paciente (SPEC 12).</summary>
+    public DateTimeOffset? ValidadoEn { get; private set; }
+
+    /// <summary>Cuándo la validación asíncrona lo rechazó (SPEC 05). Lo muestra la línea de tiempo del paciente (SPEC 12).</summary>
+    public DateTimeOffset? RechazadoEn { get; private set; }
+
     /// <summary>Solo en un caso <see cref="EstadoCaso.Rechazado"/>.</summary>
     public MotivoRechazo? MotivoRechazo { get; private set; }
 
@@ -128,6 +134,7 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
         }
 
         Estado = EstadoCaso.Validado;
+        ValidadoEn = ahora;
         Raise(new CasoValidadoDomainEvent(Id, TenantId.Value, Radicado, ahora));
 
         return Result.Success();
@@ -147,6 +154,7 @@ public sealed class CasoMedico : AggregateRoot<CasoMedicoId>
         Estado = EstadoCaso.Rechazado;
         MotivoRechazo = motivo;
         DuplicadoDe = duplicadoDe;
+        RechazadoEn = ahora;
         Raise(new CasoRechazadoDomainEvent(Id, TenantId.Value, Radicado, motivo, duplicadoDe, ahora));
 
         return Result.Success();

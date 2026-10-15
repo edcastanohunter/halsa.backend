@@ -7,6 +7,7 @@ using Halsa.Backend.Application.Auditoria.RevisionesEmergencia;
 using Halsa.Backend.Application.Dictamenes;
 using Halsa.Backend.Application.Abstractions.Incapacidades;
 using Halsa.Backend.Application.Abstractions.Integraciones;
+using Halsa.Backend.Application.Abstractions.Pacientes;
 using Halsa.Backend.Application.Auditoria;
 using Halsa.Backend.Application.Casos;
 using Halsa.Backend.Application.Incapacidades;
@@ -129,6 +130,9 @@ public static class DependencyInjection
         // SPEC 09: the plazos are opened and fulfilled as halsa_app; only the sweeps use halsa_worker.
         services.AddScoped<IPlazosRepository, PlazosRepository>();
         services.AddScoped<ICatalogoTerminos, CatalogoTerminos>();
+
+        // SPEC 12: the patient portal writes as halsa_app too; the redemption goes through its SECURITY DEFINER function.
+        services.AddScoped<IPacientesDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
 
         return services;
     }

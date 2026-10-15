@@ -4,7 +4,9 @@
   "displayName": "Hálsa Pacientes",
   "enabled": true,
   "sslRequired": "external",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "verifyEmail": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": false,
@@ -26,6 +28,41 @@
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect"
+    },
+    {
+      "clientId": "halsa-bff-paciente",
+      "name": "Hálsa BFF Paciente",
+      "description": "Client confidencial del BFF del portal del paciente (SPEC 12): code + PKCE, los tokens nunca llegan al navegador. Secreto solo de desarrollo.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "halsa-bff-paciente-dev-secret",
+      "bearerOnly": false,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["https://localhost:5610/paciente/bff/signin-oidc"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://localhost:5610/paciente/bff/signout-callback-oidc"
+      },
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     },
     {
       "clientId": "halsa-dev-cli",

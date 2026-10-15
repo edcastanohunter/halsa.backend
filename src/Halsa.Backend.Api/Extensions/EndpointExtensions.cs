@@ -47,6 +47,14 @@ public static class EndpointExtensions
         return builder.RequireAuthorization(permission);
     }
 
+    /// <summary>Only the patient actor (SPEC 12): every <c>/v1/paciente/*</c> route.</summary>
+    public static RouteHandlerBuilder RequirePaciente(this RouteHandlerBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        return builder.RequireAuthorization(Policies.Paciente);
+    }
+
     /// <summary>
     /// The part of a clinical policy (SPEC 08) that does not depend on the case: the permission and the step-up, with
     /// their <c>DENEGADO</c> row and their <c>401</c>. The handler must then call <c>IClinicalAuthorization</c> with the

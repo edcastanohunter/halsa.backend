@@ -131,6 +131,8 @@ internal static class AuthenticationInstaller
                 new PermissionRequirement(Permissions.IncapacidadesWrite),
                 new StepUpRequirement(Policies.AcrIncapacidadEscritura, MaxAntiguedadAuth: null)));
 
+            options.AddPolicy(Policies.Paciente, policy => policy.AddRequirements(new ActorPacienteRequirement()));
+
             // SPEC 08: the clinical policies are evaluated with the case as resource (IClinicalAuthorization).
             foreach (string politica in Policies.Clinicas)
             {
@@ -143,6 +145,7 @@ internal static class AuthenticationInstaller
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddScoped<IAuthorizationHandler, StepUpHandler>();
+        services.AddScoped<IAuthorizationHandler, ActorPacienteHandler>();
         services.AddScoped<IAuthorizationHandler, AccesoClinicoHandler>();
         services.AddScoped<AccesoEmergencia>();
         services.AddScoped<ICasoAccessReader, CasoAccessReader>();

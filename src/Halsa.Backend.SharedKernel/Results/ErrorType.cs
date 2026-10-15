@@ -24,5 +24,11 @@ public enum ErrorType
     UnsupportedMediaType = 9,
 
     /// <summary>The content exceeds the accepted size (SPEC 07: a support larger than 10 MB).</summary>
-    PayloadTooLarge = 10
+    PayloadTooLarge = 10,
+
+    /// <summary>The resource is locked and the request cannot succeed until someone unlocks it (SPEC 12: a blocked code).</summary>
+    Locked = 11,
+
+    /// <summary>The caller exceeded a rate limit (SPEC 12: the failed redemptions of a patient). Retry later.</summary>
+    TooManyRequests = 12
 }

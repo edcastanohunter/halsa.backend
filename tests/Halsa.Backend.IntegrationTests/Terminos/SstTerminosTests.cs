@@ -14,7 +14,7 @@ public sealed class SstTerminosTests(DatabaseFixture db)
     private static readonly DateTimeOffset Vence = new(2026, 10, 20, 23, 59, 59, Bogota);
 
     [Fact]
-    public async Task SeedRules_ShouldBeTheSixOfArq()
+    public async Task SeedRules_ShouldBeTheSixOfArq_AndTheCopiaHcOfSpec12()
     {
         await using NpgsqlConnection conn = await OpenAsync(db.AppConnectionString);
         await using NpgsqlCommand cmd = conn.CreateCommand();
@@ -37,6 +37,7 @@ public sealed class SstTerminosTests(DatabaseFixture db)
             "REMISION_INVESTIGACION_GRAVE:CasoRadicado:15CALENDARIO:3CALENDARIO",
             "REPORTE_FURAT:CasoRadicado:2HABILES:1HABILES",
             "REPORTE_FUREP:CasoRadicado:2HABILES:1HABILES",
+            "SOLICITUD_COPIA_HC:SolicitudCopiaHcCreada:10HABILES:3HABILES",
             "TOPE_IT_180:IncapacidadRegistrada:180CALENDARIO:30CALENDARIO"
         ]);
     }

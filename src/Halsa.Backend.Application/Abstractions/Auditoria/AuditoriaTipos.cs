@@ -20,7 +20,10 @@ public enum ResultadoAuditoria
     Error
 }
 
-/// <summary>Sobre qué recurso. <c>Incapacidad</c> y <c>Soporte</c>: SPEC 07. <c>Plazo</c>: SPEC 09.</summary>
+/// <summary>
+/// Sobre qué recurso. <c>Incapacidad</c> y <c>Soporte</c>: SPEC 07. <c>Plazo</c>: SPEC 09. <c>Vinculo</c>,
+/// <c>CodigoActivacion</c> y <c>SolicitudCopiaHc</c>: SPEC 12.
+/// </summary>
 public enum RecursoAuditoria
 {
     Caso,
@@ -30,7 +33,10 @@ public enum RecursoAuditoria
     Auditoria,
     Incapacidad,
     Soporte,
-    Plazo
+    Plazo,
+    Vinculo,
+    CodigoActivacion,
+    SolicitudCopiaHc
 }
 
 /// <summary>El recurso tocado. <paramref name="CasoMedicoId"/> permite al oficial de privacidad filtrar por caso.</summary>
