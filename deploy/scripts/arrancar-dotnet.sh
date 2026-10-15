@@ -34,19 +34,23 @@ copiar() {
 }
 
 cadena() {
-    echo "Host=$DB_HOST;Port=5432;Database=$DB_NOMBRE;Username=$1;Password=$(secreto "$2");SSL Mode=Require"
+    _clave="$(secreto "$2")" || exit 1
+    echo "Host=$DB_HOST;Port=5432;Database=$DB_NOMBRE;Username=$1;Password=$_clave;SSL Mode=Require"
 }
 
 redis() {
-    echo "redis:6379,password=$(secreto redis_password),abortConnect=false"
+    _clave="$(secreto redis_password)" || exit 1
+    echo "redis:6379,password=$_clave,abortConnect=false"
 }
 
+# Assign first, export after: "export X=$(...)" would hide a missing secret (the exit 1 of secreto() only ends the
+# subshell) and start the service with an empty password.
 case "${HALSA_SERVICIO:?HALSA_SERVICIO: api, worker, migrador o bff}" in
     api|worker)
-        export ConnectionStrings__Database="$(cadena halsa_app pg_app_password)"
-        export ConnectionStrings__Clinical="$(cadena halsa_clinico pg_clinico_password)"
-        export ConnectionStrings__Ingesta="$(cadena halsa_ingesta pg_ingesta_password)"
-        export ConnectionStrings__Cache="$(redis)"
+        ConnectionStrings__Database="$(cadena halsa_app pg_app_password)"; export ConnectionStrings__Database
+        ConnectionStrings__Clinical="$(cadena halsa_clinico pg_clinico_password)"; export ConnectionStrings__Clinical
+        ConnectionStrings__Ingesta="$(cadena halsa_ingesta pg_ingesta_password)"; export ConnectionStrings__Ingesta
+        ConnectionStrings__Cache="$(redis)"; export ConnectionStrings__Cache
         copiar halsa_kek
         export Clinico__KekPath="$DESTINO/halsa_kek"
         ;;
@@ -54,18 +58,18 @@ esac
 
 case "$HALSA_SERVICIO" in
     worker)
-        export ConnectionStrings__Worker="$(cadena halsa_worker pg_worker_password)"
+        ConnectionStrings__Worker="$(cadena halsa_worker pg_worker_password)"; export ConnectionStrings__Worker
         # TODO(SPEC 11): the seal key and the WORM bucket credentials. The secrets are declared and mounted, but no
         # code reads them yet (SPEC 11 is still a draft); copy them here when it lands:
         #   copiar halsa_sello; export Sellado__LlavePath="$DESTINO/halsa_sello"
         #   export Sellado__Worm__AccessKey="$(secreto worm_s3_key)" ...
         ;;
     migrador)
-        export ConnectionStrings__Migrations="$(cadena halsa_owner pg_owner_password)"
+        ConnectionStrings__Migrations="$(cadena halsa_owner pg_owner_password)"; export ConnectionStrings__Migrations
         ;;
     bff)
-        export ConnectionStrings__Redis="$(redis)"
-        export Bff__ClientSecret="$(secreto kc_bff_secret)"
+        ConnectionStrings__Redis="$(redis)"; export ConnectionStrings__Redis
+        Bff__ClientSecret="$(secreto kc_bff_secret)"; export Bff__ClientSecret
         ;;
 esac
 

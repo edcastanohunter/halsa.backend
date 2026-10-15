@@ -12,6 +12,7 @@
 # Revocar la intermedia NO se hace aquí: se revoca desde la raíz, en el equipo sin red
 # (openssl ca -revoke con raiz/openssl.cnf y generar-crl.sh --raiz), runbook 06.
 # ─────────────────────────────────────────────────────────────────────────────
+# shellcheck source=_comun.sh
 source "$(dirname "$0")/_comun.sh"
 
 objetivo="${1:-}"

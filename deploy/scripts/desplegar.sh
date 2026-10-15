@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# desplegar.sh <tag> — despliega una versión en el VPS (SPEC 13, runbook 03).
+# desplegar.sh <tag> — despliega una versión en el VPS (SPEC 13 y SPEC 14, runbook 03).
 #
-#   1. docker compose pull                       (imágenes publicadas por release.yml en GHCR)
+#   1. verifica que las imágenes del tag estén cargadas (sin registry: las carga recibir-despliegue.sh)
 #   2. docker compose run --rm migrador          (Halsa:Rol=Migrador; sale con 0 o 1)
 #   3. docker compose up -d api worker bff
 #   4. espera hasta 120 s a que /health de api y worker esté en Healthy
@@ -11,8 +11,9 @@
 #      la versión anterior (expand/contract, revisado en el PR). Si no lo son, el último
 #      recurso es el restore PITR del runbook 04.
 #
-# Lo ejecuta una persona en el VPS (el CI no tiene SSH). Uso:
-#   /opt/halsa/deploy/scripts/desplegar.sh v1.0.1
+# Lo llama halsa-recibir-despliegue (scripts/recibir-despliegue.sh) en cada despliegue del CI. Una persona lo
+# ejecuta a mano, como root, solo para volver a un tag que siga cargado (docker image ls localhost/halsa-backend):
+#   /opt/halsa/deploy/scripts/desplegar.sh v1.0.41
 #
 # Variables: HALSA_ESPERA_SALUD (segundos, por defecto 120).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,12 +67,14 @@ info "desplegando $nuevo (anterior: ${anterior:-ninguno})"
 
 fijar_tag "$nuevo"
 
-info "1/4 pull"
-if ! compose --profile migracion pull; then
-    fijar_tag "$anterior"
-    echo "FALLO: no se pudieron bajar las imágenes de $nuevo; nada cambió." >&2
-    exit 1
-fi
+info "1/4 imágenes"
+for imagen in "localhost/halsa-backend:$nuevo" "localhost/halsa-bff-paciente:$nuevo"; do
+    if ! docker image inspect "$imagen" >/dev/null 2>&1; then
+        fijar_tag "$anterior"
+        echo "FALLO: falta la imagen $imagen en el VPS; nada cambió." >&2
+        exit 1
+    fi
+done
 
 info "2/4 migraciones"
 if ! compose --profile migracion run --rm migrador; then

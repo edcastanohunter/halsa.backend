@@ -1,6 +1,6 @@
 # Runbook 01 — Aprovisionar el VPS
 
-> SPEC 13. Lleva Halsa a producción en el VPS que ya tiene **Nginx Proxy Manager (NPM)** y el **Keycloak compartido**
+> SPEC 13 y SPEC 14. Lleva Halsa a producción en el VPS que ya tiene **Nginx Proxy Manager (NPM)** y el **Keycloak compartido**
 > de `auth.edcastdev.com`. Junto con el runbook 04 es también el procedimiento para **reconstruir** Halsa si se
 > pierde el VPS. NPM y Keycloak tienen sus propios dueños y procedimientos: aquí solo se hace lo que Halsa necesita de
 > ellos.
@@ -19,7 +19,8 @@
 ## 1. Sistema base (lo que falte)
 
 ```bash
-apt install -y gettext-base openssl git      # envsubst lo usan sincronizar-npm.sh e importar-realms.sh
+apt install -y gettext-base openssl rsync     # envsubst: sincronizar-npm.sh e importar-realms.sh;
+                                              # rsync: recibir-despliegue.sh (SPEC 14)
 
 # Sin core dumps en el host (los contenedores ya llevan ulimits core: 0).
 echo '* hard core 0' > /etc/security/limits.d/90-halsa-nocore.conf
@@ -27,24 +28,26 @@ echo 'kernel.core_pattern=|/bin/false' > /etc/sysctl.d/90-halsa-nocore.conf
 sysctl --system
 ```
 
-Acceso a GHCR (lectura). Usa un *fine-grained token* con `read:packages` solamente:
-
-```bash
-echo "<token>" | docker login ghcr.io -u <usuario> --password-stdin
-```
+No hay registry ni `docker login` (SPEC 14): el CI construye las imágenes y las carga en el VPS por SSH.
 
 > **Puertos:** Halsa no publica ninguno (`docker compose ps` lo verifica en el paso 9). El 80 y el 443 son de NPM.
 
 ## 2. Código de despliegue
 
-En el VPS solo vive `deploy/`. No hay código fuente ni builds:
+En el VPS solo vive `deploy/`, en `/opt/halsa/deploy`. No hay código fuente, builds ni clon de git: cada despliegue
+del CI lo sincroniza con `rsync --delete` (paso 10) y nunca toca `.env`.
+
+La **primera vez**, los pasos 5 y 6 necesitan esos archivos antes del primer despliegue del CI. Se copian una vez
+desde una máquina con el repo, del mismo commit que se va a desplegar:
 
 ```bash
-mkdir -p /opt/halsa && cd /opt/halsa
-git clone --depth 1 --filter=blob:none --sparse https://github.com/<org>/<repo>.git .
-git sparse-checkout set deploy
-cp deploy/.env.ejemplo deploy/.env && chmod 600 deploy/.env
-$EDITOR deploy/.env
+# En tu máquina:
+git archive main deploy/ | ssh root@<vps> 'mkdir -p /opt/halsa && tar -x --no-same-owner -C /opt/halsa'
+
+# En el VPS:
+cd /opt/halsa/deploy
+cp .env.ejemplo .env && chmod 600 .env
+$EDITOR .env
 ```
 
 En `.env`, además de hosts, buckets, heartbeat y hash de Seq:
@@ -91,8 +94,11 @@ cd /opt/halsa/deploy && C="docker compose -f docker-compose.prod.yml"
 $C up -d postgres redis antivirus seq
 # PostgreSQL crea los roles la primera vez (initdb/01-roles.sh).
 $C exec -u postgres postgres pgbackrest --stanza=halsa stanza-create
-./scripts/desplegar.sh <tag>       # migra, levanta api/worker/bff, verifica /health y sincroniza NPM
 ```
+
+Luego, el primer despliegue: configura el paso 10 y aprueba el job `desplegar` del CI en GitHub (o ejecuta
+**Re-run** del último workflow de `main`). `recibir-despliegue.sh` carga las imágenes y llama a
+`./scripts/desplegar.sh v1.0.<n>`, que migra, levanta api/worker/bff, verifica `/health` y sincroniza NPM.
 
 `desplegar.sh` termina llamando a `scripts/sincronizar-npm.sh`. Ese script:
 - une NPM a `halsa_borde` con la IP 172.30.0.10;
@@ -162,6 +168,70 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'ssl-client-cert: FALSO' -H 'ssl-cli
 ```
 
 Y en <https://www.ssllabs.com/ssltest/>: `halsa-api` y `halsa-pacientes` deben calificar **A+**.
+
+## 10. Despliegue desde el CI (SPEC 14)
+
+El CI entra como `halsa-deploy`, un usuario sin contraseña cuya llave solo puede ejecutar
+`halsa-recibir-despliegue`. El script corre como root vía `sudo`, porque `.env`, `/etc/halsa/secretos` y los datos de
+NPM son de root.
+
+1. **El script**, fuera de `/opt/halsa/deploy` (el propio despliegue reescribe esa carpeta):
+   ```bash
+   install -o root -g root -m 0755 /opt/halsa/deploy/scripts/recibir-despliegue.sh /usr/local/sbin/halsa-recibir-despliegue
+   ```
+2. **El usuario.** Necesita un shell real: `sshd` ejecuta el `command=` forzado **con el shell del usuario**, y con
+   `/usr/sbin/nologin` cualquier conexión falla. La restricción la ponen el `command=` y el `sudo`, no el shell.
+   ```bash
+   adduser --system --group --shell /bin/sh --home /home/halsa-deploy halsa-deploy   # sin contraseña
+   ```
+3. **El sudoers.** `env_keep` es imprescindible: sin él `sudo` borra `SSH_ORIGINAL_COMMAND` y el script rechaza
+   todo con exit `2`.
+   ```bash
+   cat > /tmp/halsa-deploy <<'EOF'
+   Defaults!/usr/local/sbin/halsa-recibir-despliegue env_keep += "SSH_ORIGINAL_COMMAND"
+   halsa-deploy ALL=(root) NOPASSWD: /usr/local/sbin/halsa-recibir-despliegue
+   EOF
+   visudo -cf /tmp/halsa-deploy && install -o root -g root -m 0440 /tmp/halsa-deploy /etc/sudoers.d/halsa-deploy
+   sudo -l -U halsa-deploy         # solo /usr/local/sbin/halsa-recibir-despliegue
+   ```
+   Para cambiar `HALSA_PAQUETE_MAX_MB` o `HALSA_VERSIONES_RETENIDAS` (README, "Environment variables"), agrégalas al
+   `env_keep` y al `command=` del paso 5 (`command="HALSA_VERSIONES_RETENIDAS=8 sudo …"`).
+4. **La llave del CI**, generada fuera del VPS (en tu máquina) y sin passphrase:
+   ```bash
+   ssh-keygen -t ed25519 -N '' -C ci-halsa -f ci-halsa
+   ```
+   `ci-halsa` (privada) va al secret `VPS_SSH_KEY`; después se borra de tu máquina.
+5. **`authorized_keys`**, una sola línea con `ci-halsa.pub`:
+   ```bash
+   install -d -o halsa-deploy -g halsa-deploy -m 0700 /home/halsa-deploy/.ssh
+   echo 'command="sudo /usr/local/sbin/halsa-recibir-despliegue",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA… ci-halsa'      > /home/halsa-deploy/.ssh/authorized_keys
+   chown halsa-deploy:halsa-deploy /home/halsa-deploy/.ssh/authorized_keys && chmod 600 /home/halsa-deploy/.ssh/authorized_keys
+   ```
+   Si `sshd_config` tiene `AllowUsers` o `AllowGroups`, agrega `halsa-deploy`.
+6. **La huella del host** para `VPS_SSH_KNOWN_HOSTS`. Obtenla desde fuera y compárala con la del propio VPS:
+   ```bash
+   ssh-keyscan -t ed25519 <vps>                         # en tu máquina → VPS_SSH_KNOWN_HOSTS
+   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub     # en el VPS: la misma huella SHA256
+   ```
+   El host del secret debe ser exactamente `VPS_HOST`: si `VPS_HOST` es una IP, el keyscan se hace a la IP.
+7. **GitHub** → *Settings → Environments → New environment* `produccion`:
+   - *Required reviewers*: al menos una persona;
+   - *Deployment branches and tags*: *Selected branches*, solo `main`;
+   - *Environment secrets*: `VPS_HOST`, `VPS_USER` (`halsa-deploy`), `VPS_SSH_KEY` y `VPS_SSH_KNOWN_HOSTS`.
+8. **Verificación:**
+   ```bash
+   ssh -i ci-halsa halsa-deploy@<vps>; echo "exit=$?"            # "comando no permitido", exit=2, sin shell
+   ssh -i ci-halsa halsa-deploy@<vps> bash; echo "exit=$?"       # igual
+   ```
+
+**Cuando cambie `deploy/scripts/recibir-despliegue.sh` en el repo** (su cabecera lleva `# version:`), el despliegue
+copia el archivo nuevo a `/opt/halsa/deploy/scripts/`, pero el que se ejecuta es el instalado. Revisa el diff y
+reinstálalo a mano:
+
+```bash
+diff /usr/local/sbin/halsa-recibir-despliegue /opt/halsa/deploy/scripts/recibir-despliegue.sh
+install -o root -g root -m 0755 /opt/halsa/deploy/scripts/recibir-despliegue.sh /usr/local/sbin/halsa-recibir-despliegue
+```
 
 ## Actualizar NPM
 

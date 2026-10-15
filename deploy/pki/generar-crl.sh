@@ -13,6 +13,7 @@
 #   --raiz   en el equipo sin red: reemite la CRL de la raíz (ceremonia anual o tras revocar
 #            la intermedia). Su resultado, raiz/raiz.crl, se lleva al VPS.
 # ─────────────────────────────────────────────────────────────────────────────
+# shellcheck source=_comun.sh
 source "$(dirname "$0")/_comun.sh"
 
 if [[ "${1:-}" == "--raiz" ]]; then

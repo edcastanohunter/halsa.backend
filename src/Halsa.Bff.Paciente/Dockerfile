@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The BFF of the patient portal (SPEC 12), published as halsa-bff-paciente (SPEC 13, release.yml).
+# The BFF of the patient portal (SPEC 12), shipped as localhost/halsa-bff-paciente by ci.yml (SPEC 14).
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 # curl for the compose healthcheck; setpriv (util-linux) for deploy/scripts/arrancar-dotnet.sh.
 USER root

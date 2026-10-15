@@ -59,6 +59,7 @@ existe() { kcadm get "realms/$1" --fields realm >/dev/null 2>&1; }
 HALSA_KC_BFF_SECRET="$(tr -d '\r\n' < "$SECRETO_BFF")"
 export HALSA_KC_BFF_SECRET HALSA_HOST_PACIENTES HALSA_BACKOFFICE_URL
 # Only these three: ${client_id} in the role mapper is Keycloak's own syntax and must stay literal.
+# shellcheck disable=SC2016  # envsubst's list of names: they must stay unexpanded
 VARIABLES='${HALSA_HOST_PACIENTES} ${HALSA_BACKOFFICE_URL} ${HALSA_KC_BFF_SECRET}'
 
 for par in "halsa:halsa.prod.json" "halsa-pacientes:halsa-pacientes.prod.json"; do

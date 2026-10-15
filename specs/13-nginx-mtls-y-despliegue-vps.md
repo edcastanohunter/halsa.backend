@@ -419,7 +419,7 @@ Cada paso deja la solución compilando y con los tests en verde. Los pasos marca
 - **Sí:** pgBackRest con PITR a un bucket externo distinto del WORM. **No:** `pg_dump` nocturno, por la pérdida de hasta un día de datos.
 - **Sí:** las llaves (la KEK, la de sello y la raíz de la CA) se custodian fuera de los backups. Un backup robado no expone la HC.
 - **Sí:** Seq con alertas, más un heartbeat y un monitor externos. **No:** Prometheus y Grafana en el VPS, porque serían 3 o 4 servicios más para un solo servidor.
-- **Sí:** las imágenes, incluida la de PostgreSQL, se construyen en el CI y se publican en GHCR, y el VPS hace *pull*. **No:** construir en el VPS. **No:** SSH desde el CI.
+- ~~**Sí:** las imágenes, incluida la de PostgreSQL, se construyen en el CI y se publican en GHCR, y el VPS hace *pull*. **No:** construir en el VPS. **No:** SSH desde el CI.~~ Reemplazada por SPEC 14 (2026-10-15): sin registry, el CI envía las imágenes por SSH. Se mantiene "No: construir en el VPS".
 - **Sí:** las migraciones se ejecutan como un paso separado (`Migrador`) antes de levantar la nueva versión (README: "migraciones desde el pipeline, no desde `Program`").
 - **Sí:** redes internas de Docker y egreso solo para los servicios que lo necesitan (Worker, PostgreSQL, ClamAV y Seq).
 

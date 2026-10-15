@@ -1,18 +1,36 @@
-# SPEC 13: on every PR and every push to main. Build, all the tests (Testcontainers on the runner's Docker),
-# nginx -t over deploy/npm, and the audit verifier of SPEC 11 once it exists.
+# SPEC 13 y SPEC 14: on every PR and every push to main. Build, all the tests (Testcontainers on the runner's
+# Docker) with the coverage of Domain and Application, nginx -t over deploy/npm, the static checks of deploy/ and
+# the audit verifier of SPEC 11 once it exists.
+#
+# On main (push or workflow_dispatch) and after an approval in the "produccion" environment, "desplegar" builds the
+# images on the runner and ships them to the VPS over SSH, with deploy/, as one package. No registry:
+#   ssh halsa-deploy@VPS "desplegar v1.0.<run_number>" < paquete.tar   (deploy/scripts/recibir-despliegue.sh)
+#
+# Secrets of the "produccion" environment: VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_SSH_KNOWN_HOSTS (README).
 name: CI
 
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      incluir_postgres:
+        description: "Construir y enviar también halsa-postgres (deploy/postgres)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+# Only PRs cancel the previous run: on main a new push must never cancel a deploy in progress.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Minimum line-rate of Halsa.Backend.Domain and Halsa.Backend.Application (coverage.runsettings).
+  COBERTURA_MINIMA: "0.80"
 
 jobs:
   build-y-tests:
@@ -34,7 +52,30 @@ jobs:
 
       # Unit, architecture, BFF, integration and functional: the last two start PostgreSQL with Testcontainers.
       - name: Test
-        run: dotnet test Halsa.Backend.slnx -c Release --no-build --logger "trx;LogFilePrefix=resultados" --results-directory artifacts/tests
+        run: >
+          dotnet test Halsa.Backend.slnx -c Release --no-build
+          --logger "trx;LogFilePrefix=resultados" --results-directory artifacts/tests
+          --settings coverage.runsettings --collect "XPlat Code Coverage"
+
+      # Each test project writes its own coverage.cobertura.xml: a package's rate is the best one among them.
+      - name: Exigir cobertura
+        run: |
+          python3 - <<'PY'
+          import glob, os, sys
+          import xml.etree.ElementTree as ET
+          minima = float(os.environ["COBERTURA_MINIMA"])
+          paquetes = ("Halsa.Backend.Domain", "Halsa.Backend.Application")
+          rates = {}
+          for f in glob.glob("artifacts/tests/*/coverage.cobertura.xml"):
+              for p in ET.parse(f).getroot().iter("package"):
+                  if p.get("name") in paquetes:
+                      rates[p.get("name")] = max(rates.get(p.get("name"), 0.0), float(p.get("line-rate")))
+          for nombre in paquetes:
+              print(f"{nombre}: {rates[nombre]:.4f}" if nombre in rates else f"{nombre}: sin datos")
+          malos = {n: rates.get(n, "sin datos") for n in paquetes if rates.get(n, -1.0) < minima}
+          if malos:
+              sys.exit(f"Cobertura insuficiente (minimo {minima}): {malos}")
+          PY
 
       - name: Resultados
         if: always()
@@ -75,6 +116,29 @@ jobs:
             nginx:1.27-alpine \
             sh /halsa/arrancar.sh nginx -t
 
+  # SPEC 14: what runs on the VPS must at least parse and lint before it gets there.
+  validar-despliegue:
+    name: Validar deploy/
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n
+        run: for f in deploy/scripts/*.sh deploy/pki/*.sh deploy/keycloak/*.sh; do bash -n "$f"; done
+
+      - name: shellcheck
+        run: shellcheck --external-sources --source-path=SCRIPTDIR deploy/scripts/*.sh deploy/pki/*.sh deploy/keycloak/*.sh
+
+      # .env.ejemplo leaves HALSA_SEQ_ADMIN_HASH empty on purpose (it is set on the VPS); the compose requires it.
+      - name: docker compose config
+        env:
+          HALSA_SEQ_ADMIN_HASH: ci-placeholder
+        run: docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.ejemplo --profile migracion config -q
+
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+
   # SPEC 11 (sealing) is still a draft: its verifier does not exist yet. When it lands, this job runs it against the
   # golden vectors and stops being skipped.
   verificador-auditoria:
@@ -84,3 +148,132 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo "TODO(SPEC 11) — ejecutar el verificador de sellos"
+
+  # SPEC 14: build on the runner, ship over SSH, deploy with desplegar.sh. Waits for a reviewer of "produccion".
+  desplegar:
+    name: Desplegar en producción
+    needs: [build-y-tests, nginx, validar-despliegue]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: produccion
+    concurrency:
+      group: despliegue-produccion
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      VERSION: v1.0.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: ¿Incluye halsa-postgres?
+        id: postgres
+        env:
+          EVENTO: ${{ github.event_name }}
+          INPUT: ${{ inputs.incluir_postgres }}
+          ANTES: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENTO" == "workflow_dispatch" ]]; then
+            incluir="$INPUT"
+          elif [[ -z "$ANTES" || "$ANTES" =~ ^0+$ ]] || ! git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            incluir=true
+          elif git diff --quiet "$ANTES" "$GITHUB_SHA" -- deploy/postgres/; then
+            incluir=false
+          else
+            incluir=true
+          fi
+          echo "incluir=${incluir:-false}" >> "$GITHUB_OUTPUT"
+
+      - name: Imagen halsa-backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/Halsa.Backend.Api/Dockerfile
+          load: true
+          push: false
+          tags: localhost/halsa-backend:${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha,scope=halsa-backend
+          cache-to: type=gha,mode=max,scope=halsa-backend
+
+      - name: Imagen halsa-bff-paciente
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/Halsa.Bff.Paciente/Dockerfile
+          load: true
+          push: false
+          tags: localhost/halsa-bff-paciente:${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha,scope=halsa-bff-paciente
+          cache-to: type=gha,mode=max,scope=halsa-bff-paciente
+
+      - name: Imagen halsa-postgres
+        if: steps.postgres.outputs.incluir == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/postgres
+          file: deploy/postgres/Dockerfile
+          load: true
+          push: false
+          tags: |
+            localhost/halsa-postgres:17
+            localhost/halsa-postgres:17-${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha,scope=halsa-postgres
+          cache-to: type=gha,mode=max,scope=halsa-postgres
+
+      # paquete.tar: manifiesto.sha256, imagenes.tar.gz, deploy.tar.gz and, if it changed, postgres.tar.gz.
+      - name: Paquete
+        env:
+          INCLUIR_POSTGRES: ${{ steps.postgres.outputs.incluir }}
+        run: |
+          mkdir paquete
+          docker save "localhost/halsa-backend:$VERSION" "localhost/halsa-bff-paciente:$VERSION" | gzip > paquete/imagenes.tar.gz
+          if [[ "$INCLUIR_POSTGRES" == "true" ]]; then
+            docker save localhost/halsa-postgres:17 "localhost/halsa-postgres:17-$VERSION" | gzip > paquete/postgres.tar.gz
+          fi
+          git archive --format=tar.gz -o paquete/deploy.tar.gz "$GITHUB_SHA" deploy/
+          (cd paquete && sha256sum -- *.tar.gz > manifiesto.sha256)
+          # Bare names (no "./"): recibir-despliegue.sh rejects any other member.
+          (cd paquete && tar -cf ../paquete.tar -- *)
+          tar -tf paquete.tar
+          {
+            echo "### Despliegue $VERSION"
+            echo "- commit: \`$GITHUB_SHA\`"
+            echo "- halsa-postgres incluida: $INCLUIR_POSTGRES"
+            echo "- paquete: $(du -h paquete.tar | cut -f1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enviar y desplegar por SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 600 /dev/null llave_ssh
+          printf '%s\n' "$VPS_SSH_KEY" > llave_ssh
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > known_hosts
+          ssh -i llave_ssh \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile=known_hosts \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o ServerAliveInterval=30 \
+            "$VPS_USER@$VPS_HOST" "desplegar $VERSION" < paquete.tar
+
+      - name: Borrar la llave
+        if: always()
+        run: rm -f llave_ssh known_hosts

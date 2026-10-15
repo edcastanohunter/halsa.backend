@@ -11,6 +11,7 @@
 #
 # Uso:  HALSA_PKI_DIR=/media/boveda/halsa-pki ./crear-raiz.sh
 # ─────────────────────────────────────────────────────────────────────────────
+# shellcheck source=_comun.sh
 source "$(dirname "$0")/_comun.sh"
 
 [[ -f "$PKI_DIR/raiz/raiz.key" ]] && die "ya existe una raíz en $PKI_DIR/raiz: no se sobrescribe"

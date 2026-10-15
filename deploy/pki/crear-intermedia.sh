@@ -15,6 +15,7 @@
 # La llave de la intermedia queda sin passphrase: el cron semanal de la CRL la usa sin
 # intervención. Vive en /etc/halsa/pki con root:root 0600 y fuera de todo backup.
 # ─────────────────────────────────────────────────────────────────────────────
+# shellcheck source=_comun.sh
 source "$(dirname "$0")/_comun.sh"
 
 paso="${1:-}"

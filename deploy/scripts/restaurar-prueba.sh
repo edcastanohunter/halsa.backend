@@ -18,12 +18,12 @@
 #   4. (opcional) --verificar-sql devuelve al menos una fila: el ensayo de PITR del runbook 04.
 #
 # Variables: HALSA_DIR (por defecto /opt/halsa), HALSA_POSTGRES_IMAGEN (la imagen que
-# construye deploy/postgres/Dockerfile; por defecto halsa-postgres:17).
+# construye deploy/postgres/Dockerfile y carga el CI; por defecto localhost/halsa-postgres:17).
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 HALSA_DIR="${HALSA_DIR:-/opt/halsa}"
-IMAGEN="${HALSA_POSTGRES_IMAGEN:-halsa-postgres:17}"
+IMAGEN="${HALSA_POSTGRES_IMAGEN:-localhost/halsa-postgres:17}"
 SECRETOS="${HALSA_SECRETOS:-/etc/halsa/secretos}"
 NOMBRE="halsa-restaurar-prueba-$(date +%s)"
 VOLUMEN="$NOMBRE-datos"
@@ -38,8 +38,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# shellcheck disable=SC1091
-set -a; source "$HALSA_DIR/deploy/.env"; set +a
+set -a
+# shellcheck source=/dev/null  # the VPS's .env: not in the repo
+source "$HALSA_DIR/deploy/.env"
+set +a
 
 limpiar() {
     docker rm -f "$NOMBRE" >/dev/null 2>&1 || true

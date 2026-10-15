@@ -1,25 +1,96 @@
 # Runbook 03 — Despliegue
 
-> SPEC 13. Las imágenes se construyen en el CI (`release.yml`, al empujar un tag `v*`) y se publican en GHCR. El VPS
-> solo hace *pull*. El CI no tiene SSH al VPS: despliega una persona.
+> SPEC 13 y SPEC 14. No hay registry. En cada push a `main`, el CI (`.github/workflows/ci.yml`) construye las imágenes
+> en el runner y, tras la aprobación de un revisor del environment `produccion`, las envía al VPS por SSH junto con
+> `deploy/`. En el VPS, `halsa-recibir-despliegue` las carga y llama a `desplegar.sh`. Nadie entra al VPS para un
+> despliegue normal.
 
 ## Flujo normal
 
-1. Mergear a `main` con el CI en verde (`ci.yml`: build, tests y `nginx -t` sobre `deploy/npm`).
-2. Crear el tag: `git tag v1.4.0 && git push origin v1.4.0`. `release.yml` publica `halsa-backend`,
-   `halsa-bff-paciente` y `halsa-postgres` con el tag y su digest (resumen del workflow).
-3. En el VPS:
-   ```bash
-   /opt/halsa/deploy/scripts/desplegar.sh v1.4.0
-   ```
-   El script:
-   1. `docker compose pull`;
-   2. `docker compose run --rm migrador`, que sale con `0` o `1`. Si falla, no se toca nada más;
-   3. `up -d api worker bff`;
-   4. espera hasta 120 s a que `/health` de `api` y `worker` esté en `Healthy`;
-   5. sincroniza la configuración de borde con NPM (`sincronizar-npm.sh`, que valida con `nginx -t` antes de recargar);
-   6. si no llega a `Healthy`, **vuelve al tag anterior**. Termina con `1` en cualquier caso de fallo.
-4. Revisar Seq: ningún `Error` nuevo desde el despliegue.
+1. Mergear a `main` con el CI en verde: build, tests con cobertura, `nginx -t` sobre `deploy/npm` y `validar-despliegue`.
+2. En GitHub → *Actions* → el run de `main` → job **Desplegar en producción** → *Review deployments* → aprobar
+   `produccion`. Sin aprobación no se abre ninguna conexión al VPS.
+3. El job:
+   1. construye `localhost/halsa-backend:v1.0.<run_number>` y `localhost/halsa-bff-paciente:v1.0.<run_number>`
+      (y `localhost/halsa-postgres:17` / `17-v1.0.<n>` solo si el push tocó `deploy/postgres/`, o si se lanzó a mano con
+      `incluir_postgres`);
+   2. arma `paquete.tar` (imágenes, `git archive` de `deploy/` y sus sumas sha256);
+   3. ejecuta `ssh halsa-deploy@<vps> "desplegar v1.0.<n>" < paquete.tar`.
+4. En el VPS, `halsa-recibir-despliegue` (`deploy/scripts/recibir-despliegue.sh`):
+   1. verifica el comando, el tamaño y las sumas; si algo falla, sale con `1` **sin tocar nada**;
+   2. `docker load` de las imágenes;
+   3. sincroniza `/opt/halsa/deploy` con `rsync --delete`, sin tocar `.env`;
+   4. ejecuta `desplegar.sh v1.0.<n>`:
+      1. verifica que las imágenes del tag estén cargadas;
+      2. `docker compose run --rm migrador`, que sale con `0` o `1`. Si falla, no se toca nada más;
+      3. `up -d api worker bff`;
+      4. espera hasta 120 s a que `/health` de `api` y `worker` esté en `Healthy`;
+      5. sincroniza la configuración de borde con NPM (`sincronizar-npm.sh`, que valida con `nginx -t` antes de recargar);
+      6. si no llega a `Healthy`, **vuelve al tag anterior**. Termina con `1` en cualquier caso de fallo;
+   5. si todo terminó bien: conserva las 5 versiones más recientes (más la actual y la anterior) y borra la entrega.
+5. Revisar Seq: ningún `Error` nuevo desde el despliegue.
+
+Si el job falla, su log tiene la salida completa de los dos scripts. Una entrega fallida queda en
+`/var/lib/halsa/entregas/<tag>/` para diagnóstico; se puede borrar a mano.
+
+Dos despliegues nunca corren a la vez: el job tiene su grupo de concurrencia (`despliegue-produccion`) y el script
+toma `/var/lock/halsa-despliegue.lock`. Si quedan varios esperando aprobación, basta con aprobar el más reciente y
+rechazar los anteriores.
+
+## Rollback manual
+
+`desplegar.sh` vuelve a cualquier tag que siga cargado en el VPS. Como root:
+
+```bash
+docker image ls localhost/halsa-backend                 # tags disponibles (los 5 más recientes)
+/opt/halsa/deploy/scripts/desplegar.sh v1.0.41
+```
+
+Un tag que ya no está cargado falla con `1` sin cambiar nada (`FALLO: falta la imagen ...`). Para volver a él,
+relanza en GitHub el run de `main` que lo creó (*Re-run all jobs*): un re-run conserva el `run_number`, así que
+construye y envía otra vez el mismo `v1.0.<n>`.
+
+El rollback vuelve a la imagen anterior con el `deploy/` **nuevo** (compose y scripts). Por eso, igual que las
+migraciones, los cambios en `deploy/` deben ser compatibles con la versión anterior, y el PR lo declara.
+
+## PostgreSQL: imagen nueva
+
+El CI solo **carga** `localhost/halsa-postgres:17` cuando cambia `deploy/postgres/`; `desplegar.sh` nunca recrea
+`postgres`. Para aplicarla, en una ventana de mantenimiento (corta las conexiones y el archivado unos segundos):
+
+```bash
+cd /opt/halsa/deploy && C="docker compose -f docker-compose.prod.yml"
+docker image ls localhost/halsa-postgres                # 17 y 17-v1.0.<n>
+$C up -d postgres
+$C exec -u postgres postgres pgbackrest --stanza=halsa check
+```
+
+## Transición desde GHCR (una sola vez)
+
+Para un VPS que ya corría con imágenes de GHCR (SPEC 13). Hacerlo **antes** del primer despliegue del CI, para que el
+primer rollback tenga a dónde volver. Como root:
+
+```bash
+cd /opt/halsa/deploy
+actual="$(grep -E '^HALSA_TAG=' .env | cut -d= -f2)"
+org="$(grep -E '^HALSA_GHCR_ORG=' .env | cut -d= -f2)"
+
+# 1. Las imágenes en ejecución, con el nombre nuevo.
+docker tag "ghcr.io/$org/halsa-backend:$actual"      "localhost/halsa-backend:$actual"
+docker tag "ghcr.io/$org/halsa-bff-paciente:$actual" "localhost/halsa-bff-paciente:$actual"
+docker tag "ghcr.io/$org/halsa-postgres:17"          "localhost/halsa-postgres:17"
+
+# 2. Sin registry.
+docker logout ghcr.io
+sed -i '/^HALSA_GHCR_ORG=/d' .env
+
+# 3. Sin clon de git: el CI sincroniza deploy/ desde ahora (.env queda donde está).
+rm -rf /opt/halsa/.git
+```
+
+Después, el runbook 01, paso 10 (usuario `halsa-deploy`, sudoers, llave y environment `produccion`), y el primer
+despliegue desde GitHub. Cuando `localhost/halsa-*` esté en uso, las imágenes `ghcr.io/...` se pueden borrar
+(`docker image rm`), y los paquetes de GHCR desde GitHub (*Packages*), a mano.
 
 ## Migraciones: solo hacia adelante
 

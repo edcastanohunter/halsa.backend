@@ -31,15 +31,19 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 PKI_DEV="${HALSA_PKI_DEV:-0}"
 
+# shellcheck disable=SC2034  # sourced: the CA scripts use these values
 RAIZ_DIAS=3650          # 10 años
 RAIZ_CRL_DIAS=365       # se reemite en la ceremonia anual (runbook 06)
 INTERMEDIA_DIAS=1095    # 3 años
 INTERMEDIA_CRL_DIAS=10  # se regenera cada 7 días (cron) y con cada revocación: 3 días de margen
 CLIENTE_DIAS=365        # 1 año
 
+# shellcheck disable=SC2034  # sourced: the CA scripts use these values
+{
 RAIZ_CN="Halsa Raiz Integraciones"
 INTERMEDIA_CN="Halsa Integraciones"
 ORGANIZACION="Halsa"
+}
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }

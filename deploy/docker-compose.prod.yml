@@ -34,7 +34,9 @@ x-endurecido: &endurecido
 # (scripts/arrancar-dotnet.sh). No capability survives the exec.
 x-dotnet: &dotnet
   <<: *endurecido
-  image: ghcr.io/${HALSA_GHCR_ORG:?HALSA_GHCR_ORG}/halsa-backend:${HALSA_TAG:?HALSA_TAG}
+  # SPEC 14: no registry. The CI loads the images into the VPS (recibir-despliegue.sh); a missing one is an error.
+  image: localhost/halsa-backend:${HALSA_TAG:?HALSA_TAG}
+  pull_policy: never
   user: "0"
   read_only: true
   cap_drop: [ALL]
@@ -157,7 +159,8 @@ services:
 
   bff:
     <<: *dotnet
-    image: ghcr.io/${HALSA_GHCR_ORG}/halsa-bff-paciente:${HALSA_TAG}
+    image: localhost/halsa-bff-paciente:${HALSA_TAG:?HALSA_TAG}
+    pull_policy: never
     command: ["dotnet", "Halsa.Bff.Paciente.dll"]
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -185,10 +188,12 @@ services:
         condition: service_healthy
 
   # ── Datos ───────────────────────────────────────────────────────────────────
-  # Built by release.yml (deploy/postgres/Dockerfile) and pulled like the rest: nothing is built on the VPS.
+  # Built by the CI (deploy/postgres/Dockerfile) and loaded into the VPS only when it changes (SPEC 14): nothing is
+  # built on the VPS. Recreating it is manual (runbook 03).
   postgres:
     <<: *endurecido
-    image: ghcr.io/${HALSA_GHCR_ORG}/halsa-postgres:${HALSA_POSTGRES_TAG:-17}
+    image: localhost/halsa-postgres:${HALSA_POSTGRES_TAG:-17}
+    pull_policy: never
     environment:
       POSTGRES_DB: halsa
       POSTGRES_USER: postgres

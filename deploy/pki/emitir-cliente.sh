@@ -18,6 +18,7 @@
 #   - Credentials → "Signed JWT" → certificado (jwt.credential.certificate), base64 DER;
 #   - la huella x5t#S256 que llevarán los tokens en cnf.
 # ─────────────────────────────────────────────────────────────────────────────
+# shellcheck source=_comun.sh
 source "$(dirname "$0")/_comun.sh"
 
 client_id="${1:-}"
