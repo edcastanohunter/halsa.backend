@@ -4,6 +4,7 @@ using Halsa.Backend.Application.Abstractions.Authentication;
 using Halsa.Backend.Application.Abstractions.Clinico;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Clinico;
+using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.SharedKernel.Results;
 using Halsa.Backend.SharedKernel.Tenancy;
 
@@ -77,14 +78,16 @@ internal static class RegistroClinicoEscritura
     }
 
     /// <summary>
-    /// Cifra y guarda un registro del backoffice. La fila de auditoría va en el mismo <c>SaveChangesAsync</c>: si no
-    /// se registra, el registro clínico tampoco.
+    /// Cifra y guarda un registro del backoffice. La fila de auditoría y su <see cref="RegistroClinicoCreadoIntegrationEvent"/>
+    /// (SPEC 10) van en el mismo <c>SaveChangesAsync</c>: si no se registran, el registro clínico tampoco.
     /// </summary>
+    /// <param name="ipsEmisora">El REPS del actor, si es una IPS.</param>
     public static async Task<Result<RegistroClinicoCreadoResponse>> RegistrarAsync(
         IRegistroClinicoInput input,
         TenantId tenant,
         HistoriaClinicaDetalleId? corrigeA,
         AccionAuditoria accion,
+        string? ipsEmisora,
         IClinicalCipher cipher,
         IClinicalDbContext db,
         IClinicalAuditTrail auditTrail,
@@ -114,6 +117,7 @@ internal static class RegistroClinicoEscritura
 
         db.Add(registro.Value);
         auditTrail.Registrar(accion, Objetivo(registro.Value), tenant);
+        db.Encolar(Creado(registro.Value, ipsEmisora));
         await db.SaveChangesAsync(ct);
 
         return Result.Success(Creado(registro.Value));
@@ -164,6 +168,16 @@ internal static class RegistroClinicoEscritura
 
         return new ObjetivoAuditoria(
             RecursoAuditoria.RegistroClinico, registro.Id.Value.ToString(), registro.CasoMedicoId.Value);
+    }
+
+    /// <summary>El evento del registro (SPEC 10): solo ids y el tipo.</summary>
+    public static RegistroClinicoCreadoIntegrationEvent Creado(HistoriaClinicaDetalle registro, string? ipsEmisora)
+    {
+        ArgumentNullException.ThrowIfNull(registro);
+
+        return new RegistroClinicoCreadoIntegrationEvent(
+            registro.Id.Value, registro.CasoMedicoId.Value, registro.TenantId.Value, CodigosDictamen.Codigo(registro.Tipo),
+            ipsEmisora);
     }
 
     public static RegistroClinicoCreadoResponse Creado(HistoriaClinicaDetalle registro)

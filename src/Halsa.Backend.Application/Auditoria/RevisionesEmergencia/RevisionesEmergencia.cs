@@ -4,6 +4,7 @@ using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Models;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.SharedKernel.Abstractions;
+using Halsa.Backend.SharedKernel.Primitives;
 using Halsa.Backend.SharedKernel.Results;
 using Halsa.Backend.SharedKernel.Tenancy;
 
@@ -40,6 +41,19 @@ public sealed record RevisionEmergenciaResponse(
     string? RevisadoPor,
     string? Conclusion,
     string? Observaciones);
+
+/// <summary>
+/// Un acceso de emergencia (break-the-glass, SPEC 08) abrió una revisión. Uno por revisión: los accesos que se agrupan en
+/// ella no lo repiten. Solo ids y el motivo, sin datos clínicos: lo entrega a la ARL del caso el webhook
+/// <c>auditoria.acceso-emergencia</c> de la SPEC 10.
+/// </summary>
+public sealed record AccesoEmergenciaRegistradoIntegrationEvent(
+    Guid RevisionId,
+    Guid CasoId,
+    string TenantId,
+    string ActorId,
+    string Motivo,
+    DateTimeOffset VenceRevisionEn) : IntegrationEvent;
 
 public enum ResultadoCierreRevision
 {

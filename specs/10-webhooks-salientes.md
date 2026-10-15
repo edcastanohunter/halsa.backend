@@ -1,6 +1,6 @@
 # SPEC 10 — Webhooks salientes firmados
 
-> **Estado:** Borrador
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03, SPEC 05, SPEC 06, SPEC 07, SPEC 08, SPEC 09
 > **Fecha:** 2026-10-09
 > **Objetivo:** Entregar a las ARL y a las IPS suscritas los eventos del sistema (plazos, validación de casos, remisiones, cargas y accesos de emergencia) como webhooks firmados con HMAC, con reintentos durante 24 h, dead letter, reenvío y protección contra SSRF.
@@ -51,14 +51,15 @@ Por eso es donde se concentra la defensa contra SSRF.
 | `plazo.vencido` | ARL | `PlazoVencido` (SPEC 09) | Ídem |
 | `caso.validado` | ARL | `CasoValidado` (SPEC 05) | `casoId`, `radicado`, `numeroReporteOrigen` |
 | `caso.rechazado` | ARL | `CasoRechazado` (SPEC 05) | Ídem, más `motivo` y `duplicadoDe` |
-| `incapacidad.registrada` | ARL | `IncapacidadRegistrada` (SPEC 07) | `casoId`, `radicado`, `incapacidadId`, `tipo`, `fechaInicio`, `fechaFin`, `diasAcumulados`, `alertas[]` |
-| `concepto.registrado` | ARL | `RegistroClinicoCreado` (**nuevo**, SPEC 06) | `casoId`, `radicado`, `registroId`, `tipo`, `ipsEmisora` (si aplica) |
+| `incapacidad.registrada` | ARL | `IncapacidadRegistrada` (SPEC 07) | `casoId`, `radicado`, `incapacidadId`, `tipoIncapacidad`, `fechaInicio`, `fechaFin`, `diasAcumulados`, `alertas[]` |
+| `concepto.registrado` | ARL | `RegistroClinicoCreado` (**nuevo**, SPEC 06) | `casoId`, `radicado`, `registroId`, `tipoRegistro`, `ipsEmisora` (si aplica) |
 | `dictamen.notificado` | ARL | `DictamenPclNotificado` (SPEC 08) | `casoId`, `radicado`, `dictamenId`, `porcentajePcl`, `origen`, `notificadoEn` |
 | `auditoria.acceso-emergencia` | ARL | `AccesoEmergenciaRegistrado` (**nuevo**, SPEC 08) | `casoId`, `radicado`, `revisionId`, `actorId`, `motivo`, `venceRevisionEn` |
 | `caso.remitido` | IPS | `CasoRemitido` (**nuevo**, SPEC 02) | `casoId`, `radicado`, `remisionId`, `tipoEvento`, `fechaEvento`, `trabajador` (`Identificacion`) |
 | `remision.revocada` | IPS | `RemisionRevocada` (**nuevo**, SPEC 02) | `casoId`, `radicado`, `remisionId` |
 
 - **Ningún evento lleva diagnósticos, contenido clínico ni fundamentos.**
+- `tipo` es siempre el tipo del evento. Por eso el tipo de la incapacidad (`INICIAL`/`PRORROGA`) va en `tipoIncapacidad`, y el del registro clínico (`CONCEPTO_MEDICO`, `EVOLUCION`, `CONCEPTO_REHABILITACION`) en `tipoRegistro`.
 - `eventoId` es el id del mensaje del outbox, estable entre reintentos. El receptor deduplica por él.
 - Una ARL solo puede suscribirse a eventos con destinatario ARL, y una IPS solo a los de destinatario IPS.
 
@@ -137,23 +138,23 @@ Cada paso deja la solución compilando y con los tests en verde.
 
 ## Criterios de aceptación
 
-- [ ] `POST` de una suscripción con `url=https://10.0.0.5/hook` responde `400`. Con `http://ejemplo.com` (en `Production`) responde `400`.
-- [ ] El `secreto` aparece en la respuesta del `POST` y en ninguna otra respuesta. `secreto_ct` no contiene el secreto en claro.
-- [ ] Una IPS que intenta suscribirse a `plazo.vencido` recibe `400`. Una ARL que intenta suscribirse a `caso.remitido` también.
-- [ ] Al vencer un plazo, el receptor de prueba suscrito por `ARL_A` recibe un POST, y su `Halsa-Signature` se verifica con el secreto compartido.
-- [ ] El receptor de `ARL_B` no recibe los eventos de `ARL_A`.
-- [ ] Al remitir un caso a `110011234501`, la suscripción de esa IPS recibe `caso.remitido` con la identificación del trabajador y sin datos clínicos.
-- [ ] Ningún payload de ningún tipo contiene las claves `diagnosticos`, `fundamentos`, `contenido` ni `descripcion` (test sobre los 10 tipos).
-- [ ] Si el receptor responde `500` tres veces y luego `200`, la entrega queda `ENTREGADA` con `intentos=4`, y el `Halsa-Event-Id` es el mismo en los cuatro envíos.
-- [ ] Con el reloj 25 h después del primer intento fallido, la entrega pasa a `DEAD_LETTER`.
-- [ ] `POST …/entregas/{id}/reintentar` sobre un `DEAD_LETTER` la entrega en el siguiente ciclo.
-- [ ] 50 fallos seguidos suspenden la suscripción, y `PATCH estado=ACTIVA` la reactiva con `fallos_consecutivos=0`.
-- [ ] Un `410` del receptor deja la suscripción `SUSPENDIDA`.
-- [ ] Un nombre DNS que resuelve a `127.0.0.1` se bloquea en la conexión, aunque la URL haya pasado la validación al registrarse (sin `PermitirDestinosLocales`).
-- [ ] Una respuesta `302` no se sigue y cuenta como fallo.
-- [ ] Después de `rotar-secreto`, los envíos de las 24 h siguientes llevan dos `v1`, y los posteriores llevan uno solo.
-- [ ] Con dos Workers en paralelo, cada entrega se envía una sola vez por intento.
-- [ ] Al arrancar en `Production` con `Webhooks:PermitirDestinosLocales=true`, el proceso termina con un error de validación.
+- [x] `POST` de una suscripción con `url=https://10.0.0.5/hook` responde `400`. Con `http://ejemplo.com` (en `Production`) responde `400`.
+- [x] El `secreto` aparece en la respuesta del `POST` y en ninguna otra respuesta. `secreto_ct` no contiene el secreto en claro.
+- [x] Una IPS que intenta suscribirse a `plazo.vencido` recibe `400`. Una ARL que intenta suscribirse a `caso.remitido` también.
+- [x] Al vencer un plazo, el receptor de prueba suscrito por `ARL_A` recibe un POST, y su `Halsa-Signature` se verifica con el secreto compartido.
+- [x] El receptor de `ARL_B` no recibe los eventos de `ARL_A`.
+- [x] Al remitir un caso a `110011234501`, la suscripción de esa IPS recibe `caso.remitido` con la identificación del trabajador y sin datos clínicos.
+- [x] Ningún payload de ningún tipo contiene las claves `diagnosticos`, `fundamentos`, `contenido` ni `descripcion` (test sobre los 10 tipos).
+- [x] Si el receptor responde `500` tres veces y luego `200`, la entrega queda `ENTREGADA` con `intentos=4`, y el `Halsa-Event-Id` es el mismo en los cuatro envíos.
+- [x] Con el reloj 25 h después del primer intento fallido, la entrega pasa a `DEAD_LETTER`.
+- [x] `POST …/entregas/{id}/reintentar` sobre un `DEAD_LETTER` la entrega en el siguiente ciclo.
+- [x] 50 fallos seguidos suspenden la suscripción, y `PATCH estado=ACTIVA` la reactiva con `fallos_consecutivos=0`.
+- [x] Un `410` del receptor deja la suscripción `SUSPENDIDA`.
+- [x] Un nombre DNS que resuelve a `127.0.0.1` se bloquea en la conexión, aunque la URL haya pasado la validación al registrarse (sin `PermitirDestinosLocales`).
+- [x] Una respuesta `302` no se sigue y cuenta como fallo.
+- [x] Después de `rotar-secreto`, los envíos de las 24 h siguientes llevan dos `v1`, y los posteriores llevan uno solo.
+- [x] Con dos Workers en paralelo, cada entrega se envía una sola vez por intento.
+- [x] Al arrancar en `Production` con `Webhooks:PermitirDestinosLocales=true`, el proceso termina con un error de validación.
 
 ---
 
@@ -170,6 +171,8 @@ Cada paso deja la solución compilando y con los tests en verde.
 - **Sí:** suspensión automática tras 50 fallos seguidos o un `410`. Un receptor caído no acumula trabajo infinito.
 - **Sí:** el fan-out crea una fila por suscripción en la base. **No:** enviar directamente desde el handler del outbox, porque un receptor lento bloquearía el drenado del outbox.
 - **Sí:** entrega *at-least-once*, deduplicada por `eventoId` en el receptor (contrato).
+- **Sí (al implementar):** el dispatcher toma cada lote con `FOR UPDATE SKIP LOCKED` y lo *arrienda* 5 min (corre `proximo_intento_en`) antes de enviar. **No:** mantener la transacción abierta mientras espera a los receptores. Si el Worker cae a mitad de un envío, la entrega vuelve sola al vencer el arriendo.
+- **Sí (al implementar):** el evento de un registro clínico del backoffice se encola en la misma transacción del registro. Para eso `halsa_clinico` recibe `INSERT` sobre `outbox.outbox_messages` (migración clínica `WebhooksSalientesClinico`).
 
 ---
 

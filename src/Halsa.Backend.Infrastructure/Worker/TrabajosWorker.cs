@@ -1,4 +1,5 @@
 using Halsa.Backend.Infrastructure.Database;
+using Halsa.Backend.Infrastructure.Webhooks;
 using Halsa.Backend.Infrastructure.Worker.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 using Quartz;
@@ -55,6 +56,9 @@ internal static class TrabajosWorker
             // Every hour.
             Programar<PurgaIdempotenciaJob>(quartz, PurgaIdempotenciaJob.Key, "0 15 * * * ?");
             Programar<ArchivosHuerfanosJob>(quartz, ArchivosHuerfanosJob.Key, "0 45 * * * ?");
+
+            // 03:30 in Colombia (SPEC 10).
+            Programar<PurgaEntregasWebhookJob>(quartz, PurgaEntregasWebhookJob.Key, "0 30 8 * * ?");
         });
 
         // Lets a running job finish its batch on shutdown; the rest is recovered by the cluster.

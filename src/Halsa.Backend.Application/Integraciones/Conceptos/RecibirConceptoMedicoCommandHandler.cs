@@ -188,6 +188,9 @@ internal sealed class RecibirConceptoMedicoCommandHandler(
             RegistroClinicoEscritura.Objetivo(registro.Value),
             caso.TenantId);
 
+        // SPEC 10: the case's ARL hears of it through its webhook, in this same transaction.
+        db.Encolar(RegistroClinicoEscritura.Creado(registro.Value, tenantContext.IpsId!.Value.Value));
+
         // 9. The clinical policy's WITH CHECK re-evaluates the remission inside this transaction.
         if (await db.GuardarAsync(ct) == ResultadoGuardado.FueraDeAlcance)
         {

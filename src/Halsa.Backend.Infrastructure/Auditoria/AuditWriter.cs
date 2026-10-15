@@ -1,8 +1,10 @@
 using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.Application.Abstractions.Tenancy;
+using Halsa.Backend.Application.Auditoria.RevisionesEmergencia;
 using Halsa.Backend.Infrastructure.Authorization;
 using Halsa.Backend.Infrastructure.Database;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
+using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.Infrastructure.Tenancy;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +19,8 @@ namespace Halsa.Backend.Infrastructure.Auditoria;
 ///
 /// Una lectura exitosa de un caso hecha con break-the-glass (<see cref="AccesoEmergencia"/>, SPEC 08) guarda además
 /// el motivo en la fila y, en la misma operación, abre una revisión en <c>auditoria.revisiones_emergencia</c>, salvo
-/// que el mismo actor ya tenga una pendiente sobre el mismo caso abierta hace menos de 1 h.
+/// que el mismo actor ya tenga una pendiente sobre el mismo caso abierta hace menos de 1 h. Cada revisión nueva encola su
+/// <see cref="AccesoEmergenciaRegistradoIntegrationEvent"/> (SPEC 10).
 /// </summary>
 internal sealed class AuditWriter(
     AccesoAuditadoFactory factory,
@@ -59,7 +62,7 @@ internal sealed class AuditWriter(
 
         if (porEmergencia && !await TieneRevisionRecienteAsync(db, acceso, cancellationToken))
         {
-            db.RevisionesEmergencia.Add(new RevisionEmergencia
+            var revision = new RevisionEmergencia
             {
                 Id = Guid.CreateVersion7(),
                 TenantId = acceso.TenantId!,
@@ -69,7 +72,13 @@ internal sealed class AuditWriter(
                 Motivo = acceso.Motivo!,
                 OcurridoEn = acceso.OcurridoEn,
                 VenceRevisionEn = acceso.OcurridoEn + RevisionEmergencia.PlazoRevision
-            });
+            };
+            db.RevisionesEmergencia.Add(revision);
+
+            // SPEC 10: the ARL hears of it in real time, in the same transaction as the review.
+            db.OutboxMessages.Add(OutboxMessage.Desde(new AccesoEmergenciaRegistradoIntegrationEvent(
+                revision.Id, revision.CasoMedicoId, revision.TenantId, revision.ActorId, revision.Motivo,
+                revision.VenceRevisionEn)));
         }
 
         await db.SaveChangesAsync(cancellationToken);

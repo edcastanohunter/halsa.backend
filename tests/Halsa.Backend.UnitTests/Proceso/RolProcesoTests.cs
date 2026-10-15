@@ -1,5 +1,6 @@
 using Halsa.Backend.Infrastructure;
 using Halsa.Backend.Infrastructure.Outbox;
+using Halsa.Backend.Infrastructure.Webhooks;
 using Halsa.Backend.Infrastructure.Proceso;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,6 +52,13 @@ public sealed class RolProcesoTests
     [InlineData(RolProceso.Ambos)]
     public void WorkerAndAmbos_ShouldRegisterTheOutboxProcessor(RolProceso rol) =>
         HostedServices(rol).ShouldContain(typeof(OutboxProcessor));
+
+    // SPEC 10: the Worker is the only component that calls outside.
+    [Theory]
+    [InlineData(RolProceso.Worker)]
+    [InlineData(RolProceso.Ambos)]
+    public void WorkerAndAmbos_ShouldRegisterTheWebhookDispatcher(RolProceso rol) =>
+        HostedServices(rol).ShouldContain(typeof(WebhookDispatcherJob));
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

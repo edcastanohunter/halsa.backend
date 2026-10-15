@@ -12,6 +12,7 @@ using Halsa.Backend.Application.Casos;
 using Halsa.Backend.Application.Incapacidades;
 using Halsa.Backend.Application.Integraciones;
 using Halsa.Backend.Application.Plazos;
+using Halsa.Backend.Application.Webhooks;
 using Halsa.Backend.Application.Abstractions.Data;
 using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Abstractions.Tenancy;
@@ -34,6 +35,7 @@ using Halsa.Backend.Infrastructure.Proceso;
 using Halsa.Backend.Infrastructure.Tenancy;
 using Halsa.Backend.Infrastructure.Terminos;
 using Halsa.Backend.Infrastructure.Time;
+using Halsa.Backend.Infrastructure.Webhooks;
 using Halsa.Backend.Infrastructure.Worker;
 using Halsa.Backend.Mediation.DependencyInjection;
 using Halsa.Backend.SharedKernel.Abstractions;
@@ -83,6 +85,7 @@ public static class DependencyInjection
             .AddAuthenticationInternal(configuration)
             .AddAuthorizationInternal()
             .AddTenancy()
+            .AddWebhooks(configuration)
             .AddWorker(configuration, rol);
     }
 
@@ -355,7 +358,7 @@ public static class DependencyInjection
 
     /// <summary>
     /// SPEC 09: lo que solo corre en el Worker. La conexión <c>halsa_worker</c> de los barridos entre tenants (cadena
-    /// <c>Worker</c>, obligatoria con ese rol) y Quartz con sus jobs.
+    /// <c>Worker</c>, obligatoria con ese rol) y Quartz con sus jobs. SPEC 10: el fan-out y el dispatcher de webhooks.
     /// </summary>
     private static IServiceCollection AddWorker(this IServiceCollection services, IConfiguration configuration, RolProceso rol)
     {
@@ -369,6 +372,39 @@ public static class DependencyInjection
 
         services.AddSingleton(new BaseDatosWorker(connectionString));
         services.AddTrabajosWorker(connectionString);
+
+        // SPEC 10: the fan-out of every public event to its subscriptions. Only here: it writes as halsa_worker.
+        services.AddScoped<WebhookFanOutHandler>();
+        foreach (Type contrato in WebhookFanOutHandler.Contratos)
+        {
+            services.AddScoped(contrato, sp => sp.GetRequiredService<WebhookFanOutHandler>());
+        }
+
+        // The only outbound HTTP client, and the dispatcher that uses it.
+        services.AddSingleton<SafeWebhookHttpClient>();
+        services.AddHostedService<WebhookDispatcherJob>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Los webhooks salientes (SPEC 10): la API de suscripciones, el secreto envuelto con la KEK y la validación de la URL.
+    /// El fan-out y el dispatcher, que llaman hacia afuera, solo en el Worker (<see cref="AddWorker"/>).
+    /// </summary>
+    private static IServiceCollection AddWebhooks(this IServiceCollection services, IConfiguration configuration)
+    {
+        // Fails at startup, in the API and in the Worker, when the SSRF escape hatch is on outside Development/Testing.
+        services
+            .AddOptions<WebhooksOptions>()
+            .Bind(configuration.GetSection(WebhooksOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<WebhooksOptions>>(sp =>
+            new WebhooksOptionsValidator(sp.GetService<IHostEnvironment>()?.EnvironmentName));
+
+        services.AddSingleton<WebhookSecretProtector>();
+        services.AddSingleton<IWebhookSecretProtector>(sp => sp.GetRequiredService<WebhookSecretProtector>());
+        services.AddSingleton<IWebhookUrlPolicy, WebhookUrlPolicy>();
+        services.AddScoped<ISuscripcionesWebhookRepository, SuscripcionesWebhookRepository>();
 
         return services;
     }

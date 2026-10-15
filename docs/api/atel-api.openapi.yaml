@@ -751,41 +751,173 @@ paths:
 webhooks:
   plazoProximoAVencer:
     post:
-      summary: "Evento saliente: plazo legal próximo a vencer."
+      summary: "Evento saliente (ARL): plazo legal próximo a vencer."
       description: |
-        Se entrega al endpoint suscrito por la ARL, al menos una vez (at-least-once). El receptor debe deduplicar por `eventoId`.
-        La firma va en `Halsa-Signature: t=<unix>,v1=<hex(HMAC-SHA256(secreto, t + "." + cuerpo))>`.
-        Se deben rechazar las firmas con más de 5 minutos de antigüedad.
+        Contrato común a los 10 webhooks salientes (SPEC 10). Se entregan a la URL de cada suscripción `ACTIVA` del
+        destinatario que incluya el tipo, como `POST` con `Content-Type: application/json`, timeout de 10 s y sin seguir
+        redirecciones.
+
+        - **At-least-once.** El mismo evento puede llegar más de una vez: el receptor deduplica por `eventoId`, que es
+          el de `Halsa-Event-Id` y no cambia entre reintentos.
+        - **Firma.** `Halsa-Signature: t=<unix>,v1=<hex(HMAC-SHA256(secreto, t + "." + cuerpo))>`, sobre el cuerpo
+          exacto recibido. Durante las 24 h siguientes a `rotar-secreto` llegan dos `v1`: primero el del secreto nuevo y
+          después el del anterior; basta con que uno coincida. El receptor debe rechazar un `t` de más de 5 minutos.
+        - **Reintentos.** Cualquier respuesta que no sea `2xx` (también un `3xx`), un timeout o un error de red se
+          reintenta con backoff exponencial y jitter, `min(2^intentos × 30 s, 4 h) ± 20 %`, durante 24 h desde el primer
+          intento; después la entrega queda en `DEAD_LETTER` y se puede reenviar por API. 50 fallos seguidos suspenden la
+          suscripción.
+        - **Sin datos clínicos.** Ningún evento lleva diagnósticos, contenido clínico ni fundamentos.
+
+        Destinatario ARL: `plazo.proximo-a-vencer`, `plazo.vencido`, `caso.validado`, `caso.rechazado`,
+        `incapacidad.registrada`, `concepto.registrado`, `dictamen.notificado` y `auditoria.acceso-emergencia`.
+        Destinatario IPS: `caso.remitido` y `remision.revocada`.
       parameters:
         - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
       requestBody:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/EventoPlazo' }
       responses:
-        '2XX': { description: Recibido. Cualquier otra respuesta provoca un reintento con backoff durante 24 h. }
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
   plazoVencido:
     post:
-      summary: "Evento saliente: plazo legal vencido."
+      summary: "Evento saliente (ARL): plazo legal vencido."
       parameters:
         - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
       requestBody:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/EventoPlazo' }
       responses:
         '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
   casoValidado:
     post:
-      summary: "Evento saliente: el FURAT/FUREP pasó la validación asíncrona."
+      summary: "Evento saliente (ARL): el FURAT/FUREP pasó la validación asíncrona."
       parameters:
         - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
       requestBody:
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/EventoCaso' }
+            schema: { $ref: '#/components/schemas/EventoCasoValidado' }
       responses:
         '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
+  casoRechazado:
+    post:
+      summary: "Evento saliente (ARL): el FURAT/FUREP no pasó la validación asíncrona."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoCasoRechazado' }
+      responses:
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
+  incapacidadRegistrada:
+    post:
+      summary: "Evento saliente (ARL): se registró una incapacidad del caso."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoIncapacidadRegistrada' }
+      responses:
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
+  conceptoRegistrado:
+    post:
+      summary: "Evento saliente (ARL): se registró un concepto médico, una evolución o un concepto de rehabilitación."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoConceptoRegistrado' }
+      responses:
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
+  dictamenNotificado:
+    post:
+      summary: "Evento saliente (ARL): se notificó el dictamen PCL del caso."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoDictamenNotificado' }
+      responses:
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
+  auditoriaAccesoEmergencia:
+    post:
+      summary: "Evento saliente (ARL): un acceso de emergencia (break-the-glass) abrió una revisión."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoAccesoEmergencia' }
+      responses:
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
+  casoRemitido:
+    post:
+      summary: "Evento saliente (IPS): la ARL remitió un caso a la IPS."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoCasoRemitido' }
+      responses:
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
+  remisionRevocada:
+    post:
+      summary: "Evento saliente (IPS): la ARL revocó la remisión del caso a la IPS."
+      parameters:
+        - $ref: '#/components/parameters/HalsaSignature'
+        - $ref: '#/components/parameters/HalsaEventId'
+        - $ref: '#/components/parameters/HalsaEventType'
+        - $ref: '#/components/parameters/HalsaDeliveryAttempt'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventoRemisionRevocada' }
+      responses:
+        '2XX': { description: Recibido. }
+        '410': { description: El receptor no quiere más eventos. La entrega queda `DESCARTADA` y la suscripción `SUSPENDIDA`. }
 
 components:
   securitySchemes:
@@ -816,6 +948,7 @@ components:
             integracion:furep:write: Radicar FUREP
             integracion:clinico:write: Enviar conceptos médicos desde una IPS
             incapacidades:write: Cargar incapacidades
+            webhooks:manage: Gestionar las suscripciones a webhooks salientes (ARL e IPS)
 
   parameters:
     IdempotencyKey:
@@ -850,7 +983,28 @@ components:
       name: Halsa-Signature
       in: header
       required: true
+      description: |
+        `t=<unix>,v1=<hex(HMAC-SHA256(secreto, t + "." + cuerpo))>`. Durante las 24 h siguientes a una rotación, un
+        segundo `v1` con el secreto anterior.
       schema: { type: string, example: 't=1760050000,v1=5f2b...e9' }
+    HalsaEventId:
+      name: Halsa-Event-Id
+      in: header
+      required: true
+      description: El `eventoId` del cuerpo. Estable entre reintentos; el receptor deduplica por él.
+      schema: { type: string, format: uuid }
+    HalsaEventType:
+      name: Halsa-Event-Type
+      in: header
+      required: true
+      description: El `tipo` del cuerpo.
+      schema: { type: string, example: plazo.vencido }
+    HalsaDeliveryAttempt:
+      name: Halsa-Delivery-Attempt
+      in: header
+      required: true
+      description: El número de este intento de entrega, desde 1.
+      schema: { type: integer, minimum: 1 }
 
   schemas:
     # ---------- Tipos base ----------
@@ -1453,25 +1607,143 @@ components:
 
     EventoPlazo:
       type: object
+      description: '`plazo.proximo-a-vencer` y `plazo.vencido` (SPEC 09).'
       required: [eventoId, tipo, ocurridoEn, casoId, radicado, plazo]
       properties:
-        eventoId: { type: string, format: uuid }
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
         tipo: { type: string, enum: [plazo.proximo-a-vencer, plazo.vencido] }
         ocurridoEn: { type: string, format: date-time }
         casoId: { type: string, format: uuid }
         radicado: { type: string }
         plazo: { $ref: '#/components/schemas/PlazoResumen' }
 
-    EventoCaso:
+    EventoCasoValidado:
       type: object
+      description: '`caso.validado` (SPEC 05).'
       required: [eventoId, tipo, ocurridoEn, casoId, radicado, numeroReporteOrigen]
       properties:
-        eventoId: { type: string, format: uuid }
-        tipo: { type: string, enum: [caso.validado, caso.rechazado] }
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [caso.validado] }
         ocurridoEn: { type: string, format: date-time }
         casoId: { type: string, format: uuid }
         radicado: { type: string }
         numeroReporteOrigen: { type: string }
+
+    EventoCasoRechazado:
+      type: object
+      description: '`caso.rechazado` (SPEC 05).'
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, numeroReporteOrigen, motivo]
+      properties:
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [caso.rechazado] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        numeroReporteOrigen: { type: string }
+        motivo: { type: string, enum: [DUPLICADO, NO_AFILIADO] }
+        duplicadoDe:
+          type: [string, 'null']
+          format: uuid
+          description: El caso del que este sería duplicado, para que la ARL revise un posible falso duplicado.
+
+    EventoIncapacidadRegistrada:
+      type: object
+      description: '`incapacidad.registrada` (SPEC 07). Solo datos administrativos.'
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, incapacidadId, tipoIncapacidad, fechaInicio, fechaFin, diasAcumulados, alertas]
+      properties:
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [incapacidad.registrada] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        incapacidadId: { type: string, format: uuid }
+        tipoIncapacidad:
+          type: string
+          enum: [INICIAL, PRORROGA]
+          description: El tipo de la incapacidad. Se llama así porque `tipo` es el del evento.
+        fechaInicio: { type: string, format: date }
+        fechaFin: { type: string, format: date }
+        diasAcumulados: { type: integer, description: 'Los días de la cadena hasta esta incapacidad, incluida.' }
+        alertas:
+          type: array
+          items: { type: string, enum: [ACUMULADO_150_DIAS, ACUMULADO_180_DIAS, ACUMULADO_540_DIAS, CARGA_EXTEMPORANEA] }
+
+    EventoConceptoRegistrado:
+      type: object
+      description: '`concepto.registrado` (SPEC 06): solo ids y el tipo, nunca el contenido.'
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, registroId, tipoRegistro]
+      properties:
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [concepto.registrado] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        registroId: { type: string, format: uuid }
+        tipoRegistro:
+          type: string
+          enum: [CONCEPTO_MEDICO, EVOLUCION, CONCEPTO_REHABILITACION]
+          description: El tipo del registro. Se llama así porque `tipo` es el del evento.
+        ipsEmisora:
+          type: [string, 'null']
+          pattern: '^[0-9]{12}$'
+          description: El REPS de la IPS que lo registró, si fue una IPS.
+
+    EventoDictamenNotificado:
+      type: object
+      description: '`dictamen.notificado` (SPEC 08), sin fundamentos.'
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, dictamenId, porcentajePcl, origen, notificadoEn]
+      properties:
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [dictamen.notificado] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        dictamenId: { type: string, format: uuid }
+        porcentajePcl: { type: number, minimum: 0, maximum: 100 }
+        origen: { type: string, enum: [LABORAL, COMUN, MIXTO] }
+        notificadoEn: { type: string, format: date-time }
+
+    EventoAccesoEmergencia:
+      type: object
+      description: '`auditoria.acceso-emergencia` (SPEC 08): uno por revisión abierta. Solo ids y el motivo.'
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, revisionId, actorId, motivo, venceRevisionEn]
+      properties:
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [auditoria.acceso-emergencia] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        revisionId: { type: string, format: uuid }
+        actorId: { type: string, description: El `sub` de quien accedió. }
+        motivo: { type: string, minLength: 20, maxLength: 500 }
+        venceRevisionEn: { type: string, format: date-time }
+
+    EventoCasoRemitido:
+      type: object
+      description: '`caso.remitido` (SPEC 02). Lleva la identificación del trabajador, dato personal y no clínico, que la IPS necesita para atender.'
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, remisionId, tipoEvento, fechaEvento, trabajador]
+      properties:
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [caso.remitido] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        remisionId: { type: string, format: uuid }
+        tipoEvento: { type: string, enum: [AccidenteTrabajo, EnfermedadLaboral] }
+        fechaEvento: { type: string, format: date-time }
+        trabajador: { $ref: '#/components/schemas/Identificacion' }
+
+    EventoRemisionRevocada:
+      type: object
+      description: '`remision.revocada` (SPEC 02).'
+      required: [eventoId, tipo, ocurridoEn, casoId, radicado, remisionId]
+      properties:
+        eventoId: { type: string, format: uuid, description: 'El id del mensaje del outbox: estable entre reintentos.' }
+        tipo: { type: string, enum: [remision.revocada] }
+        ocurridoEn: { type: string, format: date-time }
+        casoId: { type: string, format: uuid }
+        radicado: { type: string }
+        remisionId: { type: string, format: uuid }
 
     # ---------- Errores ----------
     Problema:

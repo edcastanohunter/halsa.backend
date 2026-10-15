@@ -404,4 +404,14 @@ public sealed class RealmCatalogTests
             "clinico:emergencia debe otorgarse individualmente, nunca a través de un rol compuesto. " +
             $"Roles que lo incluyen: {string.Join(", ", compositesThatIncludeEmergencia)}");
     }
+
+    // ── SPEC 10 ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("integracion-arl")]
+    [InlineData("integracion-ips")]
+    public void WebhooksManage_ShouldBelongToBothIntegrationRoles(string rol)
+    {
+        ExpandRolePermissions(rol, ClientRoles(LoadHalsaRealm())).ShouldContain("webhooks:manage");
+    }
 }

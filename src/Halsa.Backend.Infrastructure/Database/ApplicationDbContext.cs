@@ -5,6 +5,7 @@ using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Dictamenes;
 using Halsa.Backend.Domain.Incapacidades;
 using Halsa.Backend.Domain.Terminos;
+using Halsa.Backend.Domain.Webhooks;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Integraciones;
 using Halsa.Backend.Infrastructure.EventSourcing;
@@ -52,6 +53,10 @@ public sealed class ApplicationDbContext(
     internal DbSet<ReglaTermino> ReglasTermino => Set<ReglaTermino>();
 
     internal DbSet<FestivoFila> Festivos => Set<FestivoFila>();
+
+    internal DbSet<SuscripcionWebhook> SuscripcionesWebhook => Set<SuscripcionWebhook>();
+
+    internal DbSet<EntregaWebhook> EntregasWebhook => Set<EntregaWebhook>();
 
     // ── IReadDbContext ────────────────────────────────────────────────────────
 
@@ -118,6 +123,11 @@ public sealed class ApplicationDbContext(
         // Mirrors the RLS of integracion.solicitudes: only the tenant's own requests.
         modelBuilder.Entity<SolicitudIntegracion>().HasQueryFilter(s => TieneTenant && s.TenantId == CurrentTenant);
 
+        // Mirrors the RLS of the webhooks (SPEC 10): a subscription by its emisor, a delivery through its subscription.
+        modelBuilder.Entity<SuscripcionWebhook>().HasQueryFilter(s =>
+            (TieneTenant && s.Emisor == EmisorTenant) || (TieneIps && s.Emisor == EmisorIps));
+        modelBuilder.Entity<EntregaWebhook>().HasQueryFilter(e => SuscripcionesWebhook.Any(s => s.Id == e.SuscripcionId));
+
         base.OnModelCreating(modelBuilder);
     }
 
@@ -130,4 +140,8 @@ public sealed class ApplicationDbContext(
     private bool TieneIps => tenantContext.Resuelto && tenantContext.IpsId is not null;
 
     private IpsId CurrentIps => TieneIps ? tenantContext.IpsId!.Value : default;
+
+    private string EmisorTenant => TieneTenant ? SuscripcionWebhook.EmisorDe(CurrentTenant) : string.Empty;
+
+    private string EmisorIps => TieneIps ? SuscripcionWebhook.EmisorDe(CurrentIps) : string.Empty;
 }

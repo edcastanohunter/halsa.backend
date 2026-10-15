@@ -3,6 +3,7 @@ using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Infrastructure.Database;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
 using Halsa.Backend.Infrastructure.Database.Clinico;
+using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -35,12 +36,12 @@ public sealed class ClinicalDbContextModelTests
     }
 
     [Fact]
-    public void Model_ShouldMapEveryEntityToTheClinicoSchema_ExceptTheAuditTrail()
+    public void Model_ShouldMapEveryEntityToTheClinicoSchema_ExceptTheAuditTrailAndTheOutbox()
     {
         using ClinicalDbContext db = Context(Actor(new TenantId("ARL_A"), null));
 
         db.Model.GetEntityTypes()
-            .Where(e => e.ClrType != typeof(AccesoAuditado))
+            .Where(e => e.ClrType != typeof(AccesoAuditado) && e.ClrType != typeof(OutboxMessage))
             .Select(e => e.GetSchema())
             .Distinct()
             .ShouldBe([Schemas.Clinico]);
@@ -57,6 +58,19 @@ public sealed class ClinicalDbContextModelTests
 
         acceso.GetSchema().ShouldBe(Schemas.Auditoria);
         acceso.IsTableExcludedFromMigrations().ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Model_ShouldMapTheOutbox_WithoutOwningItsMigrations()
+    {
+        using ClinicalDbContext db = Context(Actor(new TenantId("ARL_A"), null));
+
+        // SPEC 10: the event of a backoffice clinical record is enqueued in the record's transaction.
+        IModel model = db.GetService<IDesignTimeModel>().Model;
+        IEntityType outbox = model.FindEntityType(typeof(OutboxMessage)).ShouldNotBeNull();
+
+        outbox.GetSchema().ShouldBe(Schemas.Outbox);
+        outbox.IsTableExcludedFromMigrations().ShouldBeTrue();
     }
 
     [Fact]

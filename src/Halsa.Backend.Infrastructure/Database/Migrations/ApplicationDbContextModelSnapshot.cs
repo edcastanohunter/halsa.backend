@@ -732,6 +732,157 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                     b.ToTable("reglas_termino", "sst");
                 });
 
+            modelBuilder.Entity("Halsa.Backend.Domain.Webhooks.EntregaWebhook", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("EntregadaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("entregada_en");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("estado");
+
+                    b.Property<Guid>("EventoId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("evento_id");
+
+                    b.Property<int>("Intentos")
+                        .HasColumnType("integer")
+                        .HasColumnName("intentos");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTimeOffset>("PrimerIntentoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("primer_intento_en");
+
+                    b.Property<DateTimeOffset>("ProximoIntentoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("proximo_intento_en");
+
+                    b.Property<Guid>("SuscripcionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("suscripcion_id");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("tipo");
+
+                    b.Property<string>("UltimoError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("ultimo_error");
+
+                    b.Property<int?>("UltimoStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("ultimo_status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_entregas_webhook");
+
+                    b.HasIndex("ProximoIntentoEn")
+                        .HasDatabaseName("ix_entregas_webhook_pendientes")
+                        .HasFilter("estado = 'PENDIENTE'");
+
+                    b.HasIndex("SuscripcionId", "EventoId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_entregas_webhook_suscripcion_evento");
+
+                    b.ToTable("entregas_webhook", "integracion");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Webhooks.SuscripcionWebhook", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreadaEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creada_en");
+
+                    b.Property<string>("CreadaPor")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("creada_por");
+
+                    b.Property<string>("Emisor")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("emisor");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("estado");
+
+                    b.PrimitiveCollection<string[]>("Eventos")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("eventos");
+
+                    b.Property<int>("FallosConsecutivos")
+                        .HasColumnType("integer")
+                        .HasColumnName("fallos_consecutivos");
+
+                    b.Property<string>("IpsId")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("ips_id");
+
+                    b.Property<byte[]>("SecretoAnteriorCt")
+                        .HasColumnType("bytea")
+                        .HasColumnName("secreto_anterior_ct");
+
+                    b.Property<DateTimeOffset?>("SecretoAnteriorExpiraEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("secreto_anterior_expira_en");
+
+                    b.Property<byte[]>("SecretoCt")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("secreto_ct");
+
+                    b.Property<string>("SecretoKeyId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("secreto_key_id");
+
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_suscripciones_webhook");
+
+                    b.HasIndex("Emisor")
+                        .HasDatabaseName("ix_suscripciones_webhook_emisor");
+
+                    b.ToTable("suscripciones_webhook", "integracion");
+                });
+
             modelBuilder.Entity("Halsa.Backend.Infrastructure.Database.Auditoria.AccesoAuditado", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1347,6 +1498,16 @@ namespace Halsa.Backend.Infrastructure.Database.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_plazos_reglas_termino");
+                });
+
+            modelBuilder.Entity("Halsa.Backend.Domain.Webhooks.EntregaWebhook", b =>
+                {
+                    b.HasOne("Halsa.Backend.Domain.Webhooks.SuscripcionWebhook", null)
+                        .WithMany()
+                        .HasForeignKey("SuscripcionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_entregas_webhook_suscripciones_webhook");
                 });
 
             modelBuilder.Entity("Halsa.Backend.Domain.Casos.CasoMedico", b =>

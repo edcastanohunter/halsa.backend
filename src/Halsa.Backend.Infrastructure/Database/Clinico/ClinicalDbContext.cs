@@ -4,7 +4,10 @@ using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.Domain.Clinico;
 using Halsa.Backend.Infrastructure.Database.Auditoria;
+using Halsa.Backend.Infrastructure.Database.Configurations;
+using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.Infrastructure.Clinico.Crypto;
+using Halsa.Backend.SharedKernel.Primitives;
 using Halsa.Backend.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,6 +44,9 @@ public sealed class ClinicalDbContext(
     /// <summary>Solo para insertar la auditoría de las escrituras clínicas en su misma transacción (SPEC 04).</summary>
     internal DbSet<AccesoAuditado> AccesosAuditados => Set<AccesoAuditado>();
 
+    /// <summary>Solo para encolar el evento de un registro en su misma transacción (SPEC 10).</summary>
+    internal DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
     // ── IClinicalDbContext ────────────────────────────────────────────────────
 
     IQueryable<HistoriaClinicaDetalle> IClinicalDbContext.Registros => HistoriaClinica;
@@ -48,6 +54,8 @@ public sealed class ClinicalDbContext(
     IQueryable<Soporte> IClinicalDbContext.Soportes => Soportes;
 
     void IClinicalDbContext.Add(HistoriaClinicaDetalle registro) => HistoriaClinica.Add(registro);
+
+    void IClinicalDbContext.Encolar(IIntegrationEvent evento) => OutboxMessages.Add(OutboxMessage.Desde(evento));
 
     // ── Función de la RLS clínica ─────────────────────────────────────────────
 
@@ -80,6 +88,10 @@ public sealed class ClinicalDbContext(
 
         // auditoria.accesos belongs to ApplicationDbContext's migrations; this context only inserts into it.
         modelBuilder.ApplyConfiguration(new AccesoAuditadoConfiguration(excluirDeMigraciones: true));
+
+        // The outbox too: halsa_clinico only inserts into it (migration WebhooksSalientesClinico).
+        modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
+        modelBuilder.Entity<OutboxMessage>().ToTable("outbox_messages", Schemas.Outbox, t => t.ExcludeFromMigrations());
 
         modelBuilder.HasDbFunction(TenantDelCasoRemitidoMethod)
             .HasSchema(Schemas.Clinico)

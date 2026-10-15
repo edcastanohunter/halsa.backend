@@ -603,12 +603,12 @@
         },
         {
           "name": "integracion-ips",
-          "description": "Cuenta de integración de IPS: envío de datos clínicos",
+          "description": "Cuenta de integración de IPS: envío de datos clínicos y webhooks",
           "composite": true,
           "clientRole": true,
           "composites": {
             "client": {
-              "halsa-api": ["integracion:clinico:write", "incapacidades:write"]
+              "halsa-api": ["integracion:clinico:write", "incapacidades:write", "webhooks:manage"]
             }
           }
         }

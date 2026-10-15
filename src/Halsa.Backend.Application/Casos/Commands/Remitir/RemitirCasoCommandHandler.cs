@@ -1,4 +1,5 @@
 using Halsa.Backend.Application.Abstractions.Auditoria;
+using Halsa.Backend.Application.Abstractions.Events;
 using Halsa.Backend.Application.Abstractions.Messaging;
 using Halsa.Backend.Application.Abstractions.Tenancy;
 using Halsa.Backend.Domain.Casos;
@@ -13,6 +14,7 @@ internal sealed class RemitirCasoCommandHandler(
     IUnitOfWork unitOfWork,
     ITenantContext tenantContext,
     IAuditTrail auditTrail,
+    IIntegrationEventPublisher publisher,
     TimeProvider time)
     : ICommandHandler<RemitirCasoCommand, Guid>
 {
@@ -47,6 +49,18 @@ internal sealed class RemitirCasoCommandHandler(
             AccionAuditoria.Crear,
             new ObjetivoAuditoria(RecursoAuditoria.Remision, result.Value.ToString(), caso.Id.Value),
             caso.TenantId);
+
+        // SPEC 10: the IPS hears of it through its webhook. The worker's identification, never anything clinical.
+        await publisher.EnqueueAsync(new CasoRemitidoIntegrationEvent(
+            caso.Id.Value,
+            caso.TenantId.Value,
+            caso.Radicado,
+            result.Value.Value,
+            ipsId.Value,
+            caso.TipoEvento.ToString(),
+            caso.FechaEvento,
+            caso.Trabajador.Tipo,
+            caso.Trabajador.Numero), cancellationToken);
 
         Result guardado = await unitOfWork.GuardarCasoAsync(cancellationToken);
         return guardado.IsFailure
