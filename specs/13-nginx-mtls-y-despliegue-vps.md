@@ -365,28 +365,28 @@ Cada paso deja la solución compilando y con los tests en verde. Los pasos marca
 - Los criterios marcados *(dev)* se verifican con `docker compose up` local, que incluye Keycloak local, el Nginx que imita a NPM y la CA de desarrollo.
 - Los marcados *(staging)* se verifican en el VPS con NPM, el Keycloak compartido y los hosts `halsa-*.edcastdev.com`.
 
-- [ ] *(dev)* `curl` a `https://integraciones.localhost/v1/integraciones/furat` **sin** certificado cliente recibe `400` de Nginx, y el request no llega a la API.
-- [ ] *(dev)* Con el certificado de `int-arl-ARL_A`, se obtiene un token por `private_key_jwt` en el token endpoint de `integraciones`, el token trae `cnf.x5t#S256`, y el POST del FURAT responde `202`.
-- [ ] *(dev)* El mismo token, presentado con el certificado de `int-ips-110011234501`, recibe `401` con `Auth.CertificadoNoVinculado`.
-- [ ] *(dev)* El mismo token, enviado a `api.localhost` (sin mTLS), recibe `401`.
-- [ ] *(dev)* Después de revocar el certificado de `int-arl-ARL_A` y regenerar la CRL, Nginx responde `400` con ese certificado, y otro certificado vigente sigue pasando.
-- [ ] *(dev)* Un header `X-Client-Cert` falso enviado por el cliente a `api.localhost` no llega a la API (Nginx lo borra).
-- [ ] *(dev)* `https://api.localhost/v1/integraciones/furat` y `https://api.localhost/v1/paciente/mis-casos` responden `404` desde Nginx.
-- [ ] *(dev)* La fila de auditoría de un request por Nginx registra la IP del cliente, no la del contenedor de Nginx.
-- [ ] *(dev)* Un `X-Forwarded-For: 1.2.3.4` enviado por el cliente no aparece en la fila de auditoría: queda la IP real del cliente.
-- [ ] La API con `ASPNETCORE_ENVIRONMENT=Production` y cualquiera de las condiciones de `ProductionGuard` termina con `1` y un mensaje que nombra la condición.
-- [ ] `Halsa:Rol=Migrador` contra una base vacía aplica todas las migraciones y termina con `0`. Una segunda ejecución también termina con `0`, sin cambios.
-- [ ] El CI corre `nginx -t` sobre `deploy/npm` (con el envoltorio de `docker/nginx-dev`) y falla si la configuración es inválida.
-- [ ] El README tiene la sección "Keycloak", con los pasos para el Keycloak local y para uno compartido.
+- [x] *(dev)* `curl` a `https://integraciones.localhost/v1/integraciones/furat` **sin** certificado cliente recibe `400` de Nginx, y el request no llega a la API.
+- [x] *(dev)* Con el certificado de `int-arl-ARL_A`, se obtiene un token por `private_key_jwt` en el token endpoint de `integraciones`, el token trae `cnf.x5t#S256`, y el POST del FURAT responde `202`.
+- [x] *(dev)* El mismo token, presentado con el certificado de `int-ips-110011234501`, recibe `401` con `Auth.CertificadoNoVinculado`.
+- [x] *(dev)* El mismo token, enviado a `api.localhost` (sin mTLS), recibe `401`.
+- [x] *(dev)* Después de revocar el certificado de `int-arl-ARL_A` y regenerar la CRL, Nginx responde `400` con ese certificado, y otro certificado vigente sigue pasando.
+- [x] *(dev)* Un header `X-Client-Cert` falso enviado por el cliente a `api.localhost` no llega a la API (Nginx lo borra).
+- [x] *(dev)* `https://api.localhost/v1/integraciones/furat` y `https://api.localhost/v1/paciente/mis-casos` responden `404` desde Nginx.
+- [x] *(dev)* La fila de auditoría de un request por Nginx registra la IP del cliente, no la del contenedor de Nginx.
+- [x] *(dev)* Un `X-Forwarded-For: 1.2.3.4` enviado por el cliente no aparece en la fila de auditoría: queda la IP real del cliente.
+- [x] La API con `ASPNETCORE_ENVIRONMENT=Production` y cualquiera de las condiciones de `ProductionGuard` termina con `1` y un mensaje que nombra la condición.
+- [x] `Halsa:Rol=Migrador` contra una base vacía aplica todas las migraciones y termina con `0`. Una segunda ejecución también termina con `0`, sin cambios.
+- [x] El CI corre `nginx -t` sobre `deploy/npm` (con el envoltorio de `docker/nginx-dev`) y falla si la configuración es inválida.
+- [x] El README tiene la sección "Keycloak", con los pasos para el Keycloak local y para uno compartido.
   - Para el compartido incluye: las 3 opciones de arranque, las 2 cabeceras del proxy host, `importar-realms.sh`, el secreto del BFF, el SMTP del realm y el alta de un client `int-*`.
-- [ ] *(staging)* `importar-realms.sh` contra el Keycloak compartido crea `halsa` y `halsa-pacientes`. Una segunda ejecución termina con `0` y no cambia nada. Los realms preexistentes de ese Keycloak no cambian.
+- [ ] *(staging)* `importar-realms.sh` contra el Keycloak compartido crea `halsa` y `halsa-pacientes`. Una segunda ejecución termina con `0` y no cambia nada. Los realms preexistentes de ese Keycloak no cambian. *Validado en local contra NPM 2.16 y Keycloak 26.7 reales (2026-10-15); pendiente en staging.*
 - [ ] *(staging)* Con el certificado de `int-arl-ARL_A` (emitido por la CA de producción), el token pedido en `halsa-integraciones` trae `cnf.x5t#S256` y emisor `https://auth.edcastdev.com/realms/halsa`, y el FURAT responde `202`.
 - [ ] *(staging)* Una petición al token endpoint por `auth.edcastdev.com` con una cabecera `ssl-client-cert` inventada no produce un token ligado a ese certificado.
 - [ ] *(staging)* SSL Labs califica `halsa-api` y `halsa-pacientes` con `A+`.
 - [ ] *(staging)* `docker compose ps` del proyecto `halsa` muestra que **ningún** servicio de Halsa publica puertos. Desde el contenedor `api`, `curl https://example.com` falla (sin egreso), y desde `worker` funciona.
-- [ ] *(staging)* `sincronizar-npm.sh` ejecutado dos veces seguidas no cambia nada. Después, `docker exec <npm> nginx -t` pasa y los otros proxy hosts de NPM, incluido `auth.edcastdev.com`, siguen respondiendo igual que antes.
-- [ ] *(staging)* Un `sitios/*.conf` inválido hace que `sincronizar-npm.sh` termine con `1`, restaure la configuración anterior y deje NPM sirviendo.
-- [ ] *(staging)* Después de recrear el contenedor de NPM, `halsa-api` responde `502` hasta que se ejecuta `sincronizar-npm.sh`, y luego `200`.
+- [ ] *(staging)* `sincronizar-npm.sh` ejecutado dos veces seguidas no cambia nada. Después, `docker exec <npm> nginx -t` pasa y los otros proxy hosts de NPM, incluido `auth.edcastdev.com`, siguen respondiendo igual que antes. *Validado en local contra NPM 2.16 y Keycloak 26.7 reales (2026-10-15); pendiente en staging.*
+- [ ] *(staging)* Un `sitios/*.conf` inválido hace que `sincronizar-npm.sh` termine con `1`, restaure la configuración anterior y deje NPM sirviendo. *Validado en local contra NPM 2.16 y Keycloak 26.7 reales (2026-10-15); pendiente en staging.*
+- [ ] *(staging)* Después de recrear el contenedor de NPM, `halsa-api` responde `502` hasta que se ejecuta `sincronizar-npm.sh`, y luego `200`. *Validado en local contra NPM 2.16 y Keycloak 26.7 reales (2026-10-15); pendiente en staging.*
 - [ ] *(staging)* `restaurar-prueba.sh` restaura el backup de la noche anterior y sus verificaciones pasan. Un PITR a un instante elegido recupera una fila insertada justo antes.
 - [ ] *(staging)* Al detener el Worker, el monitor externo alerta en menos de 15 min (heartbeat).
 - [ ] *(staging)* Al detener ClamAV, Seq envía la alerta de health `Degraded` en menos de 10 min.

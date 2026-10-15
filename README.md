@@ -28,18 +28,45 @@ The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain 
 
 ## Getting started
 
-```bash
-# -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico, halsa_ingesta,
-# halsa_worker) only runs on an empty volume. Without those roles the API fails to authenticate at startup,
-# and the SPEC 09 migrations fail on an older volume without halsa_worker.
-docker compose down -v && docker compose up -d   # PostgreSQL, Keycloak, Seq (+ Redis if enabled)
+Prerequisites: the .NET 10 SDK, Docker (or Podman) with Compose v2.24+, and `bash` + `openssl` (Git Bash on Windows).
 
-# The clinical KEK (SPEC 03): 32 random bytes, in user-secrets and never in appsettings.
-# Without it the API refuses to start. Keep it: losing it makes existing clinical data unreadable.
+```bash
+# 1. The development PKI (SPEC 13), BEFORE the first `docker compose up`: the dev Nginx mounts its certificates,
+#    and Keycloak reads the int-* client certificates (keycloak.env) when it imports the realm. Idempotent;
+#    the files go to docker/nginx-dev/pki/, which git ignores.
+bash docker/nginx-dev/generar-pki.sh
+
+# 2. The containers. -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico,
+#    halsa_ingesta, halsa_worker) and Keycloak's realm import only run on empty volumes.
+docker compose down -v && docker compose up -d   # PostgreSQL, Keycloak, Seq, Redis, ClamAV and the dev Nginx
+
+# 3. The clinical KEK (SPEC 03): 32 random bytes, in user-secrets and never in appsettings.
+#    Without it the API refuses to start. Keep it: losing it makes existing clinical data unreadable.
 dotnet user-secrets --project src/Halsa.Backend.Api set "Clinico:KekBase64" "$(openssl rand -base64 32)"
 
+# 4. The API (and the Worker, Ambos in Development).
 dotnet run --project src/Halsa.Backend.Api    # http://localhost:5600/scalar/v1
 ```
+
+| URL | What |
+| --- | --- |
+| `http://localhost:5600/scalar/v1` | The API directly (OpenAPI UI). No Nginx, no mTLS. |
+| `http://localhost:8080` | Keycloak (`admin` / `admin`). Issuer of the dev tokens. |
+| `http://localhost:5341` | Seq (logs). |
+| `https://api.localhost`, `https://integraciones.localhost`, `https://pacientes.localhost` | The dev edge: the same `deploy/npm` files NPM uses in production. curl needs `--cacert docker/nginx-dev/pki/raiz/raiz.crt`. |
+
+**Optional: the edge with mTLS end to end.** Run the API with the `mtls` profile
+(`dotnet run --project src/Halsa.Backend.Api --launch-profile mtls`, i.e. `Integraciones:ExigirCertificado=true`) and
+request integration tokens with `bash docker/nginx-dev/token.sh int-arl-ARL_A`. The checks, step by step, are in
+`docker/nginx-dev/README.md`.
+
+**Troubleshooting:**
+- **Keycloak already had the realms before you generated the PKI:** the `int-*` clients have no certificate.
+  Re-import them as described in [Keycloak → Locally](#locally-docker-composeyml).
+- **Port 443 or 8080 is already in use:** set `HALSA_DEV_PUERTO_HTTPS` in `.env` (see `.env.example`). Keycloak's
+  8080 is fixed, because it's the issuer that `appsettings.json` expects.
+- **On Podman:** see the notes in `docker/nginx-dev/README.md`. `host.docker.internal` resolves to the LAN IP there,
+  so the API must listen on `0.0.0.0` for the dev Nginx to reach it.
 
 The same image is the API and the Worker (SPEC 09): `Halsa:Rol` is `Api`, `Worker` or `Ambos`. In `Development` it
 defaults to `Ambos`; anywhere else it is required. To run them apart, use the launch profiles
@@ -191,6 +218,62 @@ seam: swap it for Kafka or Service Bus and no handler changes.
   secrets, deployment, backups, keys, integration certificates, alerts).
 - **Startup modes:** `Halsa:Rol=Migrador` applies the migrations and exits with `0` or `1` (`desplegar.sh` runs it
   before each deploy). In `Production`, `ProductionGuard` refuses to start on any development shortcut.
+
+## Deploying to production
+
+A summary of the procedure. Each step links to the runbook with the details. Everything runs on the VPS as root,
+from `/opt/halsa/deploy` (a sparse checkout of `deploy/` only; nothing is built there).
+
+**One-time setup** ([runbook 01](docs/runbook/01-provision-vps.md)):
+
+1. **Prerequisites.**
+   - Docker with Compose, plus `gettext-base` (for `envsubst`).
+   - Read access to GHCR (`docker login ghcr.io`).
+   - DNS for `halsa-api`, `halsa-integraciones` and `halsa-pacientes` `.edcastdev.com` pointing at the VPS.
+2. **Configuration.**
+   - `cp .env.ejemplo .env && chmod 600 .env`, then fill in the hosts, buckets, heartbeat and Seq hash.
+   - `HALSA_NPM_CONTENEDOR` and `HALSA_NPM_DATA` (NPM's container and its `/data` folder).
+   - `HALSA_UPSTREAM_KEYCLOAK` (the same upstream as the `auth.edcastdev.com` proxy host).
+   - **No secrets go in `.env`.**
+3. **Secrets** ([runbook 02](docs/runbook/02-secretos-y-custodia.md)). Create `/etc/halsa/secretos/` (root:root
+   0600, one file per secret, excluded from every backup). Restore the KEK and the seal key from their offline
+   custody. Generate the passwords.
+4. **Integrations CA** ([runbook 06](docs/runbook/06-certificados-integraciones.md)).
+   - Install the intermediate on the VPS. The root never touches it.
+   - Install the weekly CRL cron.
+5. **Shared Keycloak** ([Keycloak → Shared instance](#shared-instance-production-httpsauthedcastdevcom)).
+   - The owner adds the three x509-lookup startup options and the header-clearing block on `auth.edcastdev.com`.
+   - Then `keycloak/importar-realms.sh` creates the realms.
+   - Configure SMTP in `halsa-pacientes` before opening the portal.
+6. **First start:**
+   ```bash
+   C="docker compose -f docker-compose.prod.yml"
+   $C up -d postgres redis antivirus seq
+   $C exec -u postgres postgres pgbackrest --stanza=halsa stanza-create
+   ./scripts/desplegar.sh v1.0.0      # pull, migrate, start api/worker/bff, wait for Healthy, sync NPM
+   ```
+7. **NPM proxy hosts** (runbook 01, step 7). Create the three hosts with Let's Encrypt, **Force SSL** and **HTTP/2**,
+   with HSTS, Cache Assets, Block Common Exploits and Websockets **off**. Each one's **Advanced** field is
+   exactly:
+   ```nginx
+   include /data/nginx/custom/halsa/sitios/<api|integraciones|pacientes>.conf;
+   #; location / { ... } lo define el include de Halsa: esta linea evita el location / de NPM
+   ```
+8. **Operations.**
+   - Backups: the pgBackRest cron and a first full backup ([runbook 04](docs/runbook/04-backups-y-restauracion.md)).
+   - Seq alerts, the heartbeat and the external monitors ([runbook 07](docs/runbook/07-alertas-e-incidentes.md)).
+9. **Verification:** the commands in runbook 01, step 9, and the *(staging)* acceptance criteria of SPEC 13.
+
+**Every release** ([runbook 03](docs/runbook/03-despliegue.md)):
+
+1. Merge to `main` with CI green.
+2. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`. `release.yml` publishes the images to GHCR.
+3. On the VPS: `./scripts/desplegar.sh vX.Y.Z`. It migrates (`Halsa:Rol=Migrador`) and starts the new version. It
+   rolls back to the previous tag if `/health` isn't `Healthy` within 120 s, then syncs NPM. Migrations only go
+   forward, so they must be backward compatible (expand/contract).
+
+**If NPM is recreated** (upgrade, restart), it loses the `halsa_borde` network and Halsa answers 502. Run
+`./scripts/sincronizar-npm.sh`. It's idempotent, and never applies a config that fails `nginx -t`.
 
 ## Keycloak
 
