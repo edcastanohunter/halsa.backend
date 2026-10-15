@@ -31,6 +31,7 @@ using Halsa.Backend.Infrastructure.Database.Integraciones;
 using Halsa.Backend.Infrastructure.EventSourcing;
 using Halsa.Backend.Infrastructure.Events;
 using Halsa.Backend.Infrastructure.Integraciones;
+using Halsa.Backend.Infrastructure.Observabilidad;
 using Halsa.Backend.Infrastructure.Outbox;
 using Halsa.Backend.Infrastructure.Proceso;
 using Halsa.Backend.Infrastructure.Tenancy;
@@ -38,6 +39,7 @@ using Halsa.Backend.Infrastructure.Terminos;
 using Halsa.Backend.Infrastructure.Time;
 using Halsa.Backend.Infrastructure.Webhooks;
 using Halsa.Backend.Infrastructure.Worker;
+using Halsa.Backend.Infrastructure.Worker.Jobs;
 using Halsa.Backend.Mediation.DependencyInjection;
 using Halsa.Backend.SharedKernel.Abstractions;
 using Halsa.Backend.SharedKernel.EventSourcing;
@@ -349,6 +351,14 @@ public static class DependencyInjection
             // Degraded: without clamd the API answers everything but the uploads of supports (SPEC 07).
             .AddCheck<AntivirusHealthCheck>(AntivirusHealthCheck.Nombre, failureStatus: HealthStatus.Degraded);
 
+        // SPEC 13: the state goes to the log every minute, so Seq alerts on a component Degraded for more than 5 minutes.
+        services.AddSingleton<IHealthCheckPublisher, HealthReportLogPublisher>();
+        services.Configure<HealthCheckPublisherOptions>(options =>
+        {
+            options.Delay = TimeSpan.FromSeconds(30);
+            options.Period = TimeSpan.FromMinutes(1);
+        });
+
         string? redis = configuration.GetConnectionString("Cache");
 
         // Degraded, not Unhealthy: without Redis the API still answers, just slower.
@@ -387,6 +397,10 @@ public static class DependencyInjection
         // The only outbound HTTP client, and the dispatcher that uses it.
         services.AddSingleton<SafeWebhookHttpClient>();
         services.AddHostedService<WebhookDispatcherJob>();
+
+        // SPEC 13: the heartbeat to the external monitor and what the Seq alerts read (runbook 07).
+        services.Configure<ObservabilidadOptions>(configuration.GetSection(ObservabilidadOptions.SectionName));
+        services.AddSingleton<HeartbeatHttpClient>();
 
         return services;
     }

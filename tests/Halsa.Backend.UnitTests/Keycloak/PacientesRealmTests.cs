@@ -24,7 +24,7 @@ public sealed class PacientesRealmTests
         client["implicitFlowEnabled"]!.GetValue<bool>().ShouldBeFalse();
         client["directAccessGrantsEnabled"]!.GetValue<bool>().ShouldBeFalse();
         client["redirectUris"]!.AsArray().Select(u => u!.GetValue<string>())
-            .ShouldBe(["https://localhost:5610/paciente/bff/signin-oidc"]);
+            .ShouldBe(["https://localhost:5610/paciente/bff/signin-oidc", "https://pacientes.localhost/paciente/bff/signin-oidc"]);
         client["attributes"]!["pkce.code.challenge.method"]!.GetValue<string>().ShouldBe("S256");
         client["protocolMappers"]!.AsArray().ShouldContain(m =>
             m!["protocolMapper"]!.GetValue<string>() == "oidc-audience-mapper" &&

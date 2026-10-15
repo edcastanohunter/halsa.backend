@@ -16,7 +16,13 @@ public enum RolProceso
     Worker,
 
     /// <summary>Todo. El valor por defecto solo en <c>Development</c>.</summary>
-    Ambos
+    Ambos,
+
+    /// <summary>
+    /// SPEC 13: aplica las migraciones de los dos contextos y las particiones de auditoría, y termina. Nunca levanta el
+    /// host: es el paso previo de cada despliegue (<c>docker compose run --rm migrador</c>).
+    /// </summary>
+    Migrador
 }
 
 public static class RolesProceso
@@ -38,7 +44,7 @@ public static class RolesProceso
             return string.Equals(environmentName, Environments.Development, StringComparison.Ordinal)
                 ? RolProceso.Ambos
                 : throw new InvalidOperationException(
-                    $"'{Clave}' es obligatorio fuera de Development: Api, Worker o Ambos.");
+                    $"'{Clave}' es obligatorio fuera de Development: Api, Worker, Migrador o Ambos.");
         }
 
         // By name only: Enum.TryParse would also take "2".
@@ -50,7 +56,18 @@ public static class RolesProceso
             }
         }
 
-        throw new InvalidOperationException($"'{Clave}' = '{valor}' no es Api, Worker ni Ambos.");
+        throw new InvalidOperationException($"'{Clave}' = '{valor}' no es Api, Worker, Migrador ni Ambos.");
+    }
+
+    /// <summary>
+    /// El valor configurado es <see cref="RolProceso.Migrador"/>. Se lee antes que todo lo demás, porque el Migrador no
+    /// necesita ni valida el resto de la configuración.
+    /// </summary>
+    public static bool EsMigrador(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        return string.Equals(configuration[Clave]?.Trim(), nameof(RolProceso.Migrador), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Expone los endpoints de negocio.</summary>

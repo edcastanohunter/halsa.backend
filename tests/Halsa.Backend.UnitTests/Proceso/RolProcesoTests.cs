@@ -15,6 +15,7 @@ public sealed class RolProcesoTests
     [InlineData("Api", RolProceso.Api)]
     [InlineData("worker", RolProceso.Worker)]
     [InlineData("AMBOS", RolProceso.Ambos)]
+    [InlineData("Migrador", RolProceso.Migrador)]
     public void ConfiguredRole_ShouldBeRead_InAnyEnvironment(string valor, RolProceso esperado) =>
         RolesProceso.Resolver(Configuracion(valor), "Production").ShouldBe(esperado);
 
@@ -31,10 +32,26 @@ public sealed class RolProcesoTests
             .Message.ShouldContain("Halsa:Rol");
 
     [Theory]
-    [InlineData("Migrador")]
+    [InlineData("Migrar")]
     [InlineData("2")]
     public void UnknownRole_ShouldFail(string valor) =>
         Should.Throw<InvalidOperationException>(() => RolesProceso.Resolver(Configuracion(valor), "Development"));
+
+    // SPEC 13: the Migrador is read before anything else and runs neither the endpoints nor the jobs.
+    [Theory]
+    [InlineData("Migrador", true)]
+    [InlineData(" migrador ", true)]
+    [InlineData("Api", false)]
+    [InlineData(null, false)]
+    public void EsMigrador_ShouldReadTheConfiguredRole(string? valor, bool esperado) =>
+        RolesProceso.EsMigrador(Configuracion(valor)).ShouldBe(esperado);
+
+    [Fact]
+    public void Migrador_ShouldServeNeitherTheApiNorTheWorker()
+    {
+        RolProceso.Migrador.AtiendeApi().ShouldBeFalse();
+        RolProceso.Migrador.EjecutaWorker().ShouldBeFalse();
+    }
 
     [Fact]
     public void Api_ShouldNotRegisterTheOutboxNorQuartz() =>

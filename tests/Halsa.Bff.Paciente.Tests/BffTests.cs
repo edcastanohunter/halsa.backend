@@ -22,6 +22,17 @@ public sealed partial class BffTests : IClassFixture<BffFactory>
         while (_factory.Keycloak.Recibidos.TryDequeue(out _)) { }
     }
 
+    // ── SPEC 13 ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task HealthVivo_ShouldAnswer200WithoutDetail_AndWithoutASession()
+    {
+        HttpResponseMessage response = await _factory.Cliente().GetAsync("/health/vivo");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).ShouldBeEmpty();
+    }
+
     // ── Anti-CSRF and no session ──────────────────────────────────────────────
 
     [Fact]

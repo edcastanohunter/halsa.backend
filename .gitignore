@@ -9,3 +9,7 @@ artifacts/
 
 # Encrypted support files in development (SPEC 07, Archivos:Raiz).
 .data/
+
+# SPEC 13: the development PKI (docker/nginx-dev/generar-pki.sh) and any local PKI working copy. Private keys.
+docker/nginx-dev/pki/
+halsa-pki/

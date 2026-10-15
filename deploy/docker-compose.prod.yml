@@ -1,0 +1,329 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Halsa en producción (SPEC 13): un VPS, detrás del Nginx Proxy Manager que ya existe, con el
+# Keycloak compartido de auth.edcastdev.com. Halsa no publica puertos.
+#
+#   cd /opt/halsa/deploy && cp .env.ejemplo .env   # y completar (runbook 01)
+#   ./scripts/desplegar.sh v1.0.0                  # pull, migrar, levantar, verificar, sincronizar NPM
+#
+# Redes (todas internas salvo egreso):
+#   borde    NPM ↔ api, bff. NPM se une desde afuera con la IP fija 172.30.0.10
+#            (scripts/sincronizar-npm.sh); Docker asigna a los demás desde .128/25.  172.30.0.0/24
+#   app      api, worker, bff ↔ redis, antivirus, seq                              172.30.1.0/24
+#   datos    api, worker, migrador ↔ postgres                                      172.30.2.0/24
+#   egreso   salida a internet: worker (webhooks, WORM, heartbeat), postgres (pgBackRest),
+#            antivirus (freshclam) y seq (SMTP)                                    172.30.3.0/24
+#
+# Secretos: archivos en ${HALSA_SECRETOS} (/etc/halsa/secretos), root:root 0600, fuera de todo
+# backup (runbook 02). Cada servicio recibe solo los suyos.
+# ─────────────────────────────────────────────────────────────────────────────
+name: halsa
+
+x-endurecido: &endurecido
+  restart: unless-stopped
+  ulimits:
+    core: 0
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+# The .NET services start as root only to copy their secrets to a tmpfs, then drop to "app"
+# (scripts/arrancar-dotnet.sh). No capability survives the exec.
+x-dotnet: &dotnet
+  <<: *endurecido
+  image: ghcr.io/${HALSA_GHCR_ORG:?HALSA_GHCR_ORG}/halsa-backend:${HALSA_TAG:?HALSA_TAG}
+  user: "0"
+  read_only: true
+  cap_drop: [ALL]
+  cap_add: [CHOWN, SETUID, SETGID]
+  entrypoint: ["/bin/sh", "/halsa/arrancar-dotnet.sh"]
+  command: ["dotnet", "Halsa.Backend.Api.dll"]
+  tmpfs:
+    - /tmp
+    - /run/halsa:mode=0700
+
+x-entorno-dotnet: &entorno-dotnet
+  ASPNETCORE_ENVIRONMENT: Production
+  ASPNETCORE_HTTP_PORTS: "8080"
+  Keycloak__PersonalAuthority: ${HALSA_KEYCLOAK_URL:?HALSA_KEYCLOAK_URL}/realms/halsa
+  Keycloak__PacientesAuthority: ${HALSA_KEYCLOAK_URL}/realms/halsa-pacientes
+  Keycloak__RequireHttpsMetadata: "true"
+  Keycloak__Audience: halsa-api
+  Keycloak__ClientId: halsa-api
+  Integraciones__ExigirCertificado: "true"
+  Webhooks__PermitirDestinosLocales: "false"
+  Clinico__KekId: ${HALSA_KEK_ID:-local:v1}
+  Clinico__KekBase64: ""
+  Antivirus__Host: antivirus
+  Archivos__Raiz: /var/lib/halsa/archivos
+  # NPM's fixed IP on borde: only from there are X-Forwarded-* and X-Client-Cert accepted.
+  Red__ProxyConfiable: ${HALSA_NPM_IP:-172.30.0.10}/32
+  Serilog__WriteTo__1__Args__serverUrl: http://seq:5341
+  Serilog__WriteTo__1__Args__apiKey: ${HALSA_SEQ_API_KEY:-}
+
+# The shared Keycloak's metadata and JWKS are read at its public https URL, through NPM on the borde
+# network (NPM serves that host too): the API has no egress, and the issuer must stay https (ProductionGuard).
+x-keycloak-por-npm: &keycloak-por-npm
+  - "${HALSA_KEYCLOAK_HOST:?HALSA_KEYCLOAK_HOST}:${HALSA_NPM_IP:-172.30.0.10}"
+
+services:
+
+  # ── Aplicación ──────────────────────────────────────────────────────────────
+  api:
+    <<: *dotnet
+    environment:
+      <<: *entorno-dotnet
+      Halsa__Rol: Api
+      HALSA_SERVICIO: api
+    secrets: [pg_app_password, pg_clinico_password, pg_ingesta_password, redis_password, halsa_kek]
+    volumes:
+      - ./scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+      - archivos:/var/lib/halsa/archivos
+    extra_hosts: *keycloak-por-npm
+    networks:
+      - borde
+      - app
+      - datos
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      antivirus:
+        condition: service_started
+
+  # The only service with internet egress among the application ones: webhooks, WORM and the heartbeat.
+  worker:
+    <<: *dotnet
+    environment:
+      <<: *entorno-dotnet
+      Halsa__Rol: Worker
+      HALSA_SERVICIO: worker
+      Observabilidad__HeartbeatUrl: ${HALSA_HEARTBEAT_URL:-}
+      # The CRL NPM uses (alert 48 h before it expires) and Halsa's hosts whose TLS certificate is watched.
+      Observabilidad__CrlPath: /etc/halsa/pki/halsa-integraciones.crl
+      Observabilidad__HostsTls__0: ${HALSA_HOST_API:?HALSA_HOST_API}
+      Observabilidad__HostsTls__1: ${HALSA_HOST_INTEGRACIONES:?HALSA_HOST_INTEGRACIONES}
+      Observabilidad__HostsTls__2: ${HALSA_HOST_PACIENTES:?HALSA_HOST_PACIENTES}
+    # halsa_sello, worm_s3_key and worm_s3_secret: mounted for SPEC 11 (sealing), not read yet.
+    secrets:
+      [pg_app_password, pg_clinico_password, pg_ingesta_password, pg_worker_password, redis_password, halsa_kek,
+       halsa_sello, worm_s3_key, worm_s3_secret]
+    volumes:
+      - ./scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+      - archivos:/var/lib/halsa/archivos
+      # Public material only: the chain and the CRLs, never a key.
+      - ${HALSA_PKI_PUBLICADA:-/etc/halsa/pki/publicar}:/etc/halsa/pki:ro
+    networks:
+      - app
+      - datos
+      - egreso
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # docker compose run --rm migrador — exits 0 or 1 (scripts/desplegar.sh).
+  migrador:
+    <<: *dotnet
+    restart: "no"
+    profiles: [migracion]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Halsa__Rol: Migrador
+      HALSA_SERVICIO: migrador
+    secrets: [pg_owner_password]
+    volumes:
+      - ./scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+    networks:
+      - datos
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bff:
+    <<: *dotnet
+    image: ghcr.io/${HALSA_GHCR_ORG}/halsa-bff-paciente:${HALSA_TAG}
+    command: ["dotnet", "Halsa.Bff.Paciente.dll"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+      HALSA_SERVICIO: bff
+      Bff__ApiBaseUrl: http://api:8080
+      Bff__Authority: ${HALSA_KEYCLOAK_URL}/realms/halsa-pacientes
+      Bff__RequireHttpsMetadata: "true"
+      Red__ProxyConfiable: ${HALSA_NPM_IP:-172.30.0.10}/32
+    secrets: [kc_bff_secret, redis_password]
+    volumes:
+      - ./scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+    extra_hosts: *keycloak-por-npm
+    networks:
+      - borde
+      - app
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/health/vivo"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── Datos ───────────────────────────────────────────────────────────────────
+  # Built by release.yml (deploy/postgres/Dockerfile) and pulled like the rest: nothing is built on the VPS.
+  postgres:
+    <<: *endurecido
+    image: ghcr.io/${HALSA_GHCR_ORG}/halsa-postgres:${HALSA_POSTGRES_TAG:-17}
+    environment:
+      POSTGRES_DB: halsa
+      POSTGRES_USER: postgres
+      HALSA_BACKUPS_BUCKET: ${HALSA_BACKUPS_BUCKET:?HALSA_BACKUPS_BUCKET}
+      HALSA_BACKUPS_REGION: ${HALSA_BACKUPS_REGION:?HALSA_BACKUPS_REGION}
+      HALSA_BACKUPS_ENDPOINT: ${HALSA_BACKUPS_ENDPOINT:?HALSA_BACKUPS_ENDPOINT}
+    secrets:
+      [pg_postgres_password, pg_owner_password, pg_app_password, pg_clinico_password, pg_ingesta_password,
+       pg_worker_password, backups_s3_key, backups_s3_secret, backups_cipher_pass]
+    volumes:
+      - postgres-datos:/var/lib/postgresql/data
+    tmpfs:
+      - /etc/pgbackrest/conf.d
+      - /run/halsa-secretos
+    shm_size: 256mb
+    networks:
+      - datos
+      - egreso
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "halsa"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    <<: *endurecido
+    image: redis:7-alpine
+    read_only: true
+    # The password goes to a config file in a tmpfs, never to the command line (ps).
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        umask 077 &&
+        printf 'appendonly yes\nappendfsync everysec\nrequirepass %s\n' "$$(cat /run/secrets/redis_password)" > /run/redis/redis.conf &&
+        chown redis /run/redis/redis.conf &&
+        exec docker-entrypoint.sh redis-server /run/redis/redis.conf
+    secrets: [redis_password]
+    volumes:
+      - redis-datos:/data
+    tmpfs:
+      - /run/redis
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  antivirus:
+    <<: *endurecido
+    image: clamav/clamav:1.4
+    volumes:
+      - clamav-firmas:/var/lib/clamav
+    networks:
+      - app
+      - egreso
+
+  # The UI only through an SSH tunnel (runbook 07). Alerts go out by SMTP (configured in Seq).
+  seq:
+    <<: *endurecido
+    image: datalust/seq:${HALSA_SEQ_TAG:-2025.2}
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORDHASH: ${HALSA_SEQ_ADMIN_HASH:?HALSA_SEQ_ADMIN_HASH}
+    volumes:
+      - seq-datos:/data
+    networks:
+      - app
+      - egreso
+
+networks:
+  borde:
+    internal: true
+    ipam:
+      config:
+        # Automatic addresses only from the upper half: 172.30.0.10 stays free for NPM.
+        - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
+  app:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.1.0/24
+  datos:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.2.0/24
+  egreso:
+    ipam:
+      config:
+        - subnet: 172.30.3.0/24
+
+volumes:
+  postgres-datos:
+  redis-datos:
+  clamav-firmas:
+  seq-datos:
+  archivos:
+
+secrets:
+  # The KEK and the seal key (runbook 02 and 05).
+  halsa_kek:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/halsa_kek
+  halsa_sello:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/halsa_sello
+  # One password per PostgreSQL role.
+  pg_postgres_password:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/pg_postgres_password
+  pg_owner_password:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/pg_owner_password
+  pg_app_password:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/pg_app_password
+  pg_clinico_password:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/pg_clinico_password
+  pg_ingesta_password:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/pg_ingesta_password
+  pg_worker_password:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/pg_worker_password
+  # The buckets: backups (pgBackRest) and WORM (SPEC 11).
+  backups_s3_key:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/backups_s3_key
+  backups_s3_secret:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/backups_s3_secret
+  backups_cipher_pass:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/backups_cipher_pass
+  worm_s3_key:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/worm_s3_key
+  worm_s3_secret:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/worm_s3_secret
+  # The BFF's client secret in the shared Keycloak (also read by keycloak/importar-realms.sh).
+  kc_bff_secret:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/kc_bff_secret
+  # Redis.
+  redis_password:
+    file: ${HALSA_SECRETOS:-/etc/halsa/secretos}/redis_password

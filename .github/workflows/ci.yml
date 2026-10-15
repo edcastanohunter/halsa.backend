@@ -1,0 +1,86 @@
+# SPEC 13: on every PR and every push to main. Build, all the tests (Testcontainers on the runner's Docker),
+# nginx -t over deploy/npm, and the audit verifier of SPEC 11 once it exists.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-y-tests:
+    name: Build y tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Halsa.Backend.slnx
+
+      - name: Build
+        run: dotnet build Halsa.Backend.slnx -c Release --no-restore
+
+      # Unit, architecture, BFF, integration and functional: the last two start PostgreSQL with Testcontainers.
+      - name: Test
+        run: dotnet test Halsa.Backend.slnx -c Release --no-build --logger "trx;LogFilePrefix=resultados" --results-directory artifacts/tests
+
+      - name: Resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-tests
+          path: artifacts/tests
+          if-no-files-found: ignore
+
+  # Halsa's edge files (deploy/npm), rendered and included exactly as Nginx Proxy Manager includes them on the VPS,
+  # inside the dev wrapper that plays NPM's part (docker/nginx-dev). The dev PKI stands in for Let's Encrypt and the
+  # integrations CA. Fails if the configuration is invalid. NPM's own generated part is not tested here.
+  nginx:
+    name: nginx -t
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PKI de prueba
+        run: bash ./docker/nginx-dev/generar-pki.sh
+
+      - name: nginx -t sobre deploy/npm
+        run: |
+          docker run --rm \
+            -e HALSA_HOST_API=halsa-api.ci.test \
+            -e HALSA_HOST_INTEGRACIONES=halsa-integraciones.ci.test \
+            -e HALSA_HOST_PACIENTES=halsa-pacientes.ci.test \
+            -e HALSA_UPSTREAM_API=http://api:8080 \
+            -e HALSA_UPSTREAM_BFF=http://bff:8080 \
+            -e HALSA_UPSTREAM_KEYCLOAK=http://keycloak:8080 \
+            -v "$PWD/deploy/npm:/halsa/npm:ro" \
+            -v "$PWD/docker/nginx-dev/arrancar.sh:/halsa/arrancar.sh:ro" \
+            -v "$PWD/docker/nginx-dev/servidores.conf:/halsa/simulado/servidores.conf:ro" \
+            -v "$PWD/docker/nginx-dev/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/docker/nginx-dev/pki/publicar:/data/halsa-pki:ro" \
+            -v "$PWD/docker/nginx-dev/pki/servidor:/etc/nginx/tls:ro" \
+            nginx:1.27-alpine \
+            sh /halsa/arrancar.sh nginx -t
+
+  # SPEC 11 (sealing) is still a draft: its verifier does not exist yet. When it lands, this job runs it against the
+  # golden vectors and stops being skipped.
+  verificador-auditoria:
+    name: Verificador de auditoría (SPEC 11, pendiente)
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TODO(SPEC 11) — ejecutar el verificador de sellos"

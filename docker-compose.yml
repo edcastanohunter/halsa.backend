@@ -26,11 +26,25 @@ services:
   halsa.backend.identity:
     image: quay.io/keycloak/keycloak:26.4
     container_name: halsa.backend.identity
-    command: ["start-dev", "--import-realm"]
+    # SPEC 13: the "nginx" x509 lookup reads the client certificate Nginx verified on integraciones.localhost, so the
+    # int-* tokens come out bound to it (cnf.x5t#S256). Nginx already verified the chain and the CRL.
+    command:
+      - start-dev
+      - --import-realm
+      - --spi-x509cert-lookup--provider=nginx
+      - --spi-x509cert-lookup--nginx--ssl-client-cert=ssl-client-cert
+      - --spi-x509cert-lookup--nginx--trust-proxy-verification=true
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
+      # The issuer stays http://localhost:8080/realms/halsa (what the API on the host validates), whatever door the
+      # token is requested through: localhost:8080 or https://integraciones.localhost/auth/... (SPEC 13).
+      KC_HOSTNAME: http://localhost:8080
+    # The dev PKI's client certificates, for the placeholders of halsa-realm.json (docker/nginx-dev/generar-pki.sh).
+    env_file:
+      - path: ./docker/nginx-dev/pki/keycloak.env
+        required: false
     volumes:
       - ./docker/keycloak:/opt/keycloak/data/import:ro
       - halsa.backend-identity:/opt/keycloak/data
@@ -62,6 +76,36 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+
+  # SPEC 13: an Nginx that imitates Nginx Proxy Manager (docker/nginx-dev) with Halsa's real edge files (deploy/npm),
+  # rendered at the same paths as in NPM, and the dev PKI. First run docker/nginx-dev/generar-pki.sh.
+  # Hosts: api, integraciones and pacientes .localhost (docker/nginx-dev/README.md). Keycloak stays on localhost:8080.
+  halsa.backend.nginx:
+    image: nginx:1.27-alpine
+    container_name: halsa.backend.nginx
+    depends_on:
+      - halsa.backend.identity
+    environment:
+      HALSA_HOST_API: api.localhost
+      HALSA_HOST_INTEGRACIONES: integraciones.localhost
+      HALSA_HOST_PACIENTES: pacientes.localhost
+      # The API and the BFF run on the host (dotnet run); Keycloak is the container above.
+      HALSA_UPSTREAM_API: ${HALSA_DEV_UPSTREAM_API:-http://host.docker.internal:5600}
+      HALSA_UPSTREAM_BFF: ${HALSA_DEV_UPSTREAM_BFF:-https://host.docker.internal:5610}
+      HALSA_UPSTREAM_KEYCLOAK: http://halsa.backend.identity:8080
+    entrypoint: ["/bin/sh", "/halsa/arrancar.sh"]
+    command: ["nginx", "-g", "daemon off;"]
+    volumes:
+      - ./deploy/npm:/halsa/npm:ro
+      - ./docker/nginx-dev/arrancar.sh:/halsa/arrancar.sh:ro
+      - ./docker/nginx-dev/servidores.conf:/halsa/simulado/servidores.conf:ro
+      - ./docker/nginx-dev/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx-dev/pki/publicar:/data/halsa-pki:ro
+      - ./docker/nginx-dev/pki/servidor:/etc/nginx/tls:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${HALSA_DEV_PUERTO_HTTPS:-443}:443"
 
 volumes:
   halsa.backend-db:

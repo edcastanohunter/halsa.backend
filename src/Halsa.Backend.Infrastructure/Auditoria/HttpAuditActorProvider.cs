@@ -11,8 +11,8 @@ namespace Halsa.Backend.Infrastructure.Auditoria;
 
 /// <summary>
 /// Saca el actor del request. Sin <c>HttpContext</c> (un test, un proceso en segundo plano) las columnas
-/// de red quedan en <c>null</c>. La IP es la de la conexión hasta que la SPEC 13 configure
-/// <c>ForwardedHeaders</c>.
+/// de red quedan en <c>null</c>. La IP ya viene resuelta: detrás de Nginx, <c>ForwardedHeaders</c> (SPEC 13) la toma de
+/// <c>X-Forwarded-For</c> solo si el request llega del proxy de confianza (<c>Red:ProxyConfiable</c>).
 ///
 /// El actor de sistema (<c>ISystemTenantScope</c>, SPEC 05) queda como <c>actor_id='sistema'</c>,
 /// <c>actor_tipo='sistema'</c> y el <c>client_id</c> del propio proceso.

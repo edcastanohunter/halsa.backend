@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+# SPEC 13: curl for the compose healthchecks (/health); setpriv (util-linux) is already in the base image and
+# deploy/scripts/arrancar-dotnet.sh uses it to drop to $APP_UID after reading the secrets.
+USER root
+RUN apt-get update  && apt-get install -y --no-install-recommends curl  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 8080
 USER $APP_UID

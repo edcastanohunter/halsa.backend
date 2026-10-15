@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Halsa.Backend.Application.Abstractions.Auditoria;
 using Halsa.Backend.FunctionalTests.Abstractions;
 using Halsa.Backend.SharedKernel.Tenancy;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -38,6 +39,28 @@ public sealed class AuditoriaEndpointsTests(ApiFactory factory)
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await FilasAsync(caso)).ShouldBe([("LEER", "CASO", "EXITO", ArlA)]);
+    }
+
+    // ── IP real detrás de Nginx (SPEC 13) ─────────────────────────────────────
+
+    [Fact]
+    public async Task AuditRow_ShouldRecordTheClientIp_WhenTheRequestComesThroughTheTrustedProxy()
+    {
+        (Guid caso, _) = await SeedCasoAsync(ArlA);
+
+        string? ip = await IpAuditadaAsync(caso, desde: "10.30.0.5", xForwardedFor: "203.0.113.7");
+
+        ip.ShouldBe("203.0.113.7");
+    }
+
+    [Fact]
+    public async Task AuditRow_ShouldIgnoreXForwardedFor_FromAnUntrustedOrigin()
+    {
+        (Guid caso, _) = await SeedCasoAsync(ArlA);
+
+        string? ip = await IpAuditadaAsync(caso, desde: "198.51.100.9", xForwardedFor: "203.0.113.7");
+
+        ip.ShouldBe("198.51.100.9");
     }
 
     [Fact]
@@ -256,6 +279,31 @@ public sealed class AuditoriaEndpointsTests(ApiFactory factory)
         }
 
         return filas;
+    }
+
+    /// <summary>
+    /// Reads the case as an analyst from <paramref name="desde"/> with <c>X-Forwarded-For</c>, with Nginx's network
+    /// (<c>10.30.0.0/24</c>) as the trusted proxy, and returns the IP of the audit row.
+    /// </summary>
+    private async Task<string?> IpAuditadaAsync(Guid caso, string desde, string xForwardedFor)
+    {
+        await using var porProxy = factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("Red:ProxyConfiable", "10.30.0.0/24"));
+
+        HttpClient client = porProxy.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Claims", JsonSerializer.Serialize(Analista(ArlA)));
+        client.DefaultRequestHeaders.Add(RemoteIpDePrueba.Cabecera, desde);
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", xForwardedFor);
+
+        HttpResponseMessage response = await client.GetAsync($"v1/casos/{caso}");
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        await using NpgsqlConnection conn = await OpenSuperuserAsync();
+        await using NpgsqlCommand cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT host(ip) FROM auditoria.accesos WHERE caso_medico_id = @caso";
+        cmd.Parameters.AddWithValue("caso", caso);
+
+        return (string?)await cmd.ExecuteScalarAsync();
     }
 
     private async Task<long> CountByCorrelationAsync(string correlationId, string extra = "")

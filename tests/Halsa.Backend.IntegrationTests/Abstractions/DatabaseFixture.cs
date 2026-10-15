@@ -220,7 +220,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
     // ── Embedded init script ──────────────────────────────────────────────────
     // Mirrors docker/postgres/init/01-roles.sql so Testcontainers does not need
     // to reach the host filesystem.
-    private const string RolesInitScript = """
+    internal const string RolesInitScript = """
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'halsa_owner') THEN

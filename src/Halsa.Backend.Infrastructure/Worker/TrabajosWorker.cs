@@ -59,6 +59,12 @@ internal static class TrabajosWorker
 
             // 03:30 in Colombia (SPEC 10).
             Programar<PurgaEntregasWebhookJob>(quartz, PurgaEntregasWebhookJob.Key, "0 30 8 * * ?");
+
+            // SPEC 13: the dead man's switch every 5 minutes; the operational signals every 5 minutes, half a minute
+            // later; the CRL and TLS expiry every hour.
+            Programar<HeartbeatJob>(quartz, HeartbeatJob.Key, "0 */5 * * * ?");
+            Programar<SenalesOperativasJob>(quartz, SenalesOperativasJob.Key, "30 */5 * * * ?");
+            Programar<VigenciaCertificadosJob>(quartz, VigenciaCertificadosJob.Key, "0 10 * * * ?");
         });
 
         // Lets a running job finish its batch on shutdown; the rest is recovered by the cluster.

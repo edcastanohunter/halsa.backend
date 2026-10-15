@@ -270,6 +270,7 @@ public sealed class RealmCatalogTests
     [Theory]
     [InlineData("int-arl-ARL_A", "integracion-arl")]
     [InlineData("int-ips-110011234501", "integracion-ips")]
+    [InlineData("int-arl-ARL_A-secreto", "integracion-arl")]
     public void EveryIntegrationClient_ShouldHaveItsRoleOnItsServiceAccount(string clientId, string rol)
     {
         JsonObject realm = LoadHalsaRealm();
@@ -414,4 +415,36 @@ public sealed class RealmCatalogTests
     {
         ExpandRolePermissions(rol, ClientRoles(LoadHalsaRealm())).ShouldContain("webhooks:manage");
     }
+
+    // ── SPEC 13 ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("int-arl-ARL_A", "HALSA_DEV_CERT_INT_ARL_ARL_A")]
+    [InlineData("int-ips-110011234501", "HALSA_DEV_CERT_INT_IPS_110011234501")]
+    public void IntegrationClients_ShouldUsePrivateKeyJwt_WithCertificateBoundTokens(string clientId, string variable)
+    {
+        JsonObject client = Client(LoadHalsaRealm(), clientId);
+
+        client["clientAuthenticatorType"]!.GetValue<string>().ShouldBe("client-jwt");
+        client["secret"].ShouldBeNull();
+
+        JsonObject atributos = client["attributes"]!.AsObject();
+        atributos["tls.client.certificate.bound.access.tokens"]!.GetValue<string>().ShouldBe("true");
+        atributos["use.jwks.url"]!.GetValue<string>().ShouldBe("false");
+        // The dev PKI (docker/nginx-dev/generar-pki.sh) provides it at import time.
+        atributos["jwt.credential.certificate"]!.GetValue<string>().ShouldBe($"${{{variable}:}}");
+    }
+
+    [Fact]
+    public void TheSecretClient_ShouldExistOnlyForLocalDebugging()
+    {
+        JsonObject client = Client(LoadHalsaRealm(), "int-arl-ARL_A-secreto");
+
+        client["clientAuthenticatorType"]!.GetValue<string>().ShouldBe("client-secret");
+        client["description"]!.GetValue<string>().ShouldContain("SOLO DESARROLLO");
+    }
+
+    private static JsonObject Client(JsonObject realm, string clientId) => realm["clients"]!.AsArray()
+        .Select(n => n!.AsObject())
+        .Single(c => c["clientId"]!.GetValue<string>() == clientId);
 }

@@ -382,10 +382,71 @@
     {
       "clientId": "int-arl-ARL_A",
       "name": "Integración ARL_A",
-      "description": "Service account de integración para la ARL_A.",
+      "description": "Service account de integración para la ARL_A. private_key_jwt con el certificado de la PKI de desarrollo y tokens ligados al certificado (SPEC 13).",
+      "enabled": true,
+      "clientAuthenticatorType": "client-jwt",
+      "attributes": {
+        "use.jwks.url": "false",
+        "jwt.credential.certificate": "${HALSA_DEV_CERT_INT_ARL_ARL_A:}",
+        "token.endpoint.auth.signing.alg": "ES256",
+        "tls.client.certificate.bound.access.tokens": "true"
+      },
+      "bearerOnly": false,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "actor_tipo hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "integracion",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "actor_tipo",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "tenant_id hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "ARL_A",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "int-arl-ARL_A-secreto",
+      "name": "Integración ARL_A (secreto, solo desarrollo)",
+      "description": "SOLO DESARROLLO (SPEC 13): la ARL_A con client_secret, para depurar sin certificados. Sus tokens no llevan cnf: con Integraciones:ExigirCertificado=true la API los rechaza. No existe en el realm de producción.",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "int-arl-ARL_A-secret",
+      "secret": "int-arl-ARL_A-secreto-secret",
       "bearerOnly": false,
       "publicClient": false,
       "directAccessGrantsEnabled": false,
@@ -438,10 +499,15 @@
     {
       "clientId": "int-ips-110011234501",
       "name": "Integración IPS 110011234501",
-      "description": "Service account de integración para la IPS con código REPS 110011234501.",
+      "description": "Service account de integración para la IPS con código REPS 110011234501. private_key_jwt con el certificado de la PKI de desarrollo y tokens ligados al certificado (SPEC 13).",
       "enabled": true,
-      "clientAuthenticatorType": "client-secret",
-      "secret": "int-ips-110011234501-secret",
+      "clientAuthenticatorType": "client-jwt",
+      "attributes": {
+        "use.jwks.url": "false",
+        "jwt.credential.certificate": "${HALSA_DEV_CERT_INT_IPS_110011234501:}",
+        "token.endpoint.auth.signing.alg": "ES256",
+        "tls.client.certificate.bound.access.tokens": "true"
+      },
       "bearerOnly": false,
       "publicClient": false,
       "directAccessGrantsEnabled": false,
@@ -763,6 +829,14 @@
       }
     },
     {
+      "username": "service-account-int-arl-arl_a-secreto",
+      "enabled": true,
+      "serviceAccountClientId": "int-arl-ARL_A-secreto",
+      "clientRoles": {
+        "halsa-api": ["integracion-arl"]
+      }
+    },
+    {
       "username": "service-account-int-ips-110011234501",
       "enabled": true,
       "serviceAccountClientId": "int-ips-110011234501",
@@ -776,6 +850,7 @@
   "clientScopeMappings": {
     "halsa-api": [
       { "client": "int-arl-ARL_A", "roles": ["integracion-arl"] },
+      { "client": "int-arl-ARL_A-secreto", "roles": ["integracion-arl"] },
       { "client": "int-ips-110011234501", "roles": ["integracion-ips"] }
     ]
   }

@@ -1,0 +1,4 @@
+# SPEC 13: deployment scripts and configs run on Linux (the VPS, the containers): always LF.
+*.sh text eol=lf
+deploy/** text eol=lf
+docker/** text eol=lf

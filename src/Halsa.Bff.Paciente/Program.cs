@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -126,10 +127,17 @@ builder.Services.AddAuthorization(options =>
         .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme)
         .RequireAuthenticatedUser()));
 
+builder.Services.AddProxyConfiable(builder.Configuration);
 builder.Services.AddProxyPaciente(bff);
 builder.Services.AddProblemDetails();
 
+// SPEC 13: /health/vivo for the external uptime monitor on pacientes.<dominio>. Liveness only: the BFF answers.
+builder.Services.AddHealthChecks();
+
 WebApplication app = builder.Build();
+
+// SPEC 13: first, so the scheme, host and client IP are Nginx's view of the request.
+app.UseForwardedHeaders();
 
 app.UseSerilogRequestLogging();
 
@@ -138,6 +146,8 @@ app.UseGuardasBff();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapHealthChecks("/health/vivo", new HealthCheckOptions { ResponseWriter = (_, _) => Task.CompletedTask });
 
 app.MapBffEndpoints();
 app.MapReverseProxy();

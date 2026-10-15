@@ -99,7 +99,8 @@ dotnet run --project src/Halsa.Backend.Api        # http://localhost:5600
 dotnet run --project src/Halsa.Bff.Paciente       # https://localhost:5610, Redis from docker compose
 ```
 
-1. **A `Validado` case.** The dev seed only has `Radicado` cases: radicate a FURAT with `int-arl-ARL_A`
+1. **A `Validado` case.** The dev seed only has `Radicado` cases: radicate a FURAT with `int-arl-ARL_A-secreto`
+   (client secret `int-arl-ARL_A-secreto-secret`; `int-arl-ARL_A` itself needs its certificate since SPEC 13)
    (`POST /v1/integraciones/furat`, see `docs/api/atel-api.openapi.yaml`). The Worker (`Ambos` in Development)
    validates it within seconds.
 2. **The code.** As `analista.arla` (token from `halsa-dev-cli`), `POST /v1/casos/{id}/codigos-activacion`. The answer
@@ -176,11 +177,97 @@ concurrently. `InProcessEventBus` delivers each message to the `IIntegrationEven
 process, in a DI scope of its own (the asynchronous validation of a radication is one). `IEventBus` is the
 seam: swap it for Kafka or Service Bus and no handler changes.
 
+## The edge and production (SPEC 13)
+
+- **Production edge:** the VPS's existing **Nginx Proxy Manager** (NPM). Halsa has three proxy hosts:
+  `halsa-api`, `halsa-integraciones` (mTLS) and `halsa-pacientes` `.edcastdev.com`. Their configuration lives in
+  `deploy/npm/`, and `deploy/scripts/sincronizar-npm.sh` takes it to NPM. NPM's compose is never modified.
+- **Development, end to end with mTLS:** `docker compose up` also starts an Nginx that plays NPM's part
+  (`docker/nginx-dev`). It includes the same `deploy/npm` files, with a development CA, on
+  `https://{api,integraciones,pacientes}.localhost`. First run `bash docker/nginx-dev/generar-pki.sh`. See
+  `docker/nginx-dev/README.md`.
+- **Production stack:** `deploy/docker-compose.prod.yml` (images from GHCR, built by
+  `.github/workflows/release.yml`), `deploy/.env.ejemplo`, and the runbooks in `docs/runbook/` (provisioning,
+  secrets, deployment, backups, keys, integration certificates, alerts).
+- **Startup modes:** `Halsa:Rol=Migrador` applies the migrations and exits with `0` or `1` (`desplegar.sh` runs it
+  before each deploy). In `Production`, `ProductionGuard` refuses to start on any development shortcut.
+
+## Keycloak
+
+Halsa uses two realms:
+- **`halsa`**: staff and integrations;
+- **`halsa-pacientes`**: the patient portal.
+
+The API validates tokens from both: `Keycloak:PersonalAuthority` and `Keycloak:PacientesAuthority` are the issuers.
+The integration clients (`int-*`) authenticate with `private_key_jwt`, and their tokens are **bound to the client
+certificate** (RFC 8705, `cnf.x5t#S256`). The API rejects a token presented with any other certificate
+(`401 Auth.CertificadoNoVinculado`).
+
+### Locally (`docker-compose.yml`)
+
+- **What runs:** `halsa.backend.identity` (Keycloak 26.4, `start-dev`) imports `docker/keycloak/halsa-realm.json`
+  and `halsa-pacientes-realm.json` **on its first start only**, with dev users, the `halsa-dev-cli` client and the
+  OTP secrets above. The issuer is fixed at `http://localhost:8080` (`KC_HOSTNAME`), which is what
+  `appsettings.json` expects.
+- **Order:** run `bash docker/nginx-dev/generar-pki.sh` **before** Keycloak's first start. It writes the `int-*`
+  certificates to `docker/nginx-dev/pki/keycloak.env`, and the realm import reads them.
+- **Re-importing** (after regenerating the PKI or editing the realm files):
+  `docker compose rm -sf halsa.backend.identity && docker volume rm halsabackend_halsa.backend-identity`. The volume
+  prefix is `halsabackend`: Compose drops the dot from the project name.
+- **Certificate-bound tokens:** they need the three `--spi-x509cert-lookup--*` options, already in
+  `docker-compose.yml`. Request the token through `https://integraciones.localhost/auth/...`
+  (`docker/nginx-dev/token.sh`).
+- **Without certificates:** `int-arl-ARL_A-secreto` (secret `int-arl-ARL_A-secreto-secret`) has no `cnf`. Use it
+  against `http://localhost:5600` with `Integraciones:ExigirCertificado=false`.
+- **Known issue (outside SPEC 13):** `halsa-dev-cli` tokens carry no `sub`. The dev realm doesn't assign Keycloak
+  26's `basic` scope, so the API answers `403 Tenant.ClaimsIncompletos` to them.
+
+### Shared instance (production: `https://auth.edcastdev.com`)
+
+Halsa does not deploy or upgrade that Keycloak (26.7, container `keykloack-keycloak-1`); it only adds its realms.
+**Its owner** applies these changes once:
+
+1. **Startup options**, global but only used by clients with certificate-bound tokens:
+   ```
+   --spi-x509cert-lookup--provider=nginx
+   --spi-x509cert-lookup--nginx--ssl-client-cert=ssl-client-cert
+   --spi-x509cert-lookup--nginx--trust-proxy-verification=true
+   ```
+   These go in its compose as `command: ["start", "--spi-x509cert-lookup--provider=nginx", ...]`.
+2. **A fixed hostname:** `KC_HOSTNAME=https://auth.edcastdev.com` and `KC_PROXY_HEADERS=xforwarded`. The issuer
+   must stay the same when Halsa's integrations request a token through `halsa-integraciones.edcastdev.com`.
+3. **The `auth.edcastdev.com` proxy host in NPM must clear the certificate headers.** NPM forwards them by
+   default (verified), and Keycloak trusts them. A loose `proxy_set_header` at server level does not apply, so the
+   **Advanced** field needs this whole block (it replaces NPM's own `location /`):
+   ```nginx
+   location / {
+       proxy_set_header ssl-client-cert "";
+       proxy_set_header ssl-client-verify "";
+       include conf.d/include/proxy.conf;
+   }
+   ```
+4. **Network:** NPM reaches Keycloak by container name (`HALSA_UPSTREAM_KEYCLOAK`, the same upstream as that proxy
+   host).
+
+Then Halsa, on the VPS:
+
+- **Realms:** `deploy/keycloak/importar-realms.sh` creates `halsa` and `halsa-pacientes` from
+  `deploy/keycloak/*.prod.json` (no users, no `halsa-dev-cli`, no OTP, no SMTP). It only creates a realm that doesn't
+  exist and never touches an existing one. It asks for a `master` admin and takes the BFF's client secret from
+  `/etc/halsa/secretos/kc_bff_secret`.
+- **SMTP:** set it in `halsa-pacientes` → *Realm settings → Email*. `verifyEmail` is on, so patient
+  self-registration does not complete until then.
+- **Integration clients:** each ARL or IPS gets a `int-*` client created from its certificate (runbook 06,
+  `kcadm.sh`).
+- **Configuration:** `.env` holds `HALSA_KEYCLOAK_URL=https://auth.edcastdev.com` (issuers `/realms/halsa` and
+  `/realms/halsa-pacientes`) and `HALSA_KEYCLOAK_HOST`. The API and BFF have no internet egress, so they resolve
+  that host to NPM on the `borde` network.
+
 ## Before production
 
-- [ ] Apply migrations from your pipeline, not from `Program`.
+- [x] Apply migrations from your pipeline, not from `Program` (`Halsa:Rol=Migrador`, SPEC 13).
 - [ ] Register a real `IAfiliacionGateway` per ARL: outside `Development` and `Testing` the API refuses to
       start with the dev stub.
 - [ ] Point `OpenTelemetry:OtlpEndpoint` at your collector.
 - [ ] Turn `TreatWarningsAsErrors` on in `Directory.Build.props` once the solution is warning-clean.
-- [ ] Set `Keycloak:RequireHttpsMetadata` back to `true`.
+- [x] Set `Keycloak:RequireHttpsMetadata` back to `true` (`deploy/docker-compose.prod.yml`; `ProductionGuard` enforces it).

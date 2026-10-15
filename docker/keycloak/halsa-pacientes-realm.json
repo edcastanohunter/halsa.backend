@@ -44,11 +44,11 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": false,
       "protocol": "openid-connect",
-      "redirectUris": ["https://localhost:5610/paciente/bff/signin-oidc"],
+      "redirectUris": ["https://localhost:5610/paciente/bff/signin-oidc", "https://pacientes.localhost/paciente/bff/signin-oidc"],
       "webOrigins": [],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "https://localhost:5610/paciente/bff/signout-callback-oidc"
+        "post.logout.redirect.uris": "https://localhost:5610/paciente/bff/signout-callback-oidc##https://pacientes.localhost/paciente/bff/signout-callback-oidc"
       },
       "protocolMappers": [
         {

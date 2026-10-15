@@ -99,6 +99,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
             services.RemoveAll<IAntivirusScanner>();
             services.AddSingleton<IAntivirusScanner>(Antivirus);
+
+            // SPEC 13: lets a test pose as the trusted proxy (or as anyone else).
+            services.AddSingleton<IStartupFilter, RemoteIpDePrueba>();
         });
     }
 

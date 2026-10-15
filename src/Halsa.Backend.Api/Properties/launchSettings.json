@@ -32,6 +32,16 @@
         "Halsa__Rol": "Api"
       }
     },
+    "mtls": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5600",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Integraciones__ExigirCertificado": "true"
+      }
+    },
     "worker": {
       "commandName": "Project",
       "dotnetRunMessages": true,
