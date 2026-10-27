@@ -2,3 +2,6 @@
 *.sh text eol=lf
 deploy/** text eol=lf
 docker/** text eol=lf
+
+# Podman Quadlets: systemd units and scripts read on the VPS, always LF.
+deploy-quadlets/** text eol=lf
