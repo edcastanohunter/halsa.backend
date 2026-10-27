@@ -28,7 +28,7 @@
 
 ```cron
 CRON_TZ=America/Bogota
-C=docker compose -f /opt/halsa/deploy/docker-compose.prod.yml exec -T -u postgres postgres pgbackrest --stanza=halsa
+C=podman compose -f /opt/halsa/deploy/docker-compose.prod.yml exec -T -u postgres postgres pgbackrest --stanza=halsa
 # Completo, domingo 01:00. Diferencial, lunes a sábado 01:00. Retención: 4 completos.
 0 1 * * 0    root  $C --type=full backup  >> /var/log/halsa-backups.log 2>&1
 0 1 * * 1-6  root  $C --type=diff backup  >> /var/log/halsa-backups.log 2>&1
@@ -44,7 +44,7 @@ Primera vez: `pgbackrest --stanza=halsa stanza-create`, `check` y un `--type=ful
 ## Estado
 
 ```bash
-C="docker compose -f /opt/halsa/deploy/docker-compose.prod.yml exec -T -u postgres postgres pgbackrest --stanza=halsa"
+C="podman compose -f /opt/halsa/deploy/docker-compose.prod.yml exec -T -u postgres postgres pgbackrest --stanza=halsa"
 $C info          # backups, WAL archivado, tamaño
 $C check         # archive_command funciona de punta a punta
 ```
@@ -63,7 +63,7 @@ respondan. Después lo destruye todo. Sale con `0` si todo pasó y con `1` si no
 
 ```bash
 # 1. Insertar una fila marcadora y anotar la hora (UTC).
-C="docker compose -f /opt/halsa/deploy/docker-compose.prod.yml"
+C="podman compose -f /opt/halsa/deploy/docker-compose.prod.yml"
 M=$(uuidgen)
 $C exec -T -u postgres postgres psql -d halsa -c \
   "CREATE TABLE IF NOT EXISTS public.ensayo_pitr(id uuid primary key, en timestamptz default now());
@@ -83,11 +83,11 @@ $C exec -T -u postgres postgres psql -d halsa -c "DROP TABLE public.ensayo_pitr;
 
 > Se pierden los datos posteriores al instante elegido. Requiere la aprobación del responsable de la plataforma.
 
-1. Detener la escritura: `docker compose stop api worker bff`. NPM responde `502`.
+1. Detener la escritura: `podman compose stop api worker bff`. NPM responde `502`.
 2. Elegir el instante: el último bueno conocido, por ejemplo justo antes del despliegue que rompió el esquema.
 3. Restaurar sobre el volumen de producción:
    ```bash
-   C="docker compose -f /opt/halsa/deploy/docker-compose.prod.yml"
+   C="podman compose -f /opt/halsa/deploy/docker-compose.prod.yml"
    $C stop postgres
    $C run --rm --entrypoint bash postgres -c '
      /usr/local/bin/halsa-arrancar.sh true &&

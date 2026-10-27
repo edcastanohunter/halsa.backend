@@ -36,8 +36,8 @@ Todos los eventos de alerta llevan la propiedad **`Alerta`** con un nombre estab
 | Exceso de 429 | `@RequestPath like '/v1/integraciones/%' and StatusCode = 429` | **pendiente**: el access log de NPM no llega a Seq | `> 100` en 5 min por cliente. Requiere enviar el log de Nginx a Seq (p. ej. `seq-input-gelf`) |
 | Arranque rechazado | `@Message like 'ProductionGuard%'` | stderr del contenedor, no Seq | se ve en `desplegar.sh` (exit `1`) |
 
-Para la verificación *staging*, detener ClamAV (`docker compose stop antivirus`). En menos de 10 minutos debe llegar el
-correo "Health degradado" (`antivirus=Degraded`). Después, `docker compose start antivirus`.
+Para la verificación *staging*, detener ClamAV (`podman compose stop antivirus`). En menos de 10 minutos debe llegar el
+correo "Health degradado" (`antivirus=Degraded`). Después, `podman compose start antivirus`.
 
 ## 2. Heartbeat del Worker (*dead man's switch*)
 
@@ -46,9 +46,9 @@ correo "Health degradado" (`antivirus=Degraded`). Después, `docker compose star
   responsable de turno.
 - La URL del ping va en `HALSA_HEARTBEAT_URL` (`.env`). `HeartbeatJob` hace el `GET` cada 5 minutos desde el
   Worker, que es el único con egreso.
-- Si el ping deja de llegar, la causa puede ser el Worker, Quartz, el VPS o la red: empezar por `docker compose ps`.
+- Si el ping deja de llegar, la causa puede ser el Worker, Quartz, el VPS o la red: empezar por `podman compose ps`.
 
-Verificación *staging*: `docker compose stop worker`. La alerta debe llegar en menos de 15 minutos. Luego, `start worker`.
+Verificación *staging*: `podman compose stop worker`. La alerta debe llegar en menos de 15 minutos. Luego, `start worker`.
 
 ## 3. Monitor de disponibilidad externo
 
@@ -69,8 +69,8 @@ En un servicio externo (UptimeRobot, Better Stack Uptime o similar), tres monito
 ### Primeros 5 minutos
 
 1. ¿Qué alerta? Heartbeat o uptime: el VPS o el borde. Seq: un componente.
-2. `ssh vps` y `cd /opt/halsa/deploy && docker compose -f docker-compose.prod.yml ps`.
-3. Logs: `docker compose logs --since 30m <servicio>`, y Seq por túnel.
+2. `ssh vps` y `cd /opt/halsa/deploy && podman compose -f docker-compose.prod.yml ps`.
+3. Logs: `podman compose logs --since 30m <servicio>`, y Seq por túnel.
 4. Si hay datos de salud expuestos o un acceso indebido, es un **incidente de seguridad**: no tocar evidencia, avisar
    al oficial de privacidad y seguir el procedimiento de incidentes de la organización.
 
@@ -79,13 +79,13 @@ En un servicio externo (UptimeRobot, Better Stack Uptime o similar), tres monito
 | Síntoma | Causa probable | Acción |
 | --- | --- | --- |
 | Todas las integraciones con `400` de NPM | CRL vencida | runbook 06: `generar-crl.sh` y `sincronizar-npm.sh` |
-| `halsa-*` con `502` y los otros sitios de NPM bien | NPM se recreó y perdió `halsa_borde`, o un contenedor de Halsa está caído | `sincronizar-npm.sh` (runbook 03); si sigue, `docker compose ps` |
+| `halsa-*` con `502` y los otros sitios de NPM bien | NPM se recreó y perdió `halsa_borde`, o un contenedor de Halsa está caído | `sincronizar-npm.sh` (runbook 03); si sigue, `podman compose ps` |
 | Las integraciones no obtienen token: `Client Certification missing for MTLS HoK Token Binding` | el Keycloak compartido perdió las opciones `--spi-x509cert-lookup--*` | pedir al dueño que las restaure (README, "Keycloak") |
 | Una integración con `401 Auth.CertificadoNoVinculado` | pide el token con un certificado y llama con otro, o lo llama por `api.` | revisar su configuración (runbook 06, "Lo que se le entrega") |
-| `api` con `Degraded` | ClamAV actualizando firmas o caído; Redis caído | `docker compose restart antivirus` / `redis` |
-| `worker` sin heartbeat | Quartz detenido, o sin conexión `halsa_worker` | logs del worker; `docker compose restart worker` |
+| `api` con `Degraded` | ClamAV actualizando firmas o caído; Redis caído | `podman compose restart antivirus` / `redis` |
+| `worker` sin heartbeat | Quartz detenido, o sin conexión `halsa_worker` | logs del worker; `podman compose restart worker` |
 | Navegador con error TLS | certificado vencido | runbook 05, "TLS: renovación manual" |
-| Disco lleno | WAL sin archivar (bucket caído), logs | `pgbackrest check`; `docker system df` |
+| Disco lleno | WAL sin archivar (bucket caído), logs | `pgbackrest check`; `podman system df` |
 
 ### Comunicación
 

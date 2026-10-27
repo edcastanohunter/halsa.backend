@@ -20,7 +20,7 @@ tests/
   Halsa.Backend.ArchitectureTests Layer rules enforced with NetArchTest.
   Halsa.Backend.IntegrationTests  Real PostgreSQL via Testcontainers: store, concurrency, outbox.
   Halsa.Backend.FunctionalTests   The API end to end through WebApplicationFactory.
-  Halsa.Bff.Paciente.Tests        The BFF in memory, against stub API and Keycloak handlers. No Docker needed.
+  Halsa.Bff.Paciente.Tests        The BFF in memory, against stub API and Keycloak handlers. No Podman needed.
 ```
 
 The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain -> SharedKernel`.
@@ -28,17 +28,17 @@ The dependency rule is one-way: `Api -> Infrastructure -> Application -> Domain 
 
 ## Getting started
 
-Prerequisites: the .NET 10 SDK, Docker (or Podman) with Compose v2.24+, and `bash` + `openssl` (Git Bash on Windows).
+Prerequisites: the .NET 10 SDK, Podman with Compose, and `bash` + `openssl` (Git Bash on Windows).
 
 ```bash
-# 1. The development PKI (SPEC 13), BEFORE the first `docker compose up`: the dev Nginx mounts its certificates,
+# 1. The development PKI (SPEC 13), BEFORE the first `podman compose up`: the dev Nginx mounts its certificates,
 #    and Keycloak reads the int-* client certificates (keycloak.env) when it imports the realm. Idempotent;
 #    the files go to docker/nginx-dev/pki/, which git ignores.
 bash docker/nginx-dev/generar-pki.sh
 
 # 2. The containers. -v matters: docker/postgres/init/01-roles.sql (halsa_owner, halsa_app, halsa_clinico,
 #    halsa_ingesta, halsa_worker) and Keycloak's realm import only run on empty volumes.
-docker compose down -v && docker compose up -d   # PostgreSQL, Keycloak, Seq, Redis, ClamAV and the dev Nginx
+podman compose down -v && podman compose up -d   # PostgreSQL, Keycloak, Seq, Redis, ClamAV and the dev Nginx
 
 # 3. The clinical KEK (SPEC 03): 32 random bytes, in user-secrets and never in appsettings.
 #    Without it the API refuses to start. Keep it: losing it makes existing clinical data unreadable.
@@ -123,7 +123,7 @@ development, which has no SMTP), but an account sees nothing until it redeems an
 # The BFF's client secret lives in user-secrets outside Development (appsettings.Development.json has the dev one).
 dotnet dev-certs https --trust
 dotnet run --project src/Halsa.Backend.Api        # http://localhost:5600
-dotnet run --project src/Halsa.Bff.Paciente       # https://localhost:5610, Redis from docker compose
+dotnet run --project src/Halsa.Bff.Paciente       # https://localhost:5610, Redis from podman compose
 ```
 
 1. **A `Validado` case.** The dev seed only has `Radicado` cases: radicate a FURAT with `int-arl-ARL_A-secreto`
@@ -209,7 +209,7 @@ seam: swap it for Kafka or Service Bus and no handler changes.
 - **Production edge:** the VPS's existing **Nginx Proxy Manager** (NPM). Halsa has three proxy hosts:
   `halsa-api`, `halsa-integraciones` (mTLS) and `halsa-pacientes` `.edcastdev.com`. Their configuration lives in
   `deploy/npm/`, and `deploy/scripts/sincronizar-npm.sh` takes it to NPM. NPM's compose is never modified.
-- **Development, end to end with mTLS:** `docker compose up` also starts an Nginx that plays NPM's part
+- **Development, end to end with mTLS:** `podman compose up` also starts an Nginx that plays NPM's part
   (`docker/nginx-dev`). It includes the same `deploy/npm` files, with a development CA, on
   `https://{api,integraciones,pacientes}.localhost`. First run `bash docker/nginx-dev/generar-pki.sh`. See
   `docker/nginx-dev/README.md`.
@@ -230,16 +230,16 @@ in `/opt/halsa/deploy`: only `deploy/`, synced by each release with `rsync --del
 push to main ─► build + tests + coverage, nginx -t, validar-despliegue ─► approval (environment produccion)
 runner ─► docker build ─► paquete.tar (images + git archive deploy/ + sha256)
        ─► ssh halsa-deploy@VPS "desplegar v1.0.<run_number>" < paquete.tar
-VPS    ─► halsa-recibir-despliegue: check sums ─► docker load ─► rsync deploy/ ─► desplegar.sh v1.0.<run_number>
+VPS    ─► halsa-recibir-despliegue: check sums ─► podman load ─► rsync deploy/ ─► desplegar.sh v1.0.<run_number>
 ```
 
 **One-time setup** ([runbook 01](docs/runbook/01-provision-vps.md)):
 
 1. **Prerequisites.**
-   - Docker with Compose, plus `gettext-base` (for `envsubst`) and `rsync`.
+   - Podman with Compose, plus `gettext-base` (for `envsubst`) and `rsync`.
    - DNS for `halsa-api`, `halsa-integraciones` and `halsa-pacientes` `.edcastdev.com` pointing at the VPS.
 2. **Configuration.**
-   - Copy `deploy/` once from your machine: `git archive main deploy/ | ssh root@<vps> 'tar -x -C /opt/halsa'`.
+   - Copy `deploy/` once from your machine: `git archive main deploy/ | ssh root@<vps> 'mkdir -p /opt/halsa && tar -xf - --no-same-owner -C /opt/halsa'`.
    - `cp .env.ejemplo .env && chmod 600 .env`, then fill it in (see [Environment variables](#environment-variables)).
    - **No secrets go in `.env`.**
 3. **Secrets** ([runbook 02](docs/runbook/02-secretos-y-custodia.md)). Create `/etc/halsa/secretos/` (root:root
@@ -254,7 +254,7 @@ VPS    ─► halsa-recibir-despliegue: check sums ─► docker load ─► rsy
    - Configure SMTP in `halsa-pacientes` before opening the portal.
 6. **Data services:**
    ```bash
-   C="docker compose -f docker-compose.prod.yml"
+   C="podman compose -f docker-compose.prod.yml"
    $C up -d postgres redis antivirus seq
    $C exec -u postgres postgres pgbackrest --stanza=halsa stanza-create
    ```
@@ -289,7 +289,7 @@ its first release from the CI.
    - the build and all the tests;
    - the coverage gate (Domain and Application, `COBERTURA_MINIMA`);
    - `nginx -t`;
-   - `validar-despliegue` (shellcheck, `docker compose config` and actionlint).
+   - `validar-despliegue` (shellcheck, `podman compose config` and actionlint).
 2. Approve the `Desplegar en producción` job. The version is `v1.0.<run_number>`.
    - `localhost/halsa-postgres` is only rebuilt and shipped when `deploy/postgres/` changed, or with *Run workflow* →
      `incluir_postgres`.
@@ -299,7 +299,7 @@ its first release from the CI.
    compatible (expand/contract). The same goes for changes to `deploy/`.
 
 **Manual rollback**, as root on the VPS, to any tag still loaded (the last 5):
-`docker image ls localhost/halsa-backend`, then `/opt/halsa/deploy/scripts/desplegar.sh v1.0.<n>`.
+`podman image ls localhost/halsa-backend`, then `/opt/halsa/deploy/scripts/desplegar.sh v1.0.<n>`.
 
 **If NPM is recreated** (upgrade, restart), it loses the `halsa_borde` network and Halsa answers 502. Run
 `./scripts/sincronizar-npm.sh`. It's idempotent, and never applies a config that fails `nginx -t`.
@@ -311,7 +311,7 @@ it**.
 
 ### `/opt/halsa/deploy/.env` (from `deploy/.env.ejemplo`)
 
-The file is root:root `0600`. `docker compose` reads it with `--env-file`, and the scripts in the last column source
+The file is root:root `0600`. `podman compose` reads it with `--env-file`, and the scripts in the last column source
 it. Releases never overwrite it.
 
 | Variable | What it is | Example | Read by |
@@ -323,12 +323,12 @@ it. Releases never overwrite it.
 | `HALSA_POSTGRES_TAG` | The tag of `localhost/halsa-postgres`. | `17` | compose |
 | `HALSA_KEYCLOAK_URL` | Public URL of the shared Keycloak. The issuers are `<URL>/realms/halsa` and `<URL>/realms/halsa-pacientes`. | `https://auth.edcastdev.com` | compose |
 | `HALSA_KEYCLOAK_HOST` | Keycloak's host. `api` and `bff` have no egress, so they resolve it to NPM. | `auth.edcastdev.com` | compose |
-| `HALSA_KEYCLOAK_CONTENEDOR` | Keycloak's container, for `kcadm` through `docker exec`. | `keykloack-keycloak-1` | `importar-realms.sh` |
+| `HALSA_KEYCLOAK_CONTENEDOR` | Keycloak's container, for `kcadm` through `podman exec`. | `keykloack-keycloak-1` | `importar-realms.sh` |
 | `HALSA_UPSTREAM_KEYCLOAK` | How NPM reaches Keycloak: the same upstream as the `auth.edcastdev.com` proxy host. | `http://keykloack-keycloak-1:8080` | `sincronizar-npm.sh` |
 | `HALSA_NPM_CONTENEDOR` | NPM's container. | `npm-app-1` | `sincronizar-npm.sh` |
 | `HALSA_NPM_DATA` | The host folder mounted as NPM's `/data`. | `/opt/npm/data` | `sincronizar-npm.sh` |
 | `HALSA_NPM_IP` | NPM's fixed IP on `halsa_borde`, the only trusted proxy of the API and the BFF. | `172.30.0.10` | compose, `sincronizar-npm.sh` |
-| `HALSA_SECRETOS` | The folder with the Docker secrets, one file each (see below). | `/etc/halsa/secretos` | compose, `importar-realms.sh`, `restaurar-prueba.sh` |
+| `HALSA_SECRETOS` | The folder with the secrets, one file each (see below). | `/etc/halsa/secretos` | compose, `importar-realms.sh`, `restaurar-prueba.sh` |
 | `HALSA_PKI_PUBLICADA` | The public chain and CRL of the integrations CA. | `/etc/halsa/pki/publicar` | compose, `sincronizar-npm.sh` |
 | `HALSA_BACKOFFICE_URL` | Origin of the backoffice SPA: the redirect URI and web origin of `halsa-backoffice`. | `https://halsa-backoffice.edcastdev.com` | `importar-realms.sh` |
 | `HALSA_KEK_ID` | Id of the current clinical KEK (rotation: runbook 05). | `local:v1` | compose |
@@ -372,7 +372,7 @@ In *Settings → Environments → `produccion`*, set a required reviewer and *Se
 
 ### Secret files in `/etc/halsa/secretos/` (not variables)
 
-These files are root:root `0600`, hold one value each, and are mounted as Docker secrets. They are excluded from
+These files are root:root `0600`, hold one value each, and are mounted as secrets. They are excluded from
 every backup ([runbook 02](docs/runbook/02-secretos-y-custodia.md)):
 
 `halsa_kek`, `halsa_sello`, `pg_postgres_password`, `pg_owner_password`, `pg_app_password`, `pg_clinico_password`,
@@ -399,7 +399,7 @@ certificate** (RFC 8705, `cnf.x5t#S256`). The API rejects a token presented with
 - **Order:** run `bash docker/nginx-dev/generar-pki.sh` **before** Keycloak's first start. It writes the `int-*`
   certificates to `docker/nginx-dev/pki/keycloak.env`, and the realm import reads them.
 - **Re-importing** (after regenerating the PKI or editing the realm files):
-  `docker compose rm -sf halsa.backend.identity && docker volume rm halsabackend_halsa.backend-identity`. The volume
+  `podman compose rm -sf halsa.backend.identity && podman volume rm halsabackend_halsa.backend-identity`. The volume
   prefix is `halsabackend`: Compose drops the dot from the project name.
 - **Certificate-bound tokens:** they need the three `--spi-x509cert-lookup--*` options, already in
   `docker-compose.yml`. Request the token through `https://integraciones.localhost/auth/...`

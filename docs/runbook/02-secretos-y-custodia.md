@@ -61,7 +61,7 @@ Así nunca tocan el disco del contenedor ni un volumen.
 1. **pgBackRest** respalda solo `PGDATA` (`/var/lib/postgresql/data` dentro del volumen `postgres-datos`). Los secretos
    no están ahí. Verificación (criterio *staging*):
    ```bash
-   docker compose -f /opt/halsa/deploy/docker-compose.prod.yml exec -u postgres postgres \
+   podman compose -f /opt/halsa/deploy/docker-compose.prod.yml exec -u postgres postgres \
      pgbackrest --stanza=halsa repo-ls --recurse | grep -Ei 'secret|halsa_kek|sello|password' \
      && echo "FALLO" || echo "OK: ningún secreto en el repositorio"
    ```

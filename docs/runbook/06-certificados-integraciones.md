@@ -82,8 +82,8 @@ contraseña va por `KC_CLI_PASSWORD`, nunca en la línea de comandos:
 ```bash
 K=keykloack-keycloak-1; CFG=/tmp/kcadm-halsa.config
 read -rp "Admin de master: " U; read -rsp "Contraseña: " P; echo
-KC_CLI_PASSWORD="$P" docker exec -e KC_CLI_PASSWORD $K /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user "$U" --config $CFG; unset P
-kc() { docker exec -i $K /opt/keycloak/bin/kcadm.sh "$@" --config $CFG; }
+KC_CLI_PASSWORD="$P" podman exec -e KC_CLI_PASSWORD $K /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user "$U" --config $CFG; unset P
+kc() { podman exec -i $K /opt/keycloak/bin/kcadm.sh "$@" --config $CFG; }
 ```
 
 ```bash
@@ -115,7 +115,7 @@ kc create clients -r halsa -f - <<EOF
 EOF
 # Rol del service account y scope mapping de halsa-api:
 kc add-roles -r halsa --uusername service-account-int-arl-arl_x --cclientid halsa-api --rolename integracion-arl
-docker exec $K rm -f $CFG          # al terminar
+podman exec $K rm -f $CFG          # al terminar
 ```
 
 Para una IPS: `int-ips-<REPS>`, con el mapper `ips_id` en lugar de `tenant_id` y el rol `integracion-ips`.

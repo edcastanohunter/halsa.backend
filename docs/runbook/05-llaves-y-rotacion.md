@@ -23,7 +23,7 @@ Los certificados de `halsa-api`, `halsa-integraciones` y `halsa-pacientes` los e
 (alerta `TlsPorVencer`, o DNS o puerto 80 bloqueados):
 
 1. En NPM → *SSL Certificates*, el certificado del host → *Renew Now*. El error (DNS, puerto 80, rate limit de Let's
-   Encrypt) aparece ahí y en `docker logs <npm>`.
+   Encrypt) aparece ahí y en `podman logs <npm>`.
 2. `curl -I http://halsa-api.edcastdev.com/.well-known/acme-challenge/prueba` debe llegar a NPM (un `404` de NPM, no
    un *timeout*).
 3. Si el puerto 80 está bloqueado por un tercero, usar el *DNS challenge* de NPM con el proveedor de DNS.
@@ -37,7 +37,7 @@ Sin cortar el servicio, un rol a la vez:
 ```bash
 cd /etc/halsa/secretos && umask 077
 openssl rand -base64 32 | tr -d '\n/+=' > pg_app_password.nuevo
-C="docker compose -f /opt/halsa/deploy/docker-compose.prod.yml"
+C="podman compose -f /opt/halsa/deploy/docker-compose.prod.yml"
 $C exec -T -u postgres postgres psql -c "ALTER ROLE halsa_app PASSWORD '$(cat pg_app_password.nuevo)';"
 mv pg_app_password.nuevo pg_app_password
 $C up -d --force-recreate api worker          # releen el secreto al arrancar
@@ -55,7 +55,7 @@ están en el AOF.
 1. En la consola del Keycloak compartido: realm `halsa-pacientes` → client `halsa-bff-paciente` → Credentials →
    *Regenerate*.
 2. Copiar el valor a `/etc/halsa/secretos/kc_bff_secret`.
-3. `docker compose up -d --force-recreate bff`.
+3. `podman compose up -d --force-recreate bff`.
 
 ## KEK (SPEC 03)
 

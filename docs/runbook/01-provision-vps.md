@@ -9,8 +9,8 @@
 
 | | |
 | --- | --- |
-| VPS | El actual, con Docker. Para Halsa: 4 vCPU y 8 GB de RAM libres (los valores de `deploy/postgres/postgresql.conf` asumen 8 GB), y 100 GB de disco |
-| NPM | Corriendo en Docker en el mismo host. Versión verificada: **2.16** (ver "Actualizar NPM") |
+| VPS | El actual, con Podman. Para Halsa: 4 vCPU y 8 GB de RAM libres (los valores de `deploy/postgres/postgresql.conf` asumen 8 GB), y 100 GB de disco |
+| NPM | Corriendo en Podman en el mismo host. Versión verificada: **2.16** (ver "Actualizar NPM") |
 | Keycloak | `keykloack-keycloak-1` (26.7), publicado por NPM en `auth.edcastdev.com` |
 | DNS | `halsa-api`, `halsa-integraciones` y `halsa-pacientes` `.edcastdev.com` → IP pública del VPS |
 | Fuera del VPS | bucket S3 de backups (runbook 04), bucket WORM (SPEC 11), monitor externo y heartbeat (runbook 07) |
@@ -28,9 +28,9 @@ echo 'kernel.core_pattern=|/bin/false' > /etc/sysctl.d/90-halsa-nocore.conf
 sysctl --system
 ```
 
-No hay registry ni `docker login` (SPEC 14): el CI construye las imágenes y las carga en el VPS por SSH.
+No hay registry ni `podman login` (SPEC 14): el CI construye las imágenes y las carga en el VPS por SSH.
 
-> **Puertos:** Halsa no publica ninguno (`docker compose ps` lo verifica en el paso 9). El 80 y el 443 son de NPM.
+> **Puertos:** Halsa no publica ninguno (`podman compose ps` lo verifica en el paso 9). El 80 y el 443 son de NPM.
 
 ## 2. Código de despliegue
 
@@ -42,7 +42,9 @@ desde una máquina con el repo, del mismo commit que se va a desplegar:
 
 ```bash
 # En tu máquina:
-git archive main deploy/ | ssh root@<vps> 'mkdir -p /opt/halsa && tar -x --no-same-owner -C /opt/halsa'
+git archive main deploy/ | ssh root@<vps> 'mkdir -p /opt/halsa && tar -xf - --no-same-owner -C /opt/halsa'
+
+git archive main deploy/ | ssh alcast1 'mkdir -p /opt/halsa && tar -xf - --no-same-owner -C /opt/halsa'
 
 # En el VPS:
 cd /opt/halsa/deploy
@@ -53,8 +55,8 @@ $EDITOR .env
 En `.env`, además de hosts, buckets, heartbeat y hash de Seq:
 
 ```bash
-docker ps --format '{{.Names}}' | grep -i -E 'npm|proxy'        # → HALSA_NPM_CONTENEDOR
-docker inspect <npm> -f '{{range .Mounts}}{{.Source}} → {{.Destination}}{{println}}{{end}}' | grep ' /data$'
+podman ps --format '{{.Names}}' | grep -i -E 'npm|proxy'        # → HALSA_NPM_CONTENEDOR
+podman inspect <npm> -f '{{range .Mounts}}{{.Source}} → {{.Destination}}{{println}}{{end}}' | grep ' /data$'
                                                                   # → HALSA_NPM_DATA (la carpeta del host)
 ```
 
@@ -90,7 +92,7 @@ Sigue el **runbook 06**, "Instalar la intermedia en el VPS". Al final existen `/
 ## 6. Primer arranque de Halsa
 
 ```bash
-cd /opt/halsa/deploy && C="docker compose -f docker-compose.prod.yml"
+cd /opt/halsa/deploy && C="podman compose -f docker-compose.prod.yml"
 $C up -d postgres redis antivirus seq
 # PostgreSQL crea los roles la primera vez (initdb/01-roles.sh).
 $C exec -u postgres postgres pgbackrest --stanza=halsa stanza-create
@@ -145,7 +147,7 @@ Al guardar, NPM valida y el host debe quedar **Online**. Si queda *Offline*, el 
 ## 9. Verificación (criterios *staging* de la SPEC 13)
 
 ```bash
-cd /opt/halsa/deploy && C="docker compose -f docker-compose.prod.yml"
+cd /opt/halsa/deploy && C="podman compose -f docker-compose.prod.yml"
 
 # Halsa no publica puertos.
 $C ps --format '{{.Service}} {{.Ports}}' | grep -- '->' && echo "FALLO: un servicio de Halsa publica puertos"

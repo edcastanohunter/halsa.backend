@@ -18,11 +18,11 @@
    3. ejecuta `ssh halsa-deploy@<vps> "desplegar v1.0.<n>" < paquete.tar`.
 4. En el VPS, `halsa-recibir-despliegue` (`deploy/scripts/recibir-despliegue.sh`):
    1. verifica el comando, el tamaño y las sumas; si algo falla, sale con `1` **sin tocar nada**;
-   2. `docker load` de las imágenes;
+   2. `podman load` de las imágenes;
    3. sincroniza `/opt/halsa/deploy` con `rsync --delete`, sin tocar `.env`;
    4. ejecuta `desplegar.sh v1.0.<n>`:
       1. verifica que las imágenes del tag estén cargadas;
-      2. `docker compose run --rm migrador`, que sale con `0` o `1`. Si falla, no se toca nada más;
+      2. `podman compose run --rm migrador`, que sale con `0` o `1`. Si falla, no se toca nada más;
       3. `up -d api worker bff`;
       4. espera hasta 120 s a que `/health` de `api` y `worker` esté en `Healthy`;
       5. sincroniza la configuración de borde con NPM (`sincronizar-npm.sh`, que valida con `nginx -t` antes de recargar);
@@ -42,7 +42,7 @@ rechazar los anteriores.
 `desplegar.sh` vuelve a cualquier tag que siga cargado en el VPS. Como root:
 
 ```bash
-docker image ls localhost/halsa-backend                 # tags disponibles (los 5 más recientes)
+podman image ls localhost/halsa-backend                 # tags disponibles (los 5 más recientes)
 /opt/halsa/deploy/scripts/desplegar.sh v1.0.41
 ```
 
@@ -59,8 +59,8 @@ El CI solo **carga** `localhost/halsa-postgres:17` cuando cambia `deploy/postgre
 `postgres`. Para aplicarla, en una ventana de mantenimiento (corta las conexiones y el archivado unos segundos):
 
 ```bash
-cd /opt/halsa/deploy && C="docker compose -f docker-compose.prod.yml"
-docker image ls localhost/halsa-postgres                # 17 y 17-v1.0.<n>
+cd /opt/halsa/deploy && C="podman compose -f docker-compose.prod.yml"
+podman image ls localhost/halsa-postgres                # 17 y 17-v1.0.<n>
 $C up -d postgres
 $C exec -u postgres postgres pgbackrest --stanza=halsa check
 ```
@@ -76,12 +76,12 @@ actual="$(grep -E '^HALSA_TAG=' .env | cut -d= -f2)"
 org="$(grep -E '^HALSA_GHCR_ORG=' .env | cut -d= -f2)"
 
 # 1. Las imágenes en ejecución, con el nombre nuevo.
-docker tag "ghcr.io/$org/halsa-backend:$actual"      "localhost/halsa-backend:$actual"
-docker tag "ghcr.io/$org/halsa-bff-paciente:$actual" "localhost/halsa-bff-paciente:$actual"
-docker tag "ghcr.io/$org/halsa-postgres:17"          "localhost/halsa-postgres:17"
+podman tag "ghcr.io/$org/halsa-backend:$actual"      "localhost/halsa-backend:$actual"
+podman tag "ghcr.io/$org/halsa-bff-paciente:$actual" "localhost/halsa-bff-paciente:$actual"
+podman tag "ghcr.io/$org/halsa-postgres:17"          "localhost/halsa-postgres:17"
 
 # 2. Sin registry.
-docker logout ghcr.io
+podman logout ghcr.io
 sed -i '/^HALSA_GHCR_ORG=/d' .env
 
 # 3. Sin clon de git: el CI sincroniza deploy/ desde ahora (.env queda donde está).
@@ -90,7 +90,7 @@ rm -rf /opt/halsa/.git
 
 Después, el runbook 01, paso 10 (usuario `halsa-deploy`, sudoers, llave y environment `produccion`), y el primer
 despliegue desde GitHub. Cuando `localhost/halsa-*` esté en uso, las imágenes `ghcr.io/...` se pueden borrar
-(`docker image rm`), y los paquetes de GHCR desde GitHub (*Packages*), a mano.
+(`podman image rm`), y los paquetes de GHCR desde GitHub (*Packages*), a mano.
 
 ## Migraciones: solo hacia adelante
 
@@ -107,7 +107,7 @@ despliegue (runbook 04), con la pérdida de los datos posteriores que eso implic
 
 ## Rollback fallido
 
-1. `docker compose -f docker-compose.prod.yml logs --since 15m api worker`.
+1. `podman compose -f docker-compose.prod.yml logs --since 15m api worker`.
 2. Si es configuración (`ProductionGuard: ...` en el log y exit `1`), corregir `.env` o los secretos y repetir.
 3. Si es el esquema: detener `api` y `worker` (NPM responde 502), avisar (runbook 07, "Comunicación") y decidir
    entre corregir hacia adelante (un `vX.Y.Z+1` con el arreglo) o el PITR del runbook 04.
@@ -130,7 +130,7 @@ la condición:
 
 ## NPM se recreó (actualización, reinicio) y Halsa responde 502
 
-`docker network connect` no sobrevive a la recreación del contenedor de NPM: NPM pierde la red `halsa_borde`. El
+`podman network connect` no sobrevive a la recreación del contenedor de NPM: NPM pierde la red `halsa_borde`. El
 monitor externo alerta en 2 minutos. Para recuperarlo:
 
 ```bash
@@ -158,13 +158,13 @@ Seq no se publica. Para su interfaz, un proxy efímero en el loopback del VPS y 
 
 ```bash
 # En el VPS:
-docker run --rm -d --name seq-tunel -p 127.0.0.1:8082:80 alpine/socat tcp-listen:80,fork,reuseaddr tcp-connect:seq:80
-docker network connect halsa_app seq-tunel
+podman run --rm -d --name seq-tunel -p 127.0.0.1:8082:80 alpine/socat tcp-listen:80,fork,reuseaddr tcp-connect:seq:80
+podman network connect halsa_app seq-tunel
 # En tu equipo:
 ssh -N -L 8082:127.0.0.1:8082 <usuario>@<vps>      # → http://localhost:8082
 # Al terminar, en el VPS:
-docker rm -f seq-tunel
+podman rm -f seq-tunel
 ```
 
-> `halsa_app` es interna y Docker no publica puertos desde una red interna: el proxy efímero arranca en la red por
+> `halsa_app` es interna y Podman no publica puertos desde una red interna: el proxy efímero arranca en la red por
 > defecto (que publica solo en el loopback del VPS) y luego se une a `halsa_app`. Existe solo mientras dura la sesión.
