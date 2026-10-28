@@ -251,7 +251,7 @@ Se ejecuta en el VPS. Es idempotente y lo llaman `desplegar.sh` y el cron de la 
 | `bff` | `ghcr.io/<org>/halsa-bff-paciente:${HALSA_TAG}` | `borde`, `app` | Resuelve `auth.edcastdev.com` a la IP de NPM. |
 | `postgres` | `ghcr.io/<org>/halsa-postgres` (`deploy/postgres/Dockerfile`, publicada por `release.yml`) | `datos`, `egreso` | `hostssl` en `pg_hba`. `archive_command` de pgBackRest. Lleva `pgaudit`. Solo la base `halsa` y sus roles. |
 | `redis` | `redis:7-alpine` | `app` | `appendonly yes` y `requirepass` desde un secreto. |
-| `antivirus` | `clamav/clamav:1.4` | `app`, `egreso` | Volumen persistente de firmas (`freshclam` necesita egreso). |
+| `antivirus` | `clamav/clamav-debian:1.4` | `app`, `egreso` | Volumen persistente de firmas (`freshclam` necesita egreso). |
 | `seq` | `datalust/seq` | `app`, `egreso` | La interfaz solo por túnel SSH. Las alertas salen por SMTP. |
 
 - **Redes:** `borde` (172.30.0.0/24), `app` y `datos` son `internal: true`. Solo `egreso` sale a internet.

@@ -10,6 +10,7 @@
 | | |
 | --- | --- |
 | VPS | El actual, con Podman ≥ 5.0. Para Halsa: 4 vCPU y 8 GB de RAM libres (los valores de `deploy/postgres/postgresql.conf` asumen 8 GB), y 100 GB de disco |
+| Arquitectura | **arm64** (`uname -m` → `aarch64`). El CI construye las imágenes de Halsa para `linux/arm64` (`PLATAFORMA` en `ci.yml`), y las públicas (redis, `clamav/clamav-debian`, seq) son multiarquitectura. Si cambia de VPS a amd64, cambia `PLATAFORMA` |
 | Usuario | **`edhunter`**, el dueño de NPM. Halsa corre **rootless** con sus Quadlets (`deploy-quadlets/`): las redes de Podman son por usuario, y solo así NPM alcanza `halsa_borde` sin publicar puertos (deploy-quadlets/README) |
 | NPM | Rootless como `edhunter`, en una red **bridge** (no `pasta`). Versión verificada: **2.16** (ver "Actualizar NPM") |
 | Keycloak | `keykloack-keycloak-1` (26.7), publicado por NPM en `auth.edcastdev.com` |
@@ -106,10 +107,25 @@ Sigue el **runbook 06**, "Instalar la intermedia en el VPS". Al final existen `~
 
 Si el VPS ya corría Halsa con el compose como root, antes sigue el runbook 03, "Transición a rootless".
 
-`instalar.sh` necesita `localhost/halsa-postgres` en el almacén de `edhunter`, y la imagen solo llega con el CI. La
-primera vez: configura el paso 10 y lanza el workflow a mano (GitHub → *Actions* → *CI* → *Run workflow* en `main`,
-con `incluir_postgres`) y aprueba `produccion`. Ese despliegue carga las imágenes y sincroniza `deploy/`, y termina en
-`FALLO: … faltan los Quadlets de Halsa`. Es lo esperado: `desplegar.sh` no hace nada sin ellos.
+`instalar.sh` necesita `localhost/halsa-postgres` en el almacén de `edhunter`. No hay registry: esa imagen (y las de
+api y bff) solo las construye el CI y las envía por SSH (paso 10). Un push normal **no** la incluye, porque el CI
+solo construye `halsa-postgres` cuando cambia `deploy/postgres/`. Por eso la primera vez se lanza el workflow a mano:
+
+1. Configura el paso 10 (usuario `halsa-deploy`, sudoers y secretos del environment `produccion`).
+2. GitHub → *Actions* → **CI** → *Run workflow* → rama `main`, marca **`incluir_postgres`** → *Run workflow*.
+3. Cuando el job **Desplegar en producción** pida aprobación: *Review deployments* → `produccion` → *Approve*.
+4. El job construye las tres imágenes para `linux/arm64` y las envía. `recibir-despliegue.sh` las carga en el almacén
+   de `edhunter` y sincroniza `~/halsa/deploy`. El job termina **en rojo** con
+   `FALLO: … faltan los Quadlets de Halsa`. Es lo esperado: `desplegar.sh` no arranca nada sin las unidades.
+5. Comprueba en el VPS que llegaron y que son arm64:
+   ```bash
+   podman image ls localhost/halsa-*        # halsa-postgres:17 y 17-v1.0.<n>, halsa-backend:v1.0.<n>, halsa-bff-paciente:v1.0.<n>
+   podman image inspect --format '{{.Architecture}}' localhost/halsa-postgres:17    # arm64
+   ```
+
+Si `instalar.sh` dice `… es amd64 y este VPS es arm64`, son imágenes de un CI anterior al cambio de arquitectura.
+Repite los pasos 2–4: `podman load` reemplaza el tag `halsa-postgres:17`, y api/bff llegan con el tag del run nuevo.
+Las capas viejas quedan sin tag; bórralas con `podman image prune`.
 
 ```bash
 bash ~/halsa/deploy-quadlets/instalar.sh

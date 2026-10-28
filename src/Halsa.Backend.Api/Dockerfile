@@ -8,7 +8,9 @@ WORKDIR /app
 EXPOSE 8080
 USER $APP_UID
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# The SDK runs on the builder's architecture: the output (UseAppHost=false) is portable IL, so ci.yml builds the
+# arm64 image without emulating the compiler.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 

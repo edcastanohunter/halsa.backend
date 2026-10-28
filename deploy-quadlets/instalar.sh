@@ -112,9 +112,13 @@ info "3/4 copiando a $DESTINO, recargando systemd --user y descargando las imág
 install -d -m 0700 "$DESTINO"
 install -m 0644 "$DIR"/*.network "$DIR"/*.volume "$DIR"/*.container "$DESTINO/"
 systemctl --user daemon-reload
-podman pull -q docker.io/library/redis:7-alpine docker.io/clamav/clamav:1.4 "docker.io/datalust/seq:$HALSA_SEQ_TAG" >/dev/null
+podman pull -q docker.io/library/redis:7-alpine docker.io/clamav/clamav-debian:1.4 "docker.io/datalust/seq:$HALSA_SEQ_TAG" >/dev/null
 podman image exists "localhost/halsa-postgres:$HALSA_POSTGRES_TAG" \
     || die "falta localhost/halsa-postgres:$HALSA_POSTGRES_TAG: la carga el CI (workflow_dispatch con postgres)"
+arquitectura="$(podman info --format '{{.Host.Arch}}')"
+imagen_arq="$(podman image inspect --format '{{.Architecture}}' "localhost/halsa-postgres:$HALSA_POSTGRES_TAG")"
+[[ "$imagen_arq" == "$arquitectura" ]] \
+    || die "localhost/halsa-postgres:$HALSA_POSTGRES_TAG es $imagen_arq y este VPS es $arquitectura: vuelve a lanzar el CI con postgres"
 
 # ── 4. Infraestructura ───────────────────────────────────────────────────────
 info "4/4 arrancando postgres (hasta healthy), redis, antivirus y seq"

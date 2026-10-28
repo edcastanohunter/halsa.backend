@@ -1,6 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # halsa-antivirus — el servicio "antivirus" de deploy/docker-compose.prod.yml como Quadlet (SPEC 07 y 13).
-# Egreso solo para freshclam (firmas).
+# Egreso solo para freshclam (firmas). clamav-debian es la misma ClamAV que clamav/clamav, pero multiarquitectura:
+# clamav/clamav solo publica amd64 y el VPS es arm64.
 # ─────────────────────────────────────────────────────────────────────────────
 [Unit]
 Description=Halsa ClamAV
@@ -8,7 +9,7 @@ Description=Halsa ClamAV
 [Container]
 ContainerName=halsa-antivirus
 NetworkAlias=antivirus
-Image=docker.io/clamav/clamav:1.4
+Image=docker.io/clamav/clamav-debian:1.4
 NoNewPrivileges=true
 Ulimit=core=0
 LogDriver=journald

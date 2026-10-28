@@ -15,16 +15,16 @@ por NPM sin publicar puertos, y la SPEC 13 prohíbe publicarlos.
 
 Todo vive en el home del usuario; las unidades lo nombran con `%h`, así que no dependen de su nombre.
 
-| Ruta | Qué | Permisos |
-| --- | --- | --- |
-| `~/halsa/deploy/` | `deploy/` del repo; lo sincroniza el CI con `rsync --delete` | del usuario |
-| `~/halsa/deploy/.env` | el `.env` de producción (nunca lo toca el CI) | 0600 |
-| `~/halsa/deploy-quadlets/` | esta carpeta (el CI no la envía) | del usuario |
-| `~/.config/halsa/secretos/` | un archivo por secreto (runbook 02) | 0700 / 0600 |
-| `~/.config/halsa/pki/` | la intermedia, `publicar/` y `clientes/` (runbook 06) | 0700; llaves 0600 |
-| `~/.config/containers/systemd/halsa-*` | las unidades instaladas | 0644 |
-| `~/.local/share/containers/storage/volumes/halsa_*` | los volúmenes (datos de postgres, adjuntos, …) | de Podman |
-| `~/.local/state/halsa/entregas/` | la zona de recepción de `recibir-despliegue.sh` | 0700 |
+| Ruta                                                | Qué                                                          | Permisos          |
+| --------------------------------------------------- | ------------------------------------------------------------ | ----------------- |
+| `~/halsa/deploy/`                                   | `deploy/` del repo; lo sincroniza el CI con `rsync --delete` | del usuario       |
+| `~/halsa/deploy/.env`                               | el `.env` de producción (nunca lo toca el CI)                | 0600              |
+| `~/halsa/deploy-quadlets/`                          | esta carpeta (el CI no la envía)                             | del usuario       |
+| `~/.config/halsa/secretos/`                         | un archivo por secreto (runbook 02)                          | 0700 / 0600       |
+| `~/.config/halsa/pki/`                              | la intermedia, `publicar/` y `clientes/` (runbook 06)        | 0700; llaves 0600 |
+| `~/.config/containers/systemd/halsa-*`              | las unidades instaladas                                      | 0644              |
+| `~/.local/share/containers/storage/volumes/halsa_*` | los volúmenes (datos de postgres, adjuntos, …)               | de Podman         |
+| `~/.local/state/halsa/entregas/`                    | la zona de recepción de `recibir-despliegue.sh`              | 0700              |
 
 En rootless, el root del contenedor **es** el usuario: los secretos deben ser suyos con 0600 (con `root:root` el
 contenedor no podría leerlos). **Excluye `~/.config/halsa/` de cualquier backup o sincronización del home** (runbook
@@ -36,31 +36,31 @@ reemplazado el postgres que ya corre en el VPS). Dentro de las redes de Halsa co
 
 ## Archivos
 
-| Archivo | Del compose | Notas |
-| --- | --- | --- |
-| `halsa-borde.network` | `borde` | interna, 172.30.0.0/24; automáticas solo en .128/25 (NPM usa la .10) |
-| `halsa-app.network`, `halsa-datos.network` | `app`, `datos` | internas, 172.30.1.0/24 y 172.30.2.0/24 (la que admite `pg_hba.conf`) |
-| `halsa-egreso.network` | `egreso` | con salida a internet, 172.30.3.0/24 |
-| `halsa-*.volume` (5) | `volumes:` | mismos nombres que el compose (`halsa_postgres-datos`, …) |
-| `halsa-postgres.container`, `halsa-redis.container` | `postgres`, `redis` | `Notify=healthy` (el `service_healthy` del compose) |
-| `halsa-antivirus.container`, `halsa-seq.container` | `antivirus`, `seq` | |
-| `halsa-api.container`, `halsa-worker.container`, `halsa-bff.container` | `api`, `worker`, `bff` | imagen `:${HALSA_TAG}` |
-| `halsa-migrador.container` | `migrador` (perfil `migracion`) | `Type=oneshot`, sin `[Install]`: nunca corre al arrancar |
-| `instalar.sh` | | verifica requisitos, valida con el generador, instala y arranca la infraestructura |
-| `migrar.sh` | `podman compose run --rm migrador` | migraciones a mano |
+| Archivo                                                                | Del compose                        | Notas                                                                              |
+| ---------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `halsa-borde.network`                                                  | `borde`                            | interna, 172.30.0.0/24; automáticas solo en .128/25 (NPM usa la .10)               |
+| `halsa-app.network`, `halsa-datos.network`                             | `app`, `datos`                     | internas, 172.30.1.0/24 y 172.30.2.0/24 (la que admite `pg_hba.conf`)              |
+| `halsa-egreso.network`                                                 | `egreso`                           | con salida a internet, 172.30.3.0/24                                               |
+| `halsa-*.volume` (5)                                                   | `volumes:`                         | mismos nombres que el compose (`halsa_postgres-datos`, …)                          |
+| `halsa-postgres.container`, `halsa-redis.container`                    | `postgres`, `redis`                | `Notify=healthy` (el `service_healthy` del compose)                                |
+| `halsa-antivirus.container`, `halsa-seq.container`                     | `antivirus`, `seq`                 |                                                                                    |
+| `halsa-api.container`, `halsa-worker.container`, `halsa-bff.container` | `api`, `worker`, `bff`             | imagen `:${HALSA_TAG}`                                                             |
+| `halsa-migrador.container`                                             | `migrador` (perfil `migracion`)    | `Type=oneshot`, sin `[Install]`: nunca corre al arrancar                           |
+| `instalar.sh`                                                          |                                    | verifica requisitos, valida con el generador, instala y arranca la infraestructura |
+| `migrar.sh`                                                            | `podman compose run --rm migrador` | migraciones a mano                                                                 |
 
 ### Cómo se tradujo el compose
 
-| Compose | Quadlet |
-| --- | --- |
-| `${VAR}` del `.env` | `[Service] EnvironmentFile=%h/halsa/deploy/.env`: systemd expande `${VAR}` en `Image=`, `Environment=` y `AddHost=` al arrancar. **Sin defaults**: `instalar.sh` exige las variables |
-| `entrypoint` + `command` | `Entrypoint=/bin/sh` + `Exec=`: la imagen .NET tiene `ENTRYPOINT ["dotnet", ...]` y `Exec=` solo le agregaría argumentos |
-| `secrets:` | `Volume=%h/.config/halsa/secretos/<s>:/run/secrets/<s>:ro` |
-| `extra_hosts` (Keycloak por NPM) | `AddHost=${HALSA_KEYCLOAK_HOST}:${HALSA_NPM_IP}` |
-| `depends_on: service_healthy` | `Notify=healthy` en postgres/redis + `After=`/`Requires=` |
-| `restart: unless-stopped` | `Restart=always` (systemd no conoce `unless-stopped`; `systemctl stop` no reinicia) |
-| `logging: json-file` | `LogDriver=journald`: `journalctl --user -u` |
-| `$$` en `command` | igual (`$$` → `$`), y además `%%` para un `%` literal: systemd expande `%s` (el shell del usuario) |
+| Compose                          | Quadlet                                                                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `${VAR}` del `.env`              | `[Service] EnvironmentFile=%h/halsa/deploy/.env`: systemd expande `${VAR}` en `Image=`, `Environment=` y `AddHost=` al arrancar. **Sin defaults**: `instalar.sh` exige las variables |
+| `entrypoint` + `command`         | `Entrypoint=/bin/sh` + `Exec=`: la imagen .NET tiene `ENTRYPOINT ["dotnet", ...]` y `Exec=` solo le agregaría argumentos                                                             |
+| `secrets:`                       | `Volume=%h/.config/halsa/secretos/<s>:/run/secrets/<s>:ro`                                                                                                                           |
+| `extra_hosts` (Keycloak por NPM) | `AddHost=${HALSA_KEYCLOAK_HOST}:${HALSA_NPM_IP}`                                                                                                                                     |
+| `depends_on: service_healthy`    | `Notify=healthy` en postgres/redis + `After=`/`Requires=`                                                                                                                            |
+| `restart: unless-stopped`        | `Restart=always` (systemd no conoce `unless-stopped`; `systemctl stop` no reinicia)                                                                                                  |
+| `logging: json-file`             | `LogDriver=journald`: `journalctl --user -u`                                                                                                                                         |
+| `$$` en `command`                | igual (`$$` → `$`), y además `%%` para un `%` literal: systemd expande `%s` (el shell del usuario)                                                                                   |
 
 ## Requisitos (una vez, con sudo)
 
@@ -99,6 +99,10 @@ despliegue). Para dejarlo fijo, en `npm.container`: `Network=halsa-borde.network
 ```bash
 # En tu máquina, del mismo commit que se va a desplegar:
 git archive main deploy/ deploy-quadlets/ | ssh edhunter@<vps> 'mkdir -p ~/halsa && tar -xf - -C ~/halsa'
+# git archive main deploy/ deploy-quadlets/ | ssh alcast1 'rm -rf ~/halsa && mkdir -p ~/halsa && tar -xf - -C ~/halsa'
+
+rsync -avz --delete --exclude='.env' deploy/ deploy-quadlets/ alcast1:~/halsa/
+
 
 # En el VPS, como edhunter (sin sudo):
 cd ~/halsa/deploy && cp .env.ejemplo .env && chmod 600 .env && $EDITOR .env
@@ -122,6 +126,7 @@ Son los valores de `deploy/.env.ejemplo`. Si el VPS corría Halsa con el compose
 secretos e imágenes es el runbook 03, "Transición a rootless".
 
 `instalar.sh`:
+
 1. **verifica** que no corra como root, linger, Podman ≥ 5, que `docker` sea Podman, el `.env` con todas las
    variables que el compose exige y las rutas de arriba, cada secreto que montan las unidades (del usuario, 0600), la
    PKI pública, que el compose de Halsa no esté corriendo (ni el de este usuario ni el de root) y que **ningún
@@ -129,7 +134,7 @@ secretos e imágenes es el runbook 03, "Transición a rootless".
 2. **valida** las unidades con el generador de Quadlet (`--user --dryrun`): si alguna no es válida, no copia nada;
 3. las copia a `~/.config/containers/systemd/`, ejecuta `systemctl --user daemon-reload` y descarga las imágenes
    públicas (la primera descarga de ClamAV no cabe en el timeout de arranque);
-4. arranca postgres (espera a *healthy*), redis, antivirus y seq.
+4. arranca postgres (espera a _healthy_), redis, antivirus y seq.
 
 Las unidades **no** se habilitan con `systemctl --user enable`: son generadas y systemd lo rechaza. Su `[Install]`
 (`WantedBy=default.target`) lo aplica el generador en cada `daemon-reload`. api, worker y bff los arranca
@@ -191,16 +196,16 @@ Desde una sesión con `sudo -u edhunter` o desde cron, exporta antes `XDG_RUNTIM
 
 Los runbooks 01–07 ya usan los Quadlets como `edhunter`. Para quien venga del compose como root:
 
-| Runbook | Compose | Quadlets |
-| --- | --- | --- |
-| 03, 07 | `$C ps` | `systemctl --user status 'halsa-*'` |
-| 03, 07 | `$C logs --since 30m api` | `journalctl --user -u halsa-api --since -30m` |
-| 07 | `$C stop antivirus` / `start` / `restart worker` | `systemctl --user stop halsa-antivirus` / `start` / `restart halsa-worker` |
-| 04 | `$C exec -T -u postgres postgres pgbackrest ...` | `podman exec -u postgres halsa-postgres pgbackrest ...` |
-| 04, 05 | `$C exec -T -u postgres postgres psql ...` | `podman exec -u postgres halsa-postgres psql ...` |
-| 05 | `$C up -d --force-recreate api worker` | `systemctl --user restart halsa-api halsa-worker` |
-| 02, 05 | `/etc/halsa/secretos` | `~/.config/halsa/secretos` |
-| 06 | `HALSA_PKI_DIR=/etc/halsa/pki` | `HALSA_PKI_DIR=~/.config/halsa/pki` |
+| Runbook | Compose                                          | Quadlets                                                                   |
+| ------- | ------------------------------------------------ | -------------------------------------------------------------------------- |
+| 03, 07  | `$C ps`                                          | `systemctl --user status 'halsa-*'`                                        |
+| 03, 07  | `$C logs --since 30m api`                        | `journalctl --user -u halsa-api --since -30m`                              |
+| 07      | `$C stop antivirus` / `start` / `restart worker` | `systemctl --user stop halsa-antivirus` / `start` / `restart halsa-worker` |
+| 04      | `$C exec -T -u postgres postgres pgbackrest ...` | `podman exec -u postgres halsa-postgres pgbackrest ...`                    |
+| 04, 05  | `$C exec -T -u postgres postgres psql ...`       | `podman exec -u postgres halsa-postgres psql ...`                          |
+| 05      | `$C up -d --force-recreate api worker`           | `systemctl --user restart halsa-api halsa-worker`                          |
+| 02, 05  | `/etc/halsa/secretos`                            | `~/.config/halsa/secretos`                                                 |
+| 06      | `HALSA_PKI_DIR=/etc/halsa/pki`                   | `HALSA_PKI_DIR=~/.config/halsa/pki`                                        |
 
 **Los cron pasan al crontab de `edhunter`** (`crontab -e`, sin la columna de usuario; runbooks 04 y 06). Un cron de
 root con `podman compose exec` no ve los contenedores rootless, y los backups fallarían en silencio.
@@ -242,13 +247,13 @@ llama: una CRL vencida, por ejemplo, hace que NPM rechace **todas** las integrac
 - cada semana, junto con el cron de la CRL (arriba);
 - en el equipo sin red, antes y después de la ceremonia anual de la raíz.
 
-| Qué | Dónde | Cómo se valida |
-| --- | --- | --- |
-| Raíz, intermedia, CRL y certificados cliente | `~/.config/halsa/pki` (VPS) y la bóveda (equipo sin red) | 1. `verificar-certificados.sh` |
-| Lo publicado en NPM y lo que lee el worker | `$HALSA_NPM_DATA/halsa-pki`, `~/.config/halsa/pki/publicar` | 2. |
-| mTLS de `halsa-integraciones` de punta a punta | NPM → API / Keycloak | 3. |
-| TLS público (Let's Encrypt, NPM) | `halsa-api`, `halsa-integraciones`, `halsa-pacientes` | 4. |
-| TLS de PostgreSQL | volumen `halsa_postgres-datos` | 5. |
+| Qué                                            | Dónde                                                       | Cómo se valida                 |
+| ---------------------------------------------- | ----------------------------------------------------------- | ------------------------------ |
+| Raíz, intermedia, CRL y certificados cliente   | `~/.config/halsa/pki` (VPS) y la bóveda (equipo sin red)    | 1. `verificar-certificados.sh` |
+| Lo publicado en NPM y lo que lee el worker     | `$HALSA_NPM_DATA/halsa-pki`, `~/.config/halsa/pki/publicar` | 2.                             |
+| mTLS de `halsa-integraciones` de punta a punta | NPM → API / Keycloak                                        | 3.                             |
+| TLS público (Let's Encrypt, NPM)               | `halsa-api`, `halsa-integraciones`, `halsa-pacientes`       | 4.                             |
+| TLS de PostgreSQL                              | volumen `halsa_postgres-datos`                              | 5.                             |
 
 ### 1. La PKI: `verificar-certificados.sh`
 
@@ -262,17 +267,17 @@ HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/verificar-certificados
 HALSA_PKI_DIR=/media/boveda/halsa-pki bash deploy/pki/verificar-certificados.sh /media/usb/intermedia.crt
 ```
 
-| Revisa | FALLO si | AVISO si |
-| --- | --- | --- |
-| `raiz.crt` | no es una CA autofirmada, o venció | vence en < 365 días (nueva CA, runbook 05) |
-| `raiz.crl` | no la firmó la raíz, o venció | vence en < 30 días (ceremonia anual) |
-| `raiz.key` | no está cifrada, o está junto a `intermedia.key` (la raíz en el VPS) | |
-| `intermedia.crt` | no verifica contra la raíz, la raíz la revocó, no tiene `pathlen:0`, o venció | vence en < 90 días (reemitir 3 meses antes) |
-| `intermedia.key` | no corresponde al certificado, o no es 0600 | |
-| `intermedia.crl` | no la firmó la intermedia, o venció | vence en < 48 h (la alerta `CrlPorVencer`) |
-| `publicar/` | la cadena o la CRL no son exactamente intermedia + raíz (lo que monta NPM) | |
-| `clientes/*.crt` | no verifica con la cadena y las dos CRL (`-crl_check_all`, como Nginx), sin `clientAuth`, CN ≠ `client_id`, o venció | vence en < 30 días; su `.key` sigue en el VPS |
-| todo PEM | | empieza con un BOM UTF-8 (lo guardó un editor) |
+| Revisa           | FALLO si                                                                                                             | AVISO si                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `raiz.crt`       | no es una CA autofirmada, o venció                                                                                   | vence en < 365 días (nueva CA, runbook 05)     |
+| `raiz.crl`       | no la firmó la raíz, o venció                                                                                        | vence en < 30 días (ceremonia anual)           |
+| `raiz.key`       | no está cifrada, o está junto a `intermedia.key` (la raíz en el VPS)                                                 |                                                |
+| `intermedia.crt` | no verifica contra la raíz, la raíz la revocó, no tiene `pathlen:0`, o venció                                        | vence en < 90 días (reemitir 3 meses antes)    |
+| `intermedia.key` | no corresponde al certificado, o no es 0600                                                                          |                                                |
+| `intermedia.crl` | no la firmó la intermedia, o venció                                                                                  | vence en < 48 h (la alerta `CrlPorVencer`)     |
+| `publicar/`      | la cadena o la CRL no son exactamente intermedia + raíz (lo que monta NPM)                                           |                                                |
+| `clientes/*.crt` | no verifica con la cadena y las dos CRL (`-crl_check_all`, como Nginx), sin `clientAuth`, CN ≠ `client_id`, o venció | vence en < 30 días; su `.key` sigue en el VPS  |
+| todo PEM         |                                                                                                                      | empieza con un BOM UTF-8 (lo guardó un editor) |
 
 Un cliente **revocado** sale como `OK ... revocado`: es lo esperado después de `revocar.sh`. Termina con
 `Resultado: N fallo(s), M aviso(s)` y exit `1` si hay algún fallo.
@@ -344,3 +349,4 @@ podman exec -u postgres halsa-postgres psql -d halsa -tAc \
   "SELECT a.usename, s.ssl, s.version FROM pg_stat_ssl s JOIN pg_stat_activity a USING (pid) WHERE a.usename LIKE 'halsa_%'"
 #   cada conexión de la aplicación: t | TLSv1.3
 ```
+

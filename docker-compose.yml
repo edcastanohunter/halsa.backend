@@ -54,7 +54,7 @@ services:
   # SPEC 07: every PDF support is scanned synchronously before it is stored; without clamd the upload answers 503.
   # The first start downloads the signatures (several minutes); the volume keeps them across restarts.
   halsa.backend.antivirus:
-    image: clamav/clamav:1.4
+    image: clamav/clamav-debian:1.4
     container_name: halsa.backend.antivirus
     volumes:
       - halsa.backend-antivirus:/var/lib/clamav

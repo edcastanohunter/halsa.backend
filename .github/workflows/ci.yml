@@ -164,10 +164,17 @@ jobs:
       contents: read
     env:
       VERSION: v1.0.${{ github.run_number }}
+      # The VPS is arm64; the runner is amd64. The .NET SDK stage runs natively ($BUILDPLATFORM): QEMU only runs the
+      # apt-get steps of the final stages.
+      PLATAFORMA: linux/arm64
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - uses: docker/setup-buildx-action@v3
 
@@ -194,6 +201,7 @@ jobs:
         with:
           context: .
           file: src/Halsa.Backend.Api/Dockerfile
+          platforms: ${{ env.PLATAFORMA }}
           load: true
           push: false
           tags: localhost/halsa-backend:${{ env.VERSION }}
@@ -209,6 +217,7 @@ jobs:
         with:
           context: .
           file: src/Halsa.Bff.Paciente/Dockerfile
+          platforms: ${{ env.PLATAFORMA }}
           load: true
           push: false
           tags: localhost/halsa-bff-paciente:${{ env.VERSION }}
@@ -225,6 +234,7 @@ jobs:
         with:
           context: deploy/postgres
           file: deploy/postgres/Dockerfile
+          platforms: ${{ env.PLATAFORMA }}
           load: true
           push: false
           tags: |

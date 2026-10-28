@@ -91,7 +91,7 @@ RLS igual a la de la HC. Hay trigger de inmutabilidad.
 
 ### Antivirus
 
-- El servicio `halsa.backend.antivirus` usa la imagen `clamav/clamav:1.4` y expone el puerto 3310 solo a la red interna.
+- El servicio `halsa.backend.antivirus` usa la imagen `clamav/clamav-debian:1.4` y expone el puerto 3310 solo a la red interna.
 - `ClamAvScanner` implementa el protocolo `INSTREAM` de `clamd` sobre TCP, con su propio cliente en `Infrastructure/Archivos/`. Tiene un timeout de 30 s.
 - El resultado es `Limpio`, `Infectado(firma)` o `NoDisponible`. El health check `antivirus` reporta `Degraded`.
 

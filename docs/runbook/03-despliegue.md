@@ -11,7 +11,8 @@
 2. En GitHub → *Actions* → el run de `main` → job **Desplegar en producción** → *Review deployments* → aprobar
    `produccion`. Sin aprobación no se abre ninguna conexión al VPS.
 3. El job:
-   1. construye `localhost/halsa-backend:v1.0.<run_number>` y `localhost/halsa-bff-paciente:v1.0.<run_number>`
+   1. construye para `linux/arm64` (la arquitectura del VPS) `localhost/halsa-backend:v1.0.<run_number>` y
+      `localhost/halsa-bff-paciente:v1.0.<run_number>`
       (y `localhost/halsa-postgres:17` / `17-v1.0.<n>` solo si el push tocó `deploy/postgres/`, o si se lanzó a mano con
       `incluir_postgres`);
    2. arma `paquete.tar` (imágenes, `git archive` de `deploy/` y sus sumas sha256);
@@ -61,7 +62,9 @@ unidades de `deploy-quadlets/` no cambian con un despliegue: solo con `instalar.
 
 ## PostgreSQL: imagen nueva
 
-El CI solo **carga** `localhost/halsa-postgres:17` cuando cambia `deploy/postgres/`; `desplegar.sh` nunca reinicia
+El CI solo **carga** `localhost/halsa-postgres:17` cuando cambia `deploy/postgres/`, o cuando se lanza a mano:
+*Actions* → **CI** → *Run workflow* en `main` con **`incluir_postgres`**, y aprobar `produccion`. Sirve para volver a
+enviarla sin tocar `deploy/postgres/`: una imagen borrada, o una de otra arquitectura. `desplegar.sh` nunca reinicia
 `halsa-postgres`. Para aplicarla, en una ventana de mantenimiento. Corta las conexiones y el archivado unos segundos,
 y por `Requires=` reinicia también api, worker y bff:
 

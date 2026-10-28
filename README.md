@@ -272,8 +272,10 @@ Everything runs as `edhunter`, except where it says `sudo`.
      must land in `edhunter`'s Podman store: root's is a different one, which the Quadlets don't see.
    - Create the GitHub environment `produccion` with a required reviewer, `main` only, and its four secrets (see
      [GitHub environment `produccion`](#github-environment-produccion)).
-   - **First images:** *Run workflow* on `main` with `incluir_postgres` and approve it. It loads the images and ends
-     in `FALLO … faltan los Quadlets`: expected, `desplegar.sh` does nothing without them.
+   - **First images:** *Run workflow* on `main` with `incluir_postgres` and approve it. A plain push only ships
+     `halsa-postgres` when `deploy/postgres/` changed, and `instalar.sh` needs it. The run builds for `linux/arm64`
+     (the VPS), loads the images and ends in `FALLO … faltan los Quadlets`: expected, `desplegar.sh` does nothing
+     without them.
 7. **Halsa's units** (runbook 01, step 6):
    ```bash
    bash ~/halsa/deploy-quadlets/instalar.sh      # checks, validates, installs and starts postgres/redis/antivirus/seq

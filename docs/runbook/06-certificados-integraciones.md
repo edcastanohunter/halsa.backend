@@ -62,6 +62,55 @@ de la intermedia vale 10 días y se regenera cada 7; después se valida:
 0 4 * * 1    { HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/generar-crl.sh && bash ~/halsa/deploy/scripts/sincronizar-npm.sh && HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/verificar-certificados.sh; } >> ~/halsa/crl.log 2>&1
 ```
 
+1. Abrir el crontab de edhunter
+```bash
+ssh edhunter@<vps>
+crontab -e
+# La primera vez te pide escoger un editor. Elige nano, que es el más sencillo.
+```
+
+2. Pegar esto en el archivo
+
+```cron
+XDG_RUNTIME_DIR=/run/user/1001
+CRON_TZ=America/Bogota
+```
+# CRL de la intermedia: lunes 04:00 (vale 10 días, se regenera cada 7)
+```cron
+0 4 * * 1    { HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/generar-crl.sh && bash ~/halsa/deploy/scripts/sincronizar-npm.sh && HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/verificar-certificados.sh; } >> ~/halsa/crl.log 2>&1
+```
+
+- XDG_RUNTIME_DIR es obligatorio. sincronizar-npm.sh usa podman para entrar a NPM, y sin esa variable podman no encuentra tus contenedores rootless desde cron. El 1001 tiene que coincidir con lo que te devuelva id -u edhunter.
+- Si después agregas los backups del runbook 04, van en este mismo archivo. Esas dos primeras líneas se escriben una sola vez, arriba de todo.
+- En nano se guarda con Ctrl+O y Enter, y se sale con Ctrl+X. Al salir, crontab muestra installing new crontab.
+
+3. Comprobar
+```bash
+crontab -l          # muestra lo que quedó programado
+```
+Antes de esperar al lunes, ejecútalo una vez a mano para ver que funciona:
+
+{ HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/generar-crl.sh && bash ~/halsa/deploy/scripts/sincronizar-npm.sh && HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/verificar-certificados.sh; } 2>&1 | tee -a ~/halsa/crl.log
+
+Desde ahí, cada ejecución del cron deja su resultado en ~/halsa/crl.log (tail ~/halsa/crl.log).
+
+Cómo leer la línea
+
+┌─────────────────────────┬───────────────────────────────────────────────────────────────────┐
+│          Parte          │                             Significa                             │
+├─────────────────────────┼───────────────────────────────────────────────────────────────────┤
+│ 0 4 * * 1               │ minuto 0, hora 4, cualquier día del mes, cualquier mes, lunes (1) │
+├─────────────────────────┼───────────────────────────────────────────────────────────────────┤
+│ { a && b && c; }        │ ejecuta los tres en orden y se detiene en el primero que falle    │
+├─────────────────────────┼───────────────────────────────────────────────────────────────────┤
+│ >> ~/halsa/crl.log 2>&1 │ agrega la salida y los errores al log                             │
+└─────────────────────────┴───────────────────────────────────────────────────────────────────┘
+
+Dos cosas que revisé:
+- Pasos previos: la intermedia ya tiene que estar instalada (runbook 06) y NPM unido a halsa_borde. Si falta algo, el script lo dice en el log.
+- Passphrase: cron no puede pedir contraseñas, pero aquí no hace falta. La llave de la intermedia se crea sin passphrase y solo la raíz tiene; por eso puede correr desatendido.
+
+
 > **Una CRL vencida cierra todas las integraciones** (NPM falla cerrado). El Worker alerta 48 h antes
 > (`CrlPorVencer`, runbook 07). La CRL de la **raíz** vale 365 días y se reemite en la ceremonia anual:
 > `bash deploy/pki/generar-crl.sh --raiz` en el equipo sin red, y luego se copia `raiz.crl` al VPS y se ejecuta
