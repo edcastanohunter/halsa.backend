@@ -1,0 +1,5 @@
+[Volume]
+VolumeName=halsa_clamav-firmas
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-migrador — el servicio "migrador" de deploy/docker-compose.prod.yml como Quadlet (SPEC 13).
+#
+# Type=oneshot: podman corre en primer plano y `systemctl start halsa-migrador` termina con el código del
+# Migrador (0 o 1). Lo arrancan desplegar.sh y migrar.sh, nunca el arranque del VPS: no tiene [Install].
+# RemainAfterExit=no para que cada `systemctl start` vuelva a ejecutarlo.
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa Migrador (migraciones de la base)
+After=halsa-postgres.service
+Requires=halsa-postgres.service
+
+[Container]
+ContainerName=halsa-migrador
+Image=localhost/halsa-backend:${HALSA_TAG}
+Pull=never
+User=0
+ReadOnly=true
+DropCapability=ALL
+AddCapability=CHOWN SETUID SETGID
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+Entrypoint=/bin/sh
+Exec=/halsa/arrancar-dotnet.sh dotnet Halsa.Backend.Api.dll
+Tmpfs=/tmp
+Tmpfs=/run/halsa:mode=0700
+Network=halsa-datos.network
+Volume=%h/halsa/deploy/scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+Volume=%h/.config/halsa/secretos/pg_owner_password:/run/secrets/pg_owner_password:ro
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=Halsa__Rol=Migrador
+Environment=HALSA_SERVICIO=migrador
+
+[Service]
+EnvironmentFile=%h/halsa/deploy/.env
+Type=oneshot
+RemainAfterExit=no
+TimeoutStartSec=300

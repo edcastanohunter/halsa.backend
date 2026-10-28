@@ -1,0 +1,5 @@
+[Volume]
+VolumeName=halsa_redis-datos
+
+[Install]
+WantedBy=default.target

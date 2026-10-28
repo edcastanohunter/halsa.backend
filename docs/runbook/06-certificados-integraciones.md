@@ -18,34 +18,48 @@ Todos usan `HALSA_PKI_DIR`.
 
 ### En el equipo sin red (ceremonia, dos personas)
 
+`HALSA_PKI_DIR` es donde se genera la PKI, en el medio cifrado de la bóveda (aquí montado en `/media/boveda/`). El
+script lo crea si no existe:
+
 ```bash
 export HALSA_PKI_DIR=/media/boveda/halsa-pki
 bash deploy/pki/crear-raiz.sh                # pide la passphrase de la raíz (AES-256)
 ```
 
+La passphrase no se escribe en ningún archivo, y menos en el repo: va a las custodias (runbook 02).
+
 El directorio `raiz/` va a las dos custodias (runbook 02). Al VPS solo viajan `raiz/raiz.crt` y `raiz/raiz.crl`.
 
 ### Instalar la intermedia en el VPS
 
+En el VPS, como `edhunter` y sin sudo: la PKI vive en `~/.config/halsa/pki` (0700, llaves 0600, de `edhunter`), que
+el worker monta (`publicar/`) y `sincronizar-npm.sh` copia a NPM.
+
 ```bash
 # 1. VPS: la llave y el CSR de la intermedia. La llave no sale del VPS.
-export HALSA_PKI_DIR=/etc/halsa/pki
-install -d -m 0700 /etc/halsa/pki
-bash /opt/halsa/deploy/pki/crear-intermedia.sh solicitud
+export HALSA_PKI_DIR=~/.config/halsa/pki
+install -d -m 0700 ~/.config/halsa "$HALSA_PKI_DIR"
+bash ~/halsa/deploy/pki/crear-intermedia.sh solicitud
 
 # 2. Equipo sin red: firmar el CSR, que llega en una memoria USB.
 HALSA_PKI_DIR=/media/boveda/halsa-pki bash deploy/pki/crear-intermedia.sh firmar /media/usb/intermedia.csr
 
-# 3. VPS: instalar la intermedia firmada junto con la raíz pública y su CRL. Esto genera la CRL y publica en /etc/halsa/pki/publicar.
-bash /opt/halsa/deploy/pki/crear-intermedia.sh instalar /media/usb/intermedia.crt /media/usb/raiz.crt /media/usb/raiz.crl
+# 3. VPS: instalar la intermedia firmada junto con la raíz pública y su CRL. Genera la CRL y publica en
+#    ~/.config/halsa/pki/publicar. Luego, validar todo.
+bash ~/halsa/deploy/pki/crear-intermedia.sh instalar /media/usb/intermedia.crt /media/usb/raiz.crt /media/usb/raiz.crl
+bash ~/halsa/deploy/pki/verificar-certificados.sh
 ```
+
+La validación completa de la PKI, lo publicado en NPM y el mTLS de punta a punta está en deploy-quadlets/README,
+"Validación de los certificados".
 
 ### Cron de la CRL (VPS)
 
-`/etc/cron.d/halsa-crl`. La CRL de la intermedia vale 10 días y se regenera cada 7:
+En el **crontab de `edhunter`** (`crontab -e`, junto a los backups del runbook 04 y con su `XDG_RUNTIME_DIR`). La CRL
+de la intermedia vale 10 días y se regenera cada 7; después se valida:
 
 ```cron
-0 4 * * 1  root  HALSA_PKI_DIR=/etc/halsa/pki bash /opt/halsa/deploy/pki/generar-crl.sh && bash /opt/halsa/deploy/scripts/sincronizar-npm.sh >> /var/log/halsa-crl.log 2>&1
+0 4 * * 1    { HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/generar-crl.sh && bash ~/halsa/deploy/scripts/sincronizar-npm.sh && HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/verificar-certificados.sh; } >> ~/halsa/crl.log 2>&1
 ```
 
 > **Una CRL vencida cierra todas las integraciones** (NPM falla cerrado). El Worker alerta 48 h antes
@@ -67,7 +81,7 @@ openssl req -new -key int-arl-ARL_X.key -subj "/CN=int-arl-ARL_X" -out int-arl-A
 
 ```bash
 # En el VPS:
-HALSA_PKI_DIR=/etc/halsa/pki bash /opt/halsa/deploy/pki/emitir-cliente.sh int-arl-ARL_X /tmp/int-arl-ARL_X.csr
+HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/emitir-cliente.sh int-arl-ARL_X /tmp/int-arl-ARL_X.csr
 ```
 
 El script fuerza `CN=int-arl-ARL_X` e imprime la huella `x5t#S256` y el certificado en base64 DER para Keycloak. Se
@@ -136,8 +150,8 @@ Para una IPS: `int-ips-<REPS>`, con el mapper `ips_id` en lugar de `tenant_id` y
 Por compromiso, fin del contrato o reemplazo:
 
 ```bash
-HALSA_PKI_DIR=/etc/halsa/pki bash /opt/halsa/deploy/pki/revocar.sh int-arl-ARL_X keyCompromise
-bash /opt/halsa/deploy/scripts/sincronizar-npm.sh       # copia la CRL nueva a NPM, valida y recarga
+HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/revocar.sh int-arl-ARL_X keyCompromise
+bash ~/halsa/deploy/scripts/sincronizar-npm.sh       # copia la CRL nueva a NPM, valida y recarga
 ```
 
 Desde la recarga, NPM rechaza ese certificado con `400` y nada llega a la API. Además,
@@ -157,7 +171,7 @@ Después, revocar el anterior con motivo `superseded`.
    openssl ca -config "$HALSA_PKI_DIR/raiz/openssl.cnf" -revoke intermedia-comprometida.crt -crl_reason keyCompromise
    bash deploy/pki/generar-crl.sh --raiz
    ```
-2. **VPS:** mover `/etc/halsa/pki/intermedia` aparte y crear una intermedia nueva (los tres pasos de "Instalar la
+2. **VPS:** mover `~/.config/halsa/pki/intermedia` aparte y crear una intermedia nueva (los tres pasos de "Instalar la
    intermedia en el VPS"), con la `raiz.crl` nueva.
 3. Reemitir **todos** los certificados cliente con la intermedia nueva y actualizar cada client en Keycloak.
 4. Ejecutar `sincronizar-npm.sh`. Desde ese momento, todo certificado de la intermedia anterior se rechaza.

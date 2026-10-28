@@ -1,0 +1,54 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-bff — el servicio "bff" de deploy/docker-compose.prod.yml como Quadlet (SPEC 12 y 13).
+#
+# Como en el compose, solo depende de Redis: si la API no arranca, el portal sigue respondiendo (con 502 en
+# lo que necesita la API) en vez de caerse entero.
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa BFF del portal del paciente
+After=halsa-redis.service halsa-api.service
+Requires=halsa-redis.service
+
+[Container]
+ContainerName=halsa-bff
+NetworkAlias=bff
+Image=localhost/halsa-bff-paciente:${HALSA_TAG}
+Pull=never
+User=0
+ReadOnly=true
+DropCapability=ALL
+AddCapability=CHOWN SETUID SETGID
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+Entrypoint=/bin/sh
+Exec=/halsa/arrancar-dotnet.sh dotnet Halsa.Bff.Paciente.dll
+Tmpfs=/tmp
+Tmpfs=/run/halsa:mode=0700
+Network=halsa-borde.network
+Network=halsa-app.network
+AddHost=${HALSA_KEYCLOAK_HOST}:${HALSA_NPM_IP}
+Volume=%h/halsa/deploy/scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+Volume=%h/.config/halsa/secretos/kc_bff_secret:/run/secrets/kc_bff_secret:ro
+Volume=%h/.config/halsa/secretos/redis_password:/run/secrets/redis_password:ro
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_HTTP_PORTS=8080
+Environment=HALSA_SERVICIO=bff
+Environment=Bff__ApiBaseUrl=http://api:8080
+Environment=Bff__Authority=${HALSA_KEYCLOAK_URL}/realms/halsa-pacientes
+Environment=Bff__RequireHttpsMetadata=true
+Environment=Red__ProxyConfiable=${HALSA_NPM_IP}/32
+HealthCmd=curl -fsS -o /dev/null http://localhost:8080/health/vivo
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=20s
+
+[Service]
+EnvironmentFile=%h/halsa/deploy/.env
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

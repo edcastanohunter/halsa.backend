@@ -6,7 +6,7 @@
 #
 # Variables:
 #   HALSA_PKI_DIR   raíz de la PKI (por defecto ./halsa-pki). En el equipo sin red vive la
-#                   raíz; en el VPS, /etc/halsa/pki (solo la intermedia y lo público).
+#                   raíz; en el VPS, ~/.config/halsa/pki (solo la intermedia y lo público).
 #   HALSA_PKI_DEV   1 = la llave de la raíz sin passphrase. Solo para docker/nginx-dev.
 #
 # Estructura:

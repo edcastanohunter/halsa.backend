@@ -1,0 +1,75 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-api — el servicio "api" de deploy/docker-compose.prod.yml como Quadlet (SPEC 13).
+#
+# Quadlet no interpola ${...}: los expande systemd al arrancar, con las variables de [Service] EnvironmentFile
+# (el mismo .env del compose). Una variable que falte queda vacía, sin default: instalar.sh las verifica.
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa API
+After=halsa-postgres.service halsa-redis.service halsa-antivirus.service
+Requires=halsa-postgres.service halsa-redis.service
+Wants=halsa-antivirus.service
+
+[Container]
+ContainerName=halsa-api
+NetworkAlias=api
+# SPEC 14: no registry. HALSA_TAG is set by desplegar.sh; a missing image is an error.
+Image=localhost/halsa-backend:${HALSA_TAG}
+Pull=never
+User=0
+ReadOnly=true
+DropCapability=ALL
+AddCapability=CHOWN SETUID SETGID
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+# The image's ENTRYPOINT is "dotnet ...": Exec= alone would only append arguments to it.
+Entrypoint=/bin/sh
+Exec=/halsa/arrancar-dotnet.sh dotnet Halsa.Backend.Api.dll
+Tmpfs=/tmp
+Tmpfs=/run/halsa:mode=0700
+Network=halsa-borde.network
+Network=halsa-app.network
+Network=halsa-datos.network
+# The shared Keycloak through NPM on borde: the API has no egress, and the issuer must stay https (ProductionGuard).
+AddHost=${HALSA_KEYCLOAK_HOST}:${HALSA_NPM_IP}
+Volume=%h/halsa/deploy/scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+Volume=halsa-archivos.volume:/var/lib/halsa/archivos
+Volume=%h/.config/halsa/secretos/pg_app_password:/run/secrets/pg_app_password:ro
+Volume=%h/.config/halsa/secretos/pg_clinico_password:/run/secrets/pg_clinico_password:ro
+Volume=%h/.config/halsa/secretos/pg_ingesta_password:/run/secrets/pg_ingesta_password:ro
+Volume=%h/.config/halsa/secretos/redis_password:/run/secrets/redis_password:ro
+Volume=%h/.config/halsa/secretos/halsa_kek:/run/secrets/halsa_kek:ro
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_HTTP_PORTS=8080
+Environment=Halsa__Rol=Api
+Environment=HALSA_SERVICIO=api
+Environment=Keycloak__PersonalAuthority=${HALSA_KEYCLOAK_URL}/realms/halsa
+Environment=Keycloak__PacientesAuthority=${HALSA_KEYCLOAK_URL}/realms/halsa-pacientes
+Environment=Keycloak__RequireHttpsMetadata=true
+Environment=Keycloak__Audience=halsa-api
+Environment=Keycloak__ClientId=halsa-api
+Environment=Integraciones__ExigirCertificado=true
+Environment=Webhooks__PermitirDestinosLocales=false
+Environment=Clinico__KekId=${HALSA_KEK_ID}
+Environment=Clinico__KekBase64=
+Environment=Antivirus__Host=antivirus
+Environment=Archivos__Raiz=/var/lib/halsa/archivos
+# NPM's fixed IP on borde: only from there are X-Forwarded-* and X-Client-Cert accepted.
+Environment=Red__ProxyConfiable=${HALSA_NPM_IP}/32
+Environment=Serilog__WriteTo__1__Args__serverUrl=http://seq:5341
+Environment=Serilog__WriteTo__1__Args__apiKey=${HALSA_SEQ_API_KEY}
+HealthCmd=curl -fsS -o /dev/null http://localhost:8080/health
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=30s
+
+[Service]
+EnvironmentFile=%h/halsa/deploy/.env
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

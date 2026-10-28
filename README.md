@@ -213,9 +213,12 @@ seam: swap it for Kafka or Service Bus and no handler changes.
   (`docker/nginx-dev`). It includes the same `deploy/npm` files, with a development CA, on
   `https://{api,integraciones,pacientes}.localhost`. First run `bash docker/nginx-dev/generar-pki.sh`. See
   `docker/nginx-dev/README.md`.
-- **Production stack:** `deploy/docker-compose.prod.yml` (images `localhost/halsa-*`, built by the CI and shipped to
-  the VPS over SSH, SPEC 14), `deploy/.env.ejemplo` (see [Environment variables](#environment-variables)), and the
-  runbooks in `docs/runbook/` (provisioning, secrets, deployment, backups, keys, integration certificates, alerts).
+- **Production stack:** rootless **Podman Quadlets** in `deploy-quadlets/`, run by the systemd of `edhunter`, the
+  user that owns NPM (Podman networks are per user: only a Halsa of the same user can share `halsa_borde` with NPM
+  without publishing ports). Images are `localhost/halsa-*`, built by the CI and shipped to the VPS over SSH
+  (SPEC 14). `deploy/docker-compose.prod.yml` is the reference the units translate 1:1 (the CI validates it), not what
+  runs. See `deploy-quadlets/README.md`, `deploy/.env.ejemplo` ([Environment variables](#environment-variables)) and
+  the runbooks in `docs/runbook/` (provisioning, secrets, deployment, backups, keys, integration certificates, alerts).
 - **Startup modes:** `Halsa:Rol=Migrador` applies the migrations and exits with `0` or `1` (`desplegar.sh` runs it
   before each deploy). In `Production`, `ProductionGuard` refuses to start on any development shortcut.
 
@@ -224,49 +227,59 @@ seam: swap it for Kafka or Service Bus and no handler changes.
 There is no image registry (SPEC 14). On every push to `main`, `.github/workflows/ci.yml` builds the images on the
 runner and, once a reviewer of the GitHub environment `produccion` approves, ships them to the VPS over SSH together
 with `deploy/`. Nothing is built on the VPS, and nobody logs into it for a normal release. On the VPS everything lives
-in `/opt/halsa/deploy`: only `deploy/`, synced by each release with `rsync --delete`. `.env` is never touched.
+in the home of `edhunter`, with no root: `~/halsa/deploy` (only `deploy/`, synced by each release with
+`rsync --delete`; `.env` is never touched), `~/halsa/deploy-quadlets` (copied by hand when it changes), the units in
+`~/.config/containers/systemd/`, and the secrets and PKI in `~/.config/halsa/`.
 
 ```
 push to main ─► build + tests + coverage, nginx -t, validar-despliegue ─► approval (environment produccion)
 runner ─► docker build ─► paquete.tar (images + git archive deploy/ + sha256)
        ─► ssh halsa-deploy@VPS "desplegar v1.0.<run_number>" < paquete.tar
-VPS    ─► halsa-recibir-despliegue: check sums ─► podman load ─► rsync deploy/ ─► desplegar.sh v1.0.<run_number>
+VPS    ─► sudo -u edhunter halsa-recibir-despliegue: check sums ─► podman load ─► rsync deploy/
+       ─► desplegar.sh v1.0.<run_number> ─► systemctl --user start halsa-migrador, restart halsa-api/worker/bff
 ```
 
 **One-time setup** ([runbook 01](docs/runbook/01-provision-vps.md)):
 
-1. **Prerequisites.**
-   - Podman with Compose, plus `gettext-base` (for `envsubst`) and `rsync`.
+Everything runs as `edhunter`, except where it says `sudo`.
+
+1. **Prerequisites** (with sudo).
+   - Podman ≥ 5.0, `podman-docker` (the scripts call `docker`), `gettext-base` (for `envsubst`) and `rsync`.
+   - `sudo loginctl enable-linger edhunter`: without it nothing of the user starts after a reboot (NPM included).
+   - A subuid/subgid range of 65536 for `edhunter`, and NPM on a **bridge** network (not `pasta`).
    - DNS for `halsa-api`, `halsa-integraciones` and `halsa-pacientes` `.edcastdev.com` pointing at the VPS.
 2. **Configuration.**
-   - Copy `deploy/` once from your machine: `git archive main deploy/ | ssh root@<vps> 'mkdir -p /opt/halsa && tar -xf - --no-same-owner -C /opt/halsa'`.
+   - Copy `deploy/` and `deploy-quadlets/` once from your machine:
+     `git archive main deploy/ deploy-quadlets/ | ssh edhunter@<vps> 'mkdir -p ~/halsa && tar -xf - -C ~/halsa'`.
    - `cp .env.ejemplo .env && chmod 600 .env`, then fill it in (see [Environment variables](#environment-variables)).
-   - **No secrets go in `.env`.**
-3. **Secrets** ([runbook 02](docs/runbook/02-secretos-y-custodia.md)). Create `/etc/halsa/secretos/` (root:root
-   0600, one file per secret, excluded from every backup). Restore the KEK and the seal key from their offline
-   custody. Generate the passwords.
+   - **No secrets go in `.env`**, and no comments at the end of a line (systemd's `EnvironmentFile=` keeps them).
+3. **Secrets** ([runbook 02](docs/runbook/02-secretos-y-custodia.md)). Create `~/.config/halsa/secretos/` (0700,
+   files 0600 owned by `edhunter`, which rootless maps to the container's root; one file per secret, excluded from
+   every backup and snapshot). Restore the KEK and the seal key from their offline custody. Generate the passwords.
 4. **Integrations CA** ([runbook 06](docs/runbook/06-certificados-integraciones.md)).
-   - Install the intermediate on the VPS. The root never touches it.
-   - Install the weekly CRL cron.
+   - Install the intermediate on the VPS, in `~/.config/halsa/pki`. The root CA never touches it.
+   - Install the weekly CRL cron in `edhunter`'s crontab.
 5. **Shared Keycloak** ([Keycloak → Shared instance](#shared-instance-production-httpsauthedcastdevcom)).
    - The owner adds the three x509-lookup startup options and the header-clearing block on `auth.edcastdev.com`.
    - Then `keycloak/importar-realms.sh` creates the realms.
    - Configure SMTP in `halsa-pacientes` before opening the portal.
-6. **Data services:**
-   ```bash
-   C="podman compose -f docker-compose.prod.yml"
-   $C up -d postgres redis antivirus seq
-   $C exec -u postgres postgres pgbackrest --stanza=halsa stanza-create
-   ```
-7. **CI access** (runbook 01, step 10).
-   - Install `deploy/scripts/recibir-despliegue.sh` as `/usr/local/sbin/halsa-recibir-despliegue` (root 0755).
+6. **CI access** (runbook 01, step 10).
+   - Install `deploy/scripts/recibir-despliegue.sh` as `/usr/local/sbin/halsa-recibir-despliegue` (root 0755, so the
+     CI can't change what it runs).
    - Create the user `halsa-deploy`. Its key in `authorized_keys` is forced to
-     `command="sudo /usr/local/sbin/halsa-recibir-despliegue"`, and sudoers allows only that script (with
-     `env_keep += "SSH_ORIGINAL_COMMAND"`).
+     `command="sudo -u edhunter /usr/local/sbin/halsa-recibir-despliegue"`, and sudoers allows only that script, as
+     `edhunter` (`halsa-deploy ALL=(edhunter) NOPASSWD: …`, with `env_keep += "SSH_ORIGINAL_COMMAND"`). The images
+     must land in `edhunter`'s Podman store: root's is a different one, which the Quadlets don't see.
    - Create the GitHub environment `produccion` with a required reviewer, `main` only, and its four secrets (see
      [GitHub environment `produccion`](#github-environment-produccion)).
-   - **First release:** approve the `Desplegar en producción` job of the latest `main` run. `desplegar.sh` migrates,
-     starts api/worker/bff, waits for Healthy and syncs NPM.
+   - **First images:** *Run workflow* on `main` with `incluir_postgres` and approve it. It loads the images and ends
+     in `FALLO … faltan los Quadlets`: expected, `desplegar.sh` does nothing without them.
+7. **Halsa's units** (runbook 01, step 6):
+   ```bash
+   bash ~/halsa/deploy-quadlets/instalar.sh      # checks, validates, installs and starts postgres/redis/antivirus/seq
+   podman exec -u postgres halsa-postgres pgbackrest --stanza=halsa stanza-create
+   ~/halsa/deploy/scripts/desplegar.sh v1.0.<n>  # migrates, starts api/worker/bff, waits for Healthy, syncs NPM
+   ```
 8. **NPM proxy hosts** (runbook 01, step 7). Create the three hosts with Let's Encrypt, **Force SSL** and **HTTP/2**,
    with HSTS, Cache Assets, Block Common Exploits and Websockets **off**. Each one's **Advanced** field is
    exactly:
@@ -275,13 +288,14 @@ VPS    ─► halsa-recibir-despliegue: check sums ─► podman load ─► rsy
    #; location / { ... } lo define el include de Halsa: esta linea evita el location / de NPM
    ```
 9. **Operations.**
-   - Backups: the pgBackRest cron and a first full backup ([runbook 04](docs/runbook/04-backups-y-restauracion.md)).
+   - Backups: the pgBackRest cron in `edhunter`'s crontab and a first full backup
+     ([runbook 04](docs/runbook/04-backups-y-restauracion.md)). A root cron can't see the rootless containers.
    - Seq alerts, the heartbeat and the external monitors ([runbook 07](docs/runbook/07-alertas-e-incidentes.md)).
 10. **Verification:** the commands in runbook 01, step 9, and the *(staging)* acceptance criteria of SPEC 13 and
     SPEC 14.
 
-A VPS that already runs the registry images of SPEC 13 follows *Transición desde GHCR* in runbook 03 once, before
-its first release from the CI.
+A VPS that already runs Halsa with the compose as root follows *Transición a rootless* in runbook 03 once (and, if
+it still runs the registry images of SPEC 13, *Transición desde GHCR* before that).
 
 **Every release** ([runbook 03](docs/runbook/03-despliegue.md)):
 
@@ -293,26 +307,34 @@ its first release from the CI.
 2. Approve the `Desplegar en producción` job. The version is `v1.0.<run_number>`.
    - `localhost/halsa-postgres` is only rebuilt and shipped when `deploy/postgres/` changed, or with *Run workflow* →
      `incluir_postgres`.
-   - It is never recreated automatically.
-3. `desplegar.sh` migrates (`Halsa:Rol=Migrador`) and starts the new version. It rolls back to the previous tag if
+   - It is never restarted automatically (runbook 03, "PostgreSQL: imagen nueva").
+3. `desplegar.sh` migrates (`systemctl --user start halsa-migrador`, `Halsa:Rol=Migrador`) and restarts
+   `halsa-api`, `halsa-worker` and `halsa-bff` with the new `HALSA_TAG`. It rolls back to the previous tag if
    `/health` isn't `Healthy` within 120 s, then syncs NPM. Migrations only go forward, so they must be backward
    compatible (expand/contract). The same goes for changes to `deploy/`.
 
-**Manual rollback**, as root on the VPS, to any tag still loaded (the last 5):
-`podman image ls localhost/halsa-backend`, then `/opt/halsa/deploy/scripts/desplegar.sh v1.0.<n>`.
+**Manual rollback**, as `edhunter` on the VPS (never as root: root sees neither the images nor the units), to any
+tag still loaded (the last 5): `podman image ls localhost/halsa-backend`, then
+`~/halsa/deploy/scripts/desplegar.sh v1.0.<n>`.
+
+**Operations:** `systemctl --user status 'halsa-*'`, `journalctl --user -u halsa-api -f`. From `sudo -u edhunter` or
+cron, export `XDG_RUNTIME_DIR=/run/user/$(id -u edhunter)` first.
 
 **If NPM is recreated** (upgrade, restart), it loses the `halsa_borde` network and Halsa answers 502. Run
-`./scripts/sincronizar-npm.sh`. It's idempotent, and never applies a config that fails `nginx -t`.
+`~/halsa/deploy/scripts/sincronizar-npm.sh`. It's idempotent, and never applies a config that fails `nginx -t`. To
+make it permanent, `Network=halsa-borde.network:ip=172.30.0.10` in NPM's `npm.container`.
 
 ## Environment variables
 
 Production configuration comes from four places. Only the first is a file of variables, and **secrets never go in
 it**.
 
-### `/opt/halsa/deploy/.env` (from `deploy/.env.ejemplo`)
+### `~/halsa/deploy/.env` (from `deploy/.env.ejemplo`)
 
-The file is root:root `0600`. `podman compose` reads it with `--env-file`, and the scripts in the last column source
-it. Releases never overwrite it.
+The file is `0600`, owned by `edhunter`. The units read it with `[Service] EnvironmentFile=` (systemd expands
+`${VAR}` at start, **with no defaults**: `instalar.sh` requires every variable the units use), and the scripts in the
+last column source it. "compose" in that column also means the units, which translate it 1:1. Releases never
+overwrite it.
 
 | Variable | What it is | Example | Read by |
 | --- | --- | --- | --- |
@@ -326,10 +348,10 @@ it. Releases never overwrite it.
 | `HALSA_KEYCLOAK_CONTENEDOR` | Keycloak's container, for `kcadm` through `podman exec`. | `keykloack-keycloak-1` | `importar-realms.sh` |
 | `HALSA_UPSTREAM_KEYCLOAK` | How NPM reaches Keycloak: the same upstream as the `auth.edcastdev.com` proxy host. | `http://keykloack-keycloak-1:8080` | `sincronizar-npm.sh` |
 | `HALSA_NPM_CONTENEDOR` | NPM's container. | `npm-app-1` | `sincronizar-npm.sh` |
-| `HALSA_NPM_DATA` | The host folder mounted as NPM's `/data`. | `/opt/npm/data` | `sincronizar-npm.sh` |
+| `HALSA_NPM_DATA` | The host folder mounted as NPM's `/data` (rootless: its volume's mountpoint). | `/home/edhunter/.local/share/containers/storage/volumes/npm_data/_data` | `sincronizar-npm.sh` |
 | `HALSA_NPM_IP` | NPM's fixed IP on `halsa_borde`, the only trusted proxy of the API and the BFF. | `172.30.0.10` | compose, `sincronizar-npm.sh` |
-| `HALSA_SECRETOS` | The folder with the secrets, one file each (see below). | `/etc/halsa/secretos` | compose, `importar-realms.sh`, `restaurar-prueba.sh` |
-| `HALSA_PKI_PUBLICADA` | The public chain and CRL of the integrations CA. | `/etc/halsa/pki/publicar` | compose, `sincronizar-npm.sh` |
+| `HALSA_SECRETOS` | The folder with the secrets, one file each (see below). Exactly this path: the units mount it. | `/home/edhunter/.config/halsa/secretos` | `instalar.sh`, `importar-realms.sh`, `restaurar-prueba.sh` |
+| `HALSA_PKI_PUBLICADA` | The public chain and CRL of the integrations CA. Exactly this path: the worker mounts it. | `/home/edhunter/.config/halsa/pki/publicar` | `instalar.sh`, `sincronizar-npm.sh` |
 | `HALSA_BACKOFFICE_URL` | Origin of the backoffice SPA: the redirect URI and web origin of `halsa-backoffice`. | `https://halsa-backoffice.edcastdev.com` | `importar-realms.sh` |
 | `HALSA_KEK_ID` | Id of the current clinical KEK (rotation: runbook 05). | `local:v1` | compose |
 | `HALSA_BACKUPS_BUCKET` | The pgBackRest S3 bucket. It is not the WORM bucket. | `halsa-backups` | compose, `restaurar-prueba.sh` |
@@ -350,10 +372,10 @@ it. Releases never overwrite it.
 | `HALSA_UPSTREAM_API`, `HALSA_UPSTREAM_BFF` | `http://api:8080`, `http://bff:8080` | `sincronizar-npm.sh` | The upstreams of the NPM includes. |
 | `HALSA_RED_BORDE` | `halsa_borde` | `sincronizar-npm.sh` | The network NPM joins. |
 | `HALSA_KEYCLOAK_URL_INTERNA` | `http://localhost:8080` | `importar-realms.sh` | Keycloak as seen from inside its container. |
-| `HALSA_DIR`, `HALSA_POSTGRES_IMAGEN` | `/opt/halsa`, `localhost/halsa-postgres:17` | `restaurar-prueba.sh` | The restore drill (runbook 04). |
+| `HALSA_DIR`, `HALSA_POSTGRES_IMAGEN` | the folder holding `deploy/` (`~/halsa`), `localhost/halsa-postgres:17` | `restaurar-prueba.sh` | The restore drill (runbook 04). |
 | `HALSA_PKI_DIR` | `./halsa-pki` | `deploy/pki/*.sh` | The CA's working folder (runbook 06). |
 
-`recibir-despliegue.sh` runs through `sudo`, which drops the environment. To change its two variables, add them to
+`recibir-despliegue.sh` runs through `sudo -u edhunter`, which drops the environment. To change its two variables, add them to
 the `env_keep` of `/etc/sudoers.d/halsa-deploy` and set them in the forced command (runbook 01, step 10).
 
 ### GitHub environment `produccion`
@@ -370,9 +392,10 @@ In *Settings → Environments → `produccion`*, set a required reviewer and *Se
 `ci.yml` also sets `COBERTURA_MINIMA` (a workflow `env`, `0.80`). It is the minimum line-rate of
 `Halsa.Backend.Domain` and `Halsa.Backend.Application` (`coverage.runsettings`), not a secret.
 
-### Secret files in `/etc/halsa/secretos/` (not variables)
+### Secret files in `~/.config/halsa/secretos/` (not variables)
 
-These files are root:root `0600`, hold one value each, and are mounted as secrets. They are excluded from
+These files are `0600`, owned by `edhunter` (with `root:root` the rootless containers couldn't read them), hold one
+value each, and are bind-mounted read-only at `/run/secrets/<name>`. They are excluded from
 every backup ([runbook 02](docs/runbook/02-secretos-y-custodia.md)):
 
 `halsa_kek`, `halsa_sello`, `pg_postgres_password`, `pg_owner_password`, `pg_app_password`, `pg_clinico_password`,
@@ -441,7 +464,7 @@ Then Halsa, on the VPS:
 - **Realms:** `deploy/keycloak/importar-realms.sh` creates `halsa` and `halsa-pacientes` from
   `deploy/keycloak/*.prod.json` (no users, no `halsa-dev-cli`, no OTP, no SMTP). It only creates a realm that doesn't
   exist and never touches an existing one. It asks for a `master` admin and takes the BFF's client secret from
-  `/etc/halsa/secretos/kc_bff_secret`.
+  `~/.config/halsa/secretos/kc_bff_secret`.
 - **SMTP:** set it in `halsa-pacientes` → *Realm settings → Email*. `verifyEmail` is on, so patient
   self-registration does not complete until then.
 - **Integration clients:** each ARL or IPS gets a `int-*` client created from its certificate (runbook 06,
@@ -457,4 +480,4 @@ Then Halsa, on the VPS:
       start with the dev stub.
 - [ ] Point `OpenTelemetry:OtlpEndpoint` at your collector.
 - [ ] Turn `TreatWarningsAsErrors` on in `Directory.Build.props` once the solution is warning-clean.
-- [x] Set `Keycloak:RequireHttpsMetadata` back to `true` (`deploy/docker-compose.prod.yml`; `ProductionGuard` enforces it).
+- [x] Set `Keycloak:RequireHttpsMetadata` back to `true` (`deploy-quadlets/halsa-*.container`; `ProductionGuard` enforces it).

@@ -1,0 +1,7 @@
+[Network]
+NetworkName=halsa_datos
+Internal=true
+Subnet=172.30.2.0/24
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-postgres — el servicio "postgres" de deploy/docker-compose.prod.yml como Quadlet (SPEC 13).
+#
+# Notify=healthy: el servicio cuenta como iniciado cuando pg_isready responde, así api, worker y migrador
+# (After=) esperan a la base como el `condition: service_healthy` del compose. Recrearlo es manual (runbook 03).
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa PostgreSQL 17 + pgBackRest
+
+[Container]
+ContainerName=halsa-postgres
+NetworkAlias=postgres
+# Built by the CI (deploy/postgres/Dockerfile) and loaded into the VPS only when it changes (SPEC 14).
+Image=localhost/halsa-postgres:${HALSA_POSTGRES_TAG}
+Pull=never
+ShmSize=256m
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+Network=halsa-datos.network
+Network=halsa-egreso.network
+Volume=halsa-postgres-datos.volume:/var/lib/postgresql/data
+Volume=%h/.config/halsa/secretos/pg_postgres_password:/run/secrets/pg_postgres_password:ro
+Volume=%h/.config/halsa/secretos/pg_owner_password:/run/secrets/pg_owner_password:ro
+Volume=%h/.config/halsa/secretos/pg_app_password:/run/secrets/pg_app_password:ro
+Volume=%h/.config/halsa/secretos/pg_clinico_password:/run/secrets/pg_clinico_password:ro
+Volume=%h/.config/halsa/secretos/pg_ingesta_password:/run/secrets/pg_ingesta_password:ro
+Volume=%h/.config/halsa/secretos/pg_worker_password:/run/secrets/pg_worker_password:ro
+Volume=%h/.config/halsa/secretos/backups_s3_key:/run/secrets/backups_s3_key:ro
+Volume=%h/.config/halsa/secretos/backups_s3_secret:/run/secrets/backups_s3_secret:ro
+Volume=%h/.config/halsa/secretos/backups_cipher_pass:/run/secrets/backups_cipher_pass:ro
+Tmpfs=/etc/pgbackrest/conf.d
+Tmpfs=/run/halsa-secretos
+Environment=POSTGRES_DB=halsa
+Environment=POSTGRES_USER=postgres
+Environment=HALSA_BACKUPS_BUCKET=${HALSA_BACKUPS_BUCKET}
+Environment=HALSA_BACKUPS_REGION=${HALSA_BACKUPS_REGION}
+Environment=HALSA_BACKUPS_ENDPOINT=${HALSA_BACKUPS_ENDPOINT}
+HealthCmd=pg_isready -U postgres -d halsa
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=10
+Notify=healthy
+
+[Service]
+EnvironmentFile=%h/halsa/deploy/.env
+Restart=always
+RestartSec=10
+# The first start runs initdb and initdb/01-roles.sh before the first healthy check.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

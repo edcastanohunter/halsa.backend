@@ -13,7 +13,7 @@
 #   5. recarga NPM.
 #
 # Lo llaman desplegar.sh y el cron de la CRL (runbook 06); a mano, después de recrear NPM
-# (runbook 03). Uso:  /opt/halsa/deploy/scripts/sincronizar-npm.sh
+# (runbook 03). Uso, como el dueño de NPM y de los Quadlets:  ~/halsa/deploy/scripts/sincronizar-npm.sh
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -44,13 +44,17 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 command -v envsubst >/dev/null || die "falta envsubst (apt install gettext-base)"
 docker inspect "$NPM" >/dev/null 2>&1 || die "no existe el contenedor de NPM '$NPM'"
-docker network inspect "$RED" >/dev/null 2>&1 || die "no existe la red $RED: levanta primero el compose de Halsa"
+docker network inspect "$RED" >/dev/null 2>&1 || die "no existe la red $RED: instala primero los Quadlets de Halsa (deploy-quadlets/instalar.sh)"
 [[ -f "$PKI/halsa-integraciones-ca.pem" && -f "$PKI/halsa-integraciones.crl" ]] \
     || die "falta la PKI pública en $PKI (runbook 06)"
 
 # ── 1. Red ────────────────────────────────────────────────────────────────────
 ip_actual="$(docker inspect -f "{{with index .NetworkSettings.Networks \"$RED\"}}{{.IPAddress}}{{end}}" "$NPM")"
 if [[ -z "$ip_actual" ]]; then
+    # Rootless Podman's default (pasta) cannot join a network: NPM must be on a bridge one (deploy-quadlets/README).
+    modo="$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$NPM")"
+    [[ "$modo" != pasta* && "$modo" != slirp4netns* ]] \
+        || die "$NPM usa la red '$modo' y no puede unirse a $RED: ponlo en una red bridge (deploy-quadlets/README, NPM)"
     info "uniendo $NPM a $RED con la IP $IP"
     docker network connect --ip "$IP" "$RED" "$NPM"
 elif [[ "$ip_actual" != "$IP" ]]; then

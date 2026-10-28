@@ -1,0 +1,8 @@
+[Network]
+NetworkName=halsa_borde
+Internal=true
+Subnet=172.30.0.0/24
+IPRange=172.30.0.128/25
+
+[Install]
+WantedBy=default.target

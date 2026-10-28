@@ -1,0 +1,5 @@
+[Volume]
+VolumeName=halsa_postgres-datos
+
+[Install]
+WantedBy=default.target

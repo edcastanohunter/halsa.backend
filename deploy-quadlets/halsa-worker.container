@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-worker — el servicio "worker" de deploy/docker-compose.prod.yml como Quadlet (SPEC 13).
+#
+# El único servicio de aplicación con egreso: webhooks, WORM y el heartbeat. Las variables ${...} las expande
+# systemd desde [Service] EnvironmentFile (ver halsa-api.container).
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa Worker
+After=halsa-postgres.service halsa-redis.service halsa-antivirus.service
+Requires=halsa-postgres.service
+Wants=halsa-redis.service halsa-antivirus.service
+
+[Container]
+ContainerName=halsa-worker
+NetworkAlias=worker
+Image=localhost/halsa-backend:${HALSA_TAG}
+Pull=never
+User=0
+ReadOnly=true
+DropCapability=ALL
+AddCapability=CHOWN SETUID SETGID
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+Entrypoint=/bin/sh
+Exec=/halsa/arrancar-dotnet.sh dotnet Halsa.Backend.Api.dll
+Tmpfs=/tmp
+Tmpfs=/run/halsa:mode=0700
+Network=halsa-app.network
+Network=halsa-datos.network
+Network=halsa-egreso.network
+Volume=%h/halsa/deploy/scripts/arrancar-dotnet.sh:/halsa/arrancar-dotnet.sh:ro
+Volume=halsa-archivos.volume:/var/lib/halsa/archivos
+# Public material only: the chain and the CRLs, never a key.
+Volume=%h/.config/halsa/pki/publicar:/etc/halsa/pki:ro
+Volume=%h/.config/halsa/secretos/pg_app_password:/run/secrets/pg_app_password:ro
+Volume=%h/.config/halsa/secretos/pg_clinico_password:/run/secrets/pg_clinico_password:ro
+Volume=%h/.config/halsa/secretos/pg_ingesta_password:/run/secrets/pg_ingesta_password:ro
+Volume=%h/.config/halsa/secretos/pg_worker_password:/run/secrets/pg_worker_password:ro
+Volume=%h/.config/halsa/secretos/redis_password:/run/secrets/redis_password:ro
+Volume=%h/.config/halsa/secretos/halsa_kek:/run/secrets/halsa_kek:ro
+# halsa_sello, worm_s3_key and worm_s3_secret: mounted for SPEC 11 (sealing), not read yet.
+Volume=%h/.config/halsa/secretos/halsa_sello:/run/secrets/halsa_sello:ro
+Volume=%h/.config/halsa/secretos/worm_s3_key:/run/secrets/worm_s3_key:ro
+Volume=%h/.config/halsa/secretos/worm_s3_secret:/run/secrets/worm_s3_secret:ro
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_HTTP_PORTS=8080
+Environment=Halsa__Rol=Worker
+Environment=HALSA_SERVICIO=worker
+Environment=Keycloak__PersonalAuthority=${HALSA_KEYCLOAK_URL}/realms/halsa
+Environment=Keycloak__PacientesAuthority=${HALSA_KEYCLOAK_URL}/realms/halsa-pacientes
+Environment=Keycloak__RequireHttpsMetadata=true
+Environment=Keycloak__Audience=halsa-api
+Environment=Keycloak__ClientId=halsa-api
+Environment=Integraciones__ExigirCertificado=true
+Environment=Webhooks__PermitirDestinosLocales=false
+Environment=Clinico__KekId=${HALSA_KEK_ID}
+Environment=Clinico__KekBase64=
+Environment=Antivirus__Host=antivirus
+Environment=Archivos__Raiz=/var/lib/halsa/archivos
+Environment=Red__ProxyConfiable=${HALSA_NPM_IP}/32
+Environment=Serilog__WriteTo__1__Args__serverUrl=http://seq:5341
+Environment=Serilog__WriteTo__1__Args__apiKey=${HALSA_SEQ_API_KEY}
+Environment=Observabilidad__HeartbeatUrl=${HALSA_HEARTBEAT_URL}
+# The CRL NPM uses (alert 48 h before it expires) and Halsa's hosts whose TLS certificate is watched.
+Environment=Observabilidad__CrlPath=/etc/halsa/pki/halsa-integraciones.crl
+Environment=Observabilidad__HostsTls__0=${HALSA_HOST_API}
+Environment=Observabilidad__HostsTls__1=${HALSA_HOST_INTEGRACIONES}
+Environment=Observabilidad__HostsTls__2=${HALSA_HOST_PACIENTES}
+HealthCmd=curl -fsS -o /dev/null http://localhost:8080/health
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=5
+HealthStartPeriod=30s
+
+[Service]
+EnvironmentFile=%h/halsa/deploy/.env
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

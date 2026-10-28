@@ -8,7 +8,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-# Copies made by arrancar.sh: this script runs as "postgres", which cannot read /run/secrets (root:root 0600).
+# Copies made by arrancar.sh: this script runs as "postgres", which cannot read /run/secrets (root:root 0600 inside the
+# container; on the host, the Quadlets' owner).
 secreto() {
     local archivo="/run/halsa-secretos/$1"
     [[ -r "$archivo" ]] || { echo "01-roles.sh: falta el secreto $1" >&2; exit 1; }

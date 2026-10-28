@@ -1,0 +1,5 @@
+[Volume]
+VolumeName=halsa_archivos
+
+[Install]
+WantedBy=default.target

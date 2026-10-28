@@ -17,14 +17,14 @@
 #   3. un SELECT sobre la auditoría (auditoria.accesos) responde y muestra su última fila;
 #   4. (opcional) --verificar-sql devuelve al menos una fila: el ensayo de PITR del runbook 04.
 #
-# Variables: HALSA_DIR (por defecto /opt/halsa), HALSA_POSTGRES_IMAGEN (la imagen que
-# construye deploy/postgres/Dockerfile y carga el CI; por defecto localhost/halsa-postgres:17).
+# Variables: HALSA_DIR (por defecto, la carpeta que contiene deploy/: /opt/halsa o ~/halsa), HALSA_POSTGRES_IMAGEN
+# (la imagen que construye deploy/postgres/Dockerfile y carga el CI; por defecto localhost/halsa-postgres:17).
+# Los secretos, de HALSA_SECRETOS en el .env.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-HALSA_DIR="${HALSA_DIR:-/opt/halsa}"
+HALSA_DIR="${HALSA_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 IMAGEN="${HALSA_POSTGRES_IMAGEN:-localhost/halsa-postgres:17}"
-SECRETOS="${HALSA_SECRETOS:-/etc/halsa/secretos}"
 NOMBRE="halsa-restaurar-prueba-$(date +%s)"
 VOLUMEN="$NOMBRE-datos"
 
@@ -42,6 +42,7 @@ set -a
 # shellcheck source=/dev/null  # the VPS's .env: not in the repo
 source "$HALSA_DIR/deploy/.env"
 set +a
+SECRETOS="${HALSA_SECRETOS:-/etc/halsa/secretos}"
 
 limpiar() {
     docker rm -f "$NOMBRE" >/dev/null 2>&1 || true
@@ -49,8 +50,10 @@ limpiar() {
 }
 trap limpiar EXIT
 
+# All that halsa-arrancar.sh reads: the bucket's for pgBackRest, and the role passwords it copies before initdb.
 secretos_montados=()
-for s in backups_s3_key backups_s3_secret backups_cipher_pass; do
+for s in backups_s3_key backups_s3_secret backups_cipher_pass pg_postgres_password pg_owner_password pg_app_password \
+         pg_clinico_password pg_ingesta_password pg_worker_password; do
     secretos_montados+=(-v "$SECRETOS/$s:/run/secrets/$s:ro")
 done
 

@@ -2,8 +2,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # arrancar-dotnet.sh — entrypoint de api, worker, migrador y bff en producción (SPEC 13).
 #
-# Los secretos de Docker son archivos root:root 0600 (/etc/halsa/secretos) montados en
-# /run/secrets, y las imágenes .NET corren como el usuario sin privilegios "app" ($APP_UID).
+# Los secretos son archivos 0600 del root del contenedor (en rootless, el dueño de los Quadlets:
+# ~/.config/halsa/secretos) montados en /run/secrets, y las imágenes .NET corren como el usuario sin
+# privilegios "app" ($APP_UID).
 # Este script arranca como root con capacidades mínimas, y:
 #   1. copia SOLO los secretos que necesita este rol a /run/halsa (tmpfs: en RAM, nunca en
 #      disco ni en un backup), legibles solo por "app";

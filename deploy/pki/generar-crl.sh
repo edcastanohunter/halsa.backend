@@ -3,9 +3,9 @@
 # generar-crl.sh — regenera la CRL de la intermedia y publica cadena + CRLs para Nginx (SPEC 13).
 #
 # En el VPS lo ejecuta un cron cada 7 días (la CRL vale 10) y revocar.sh tras cada revocación.
-# Después hay que llevarla a Nginx Proxy Manager con sincronizar-npm.sh (/etc/cron.d/halsa-crl,
+# Después hay que llevarla a Nginx Proxy Manager con sincronizar-npm.sh (crontab del dueño de los Quadlets,
 # runbook 06):
-#   0 4 * * 1  root  HALSA_PKI_DIR=/etc/halsa/pki bash /opt/halsa/deploy/pki/generar-crl.sh && bash /opt/halsa/deploy/scripts/sincronizar-npm.sh
+#   0 4 * * 1  HALSA_PKI_DIR=~/.config/halsa/pki bash ~/halsa/deploy/pki/generar-crl.sh && bash ~/halsa/deploy/scripts/sincronizar-npm.sh
 #
 # Si la CRL vence, NPM rechaza TODOS los certificados (falla cerrado): Seq alerta 48 h antes
 # (runbook 07).

@@ -5,7 +5,7 @@
 # 1. Escribe los secretos de pgBackRest (credenciales del bucket y passphrase del cifrado)
 #    en /etc/pgbackrest/conf.d/secretos.conf (tmpfs, 0600, del usuario postgres). Así los
 #    leen tanto el archive_command del servidor como los backups lanzados con
-#    `docker compose exec` (runbook 04), sin pasar por variables del contenedor.
+#    `podman exec -u postgres halsa-postgres` (runbook 04), sin pasar por variables del contenedor.
 # 2. Genera el certificado TLS del servidor si no existe (hostssl en pg_hba.conf). Es
 #    autofirmado: los clientes están en la red interna "datos" y usan SSL Mode=Require.
 # 3. Copia las contraseñas de los roles a un tmpfs que solo lee "postgres" (initdb/01-roles.sh).
@@ -50,7 +50,8 @@ if [[ ! -f "$tls/servidor.crt" ]]; then
 fi
 
 # ── 3. The role passwords, for initdb/01-roles.sh ─────────────────────────────
-# The host files are root:root 0600 and the official entrypoint runs initdb as "postgres": it reads its copies from a
+# The host files are 0600 of the Quadlets' owner, which rootless maps to the container's root, and the official
+# entrypoint runs initdb as "postgres": it reads its copies from a
 # tmpfs (/run/halsa-secretos, in RAM) only it can read.
 privados=/run/halsa-secretos
 mkdir -p "$privados"

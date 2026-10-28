@@ -13,7 +13,7 @@
 # Pide en la terminal un administrador del realm master de ese Keycloak. La sesión de
 # kcadm vive en un archivo temporal dentro del contenedor y se borra al terminar.
 #
-# Uso (en el VPS, como root):  /opt/halsa/deploy/keycloak/importar-realms.sh
+# Uso (en el VPS, como el dueño de los Quadlets y del contenedor de Keycloak):  ~/halsa/deploy/keycloak/importar-realms.sh
 # Lee de deploy/.env: HALSA_KEYCLOAK_CONTENEDOR, HALSA_HOST_PACIENTES, HALSA_BACKOFFICE_URL,
 # HALSA_SECRETOS y, opcional, HALSA_KEYCLOAK_URL_INTERNA (por defecto http://localhost:8080,
 # la URL de Keycloak vista desde su propio contenedor).

@@ -13,7 +13,7 @@
 #                            → instala, genera la CRL de la intermedia y publica para Nginx
 #
 # La llave de la intermedia queda sin passphrase: el cron semanal de la CRL la usa sin
-# intervención. Vive en /etc/halsa/pki con root:root 0600 y fuera de todo backup.
+# intervención. Vive en ~/.config/halsa/pki del dueño de los Quadlets, 0600 y fuera de todo backup.
 # ─────────────────────────────────────────────────────────────────────────────
 # shellcheck source=_comun.sh
 source "$(dirname "$0")/_comun.sh"

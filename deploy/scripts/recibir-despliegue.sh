@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
-# version: 1
+# version: 2
 # ─────────────────────────────────────────────────────────────────────────────
 # recibir-despliegue.sh — the only command the CI's SSH key can run on the VPS (SPEC 14, runbooks 01 y 03).
 #
-# Installed as /usr/local/sbin/halsa-recibir-despliegue (root 0755), OUTSIDE /opt/halsa/deploy: the deploy
-# itself rewrites that folder, and code that runs as root only changes when a person reinstalls it.
+# Installed as /usr/local/sbin/halsa-recibir-despliegue (root 0755), OUTSIDE the deploy folder: the deploy itself
+# rewrites that folder, and the code the CI's key reaches only changes when a person reinstalls it.
 #
 #   ssh halsa-deploy@vps "desplegar v1.0.<n>" < paquete.tar
 #
 #   paquete.tar   manifiesto.sha256, imagenes.tar.gz, deploy.tar.gz y, opcional, postgres.tar.gz
 #
 #   1. valida SSH_ORIGINAL_COMMAND y el tag; toma el lock (un despliegue a la vez)
-#   2. copia la entrada estándar a /var/lib/halsa/entregas/<tag>/ (hasta HALSA_PAQUETE_MAX_MB)
+#   2. copia la entrada estándar a <entregas>/<tag>/ (hasta HALSA_PAQUETE_MAX_MB)
 #   3. extrae el paquete y verifica sha256sum -c manifiesto.sha256
 #   4. docker load de las imágenes; verifica que estén las del tag
-#   5. sincroniza deploy/ en /opt/halsa/deploy con rsync --delete, sin tocar .env
+#   5. sincroniza deploy/ en <destino> con rsync --delete, sin tocar .env
 #   6. ejecuta desplegar.sh <tag> y devuelve su código de salida
 #   7. si terminó en 0: retención de imágenes y borrado de la zona de recepción
+#
+# Corre como el usuario dueño de los contenedores: el dueño de los Quadlets rootless con `sudo -u` (destino
+# ~/halsa/deploy, entregas ~/.local/state/halsa/entregas; deploy-quadlets/README), o root con el compose (destino
+# /opt/halsa/deploy). Las imágenes se cargan en el almacén de Podman de ese usuario.
 #
 # Exit: 2 comando inválido; 1 cualquier fallo (en 1-5, antes de tocar .env o los contenedores).
 # Variables: HALSA_PAQUETE_MAX_MB (3072), HALSA_VERSIONES_RETENIDAS (5). sudo las borra salvo que estén en el
@@ -24,9 +28,20 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-DESTINO=/opt/halsa/deploy
-ENTREGAS=/var/lib/halsa/entregas
-LOCK=/var/lock/halsa-despliegue.lock
+# As root (the compose): /opt/halsa. As the owner of the rootless Quadlets (sudo -u <usuario>, deploy-quadlets/README):
+# its home, read from passwd because sudo may keep the caller's HOME; podman and systemctl --user need XDG_RUNTIME_DIR.
+if [[ "$(id -u)" -eq 0 ]]; then
+    DESTINO=/opt/halsa/deploy
+    ENTREGAS=/var/lib/halsa/entregas
+    LOCK=/var/lock/halsa-despliegue.lock
+else
+    HOME="$(getent passwd "$(id -un)" | cut -d: -f6)"
+    XDG_RUNTIME_DIR="/run/user/$(id -u)"
+    export HOME XDG_RUNTIME_DIR
+    DESTINO="$HOME/halsa/deploy"
+    ENTREGAS="$HOME/.local/state/halsa/entregas"
+    LOCK="$XDG_RUNTIME_DIR/halsa-despliegue.lock"
+fi
 MAX_MB="${HALSA_PAQUETE_MAX_MB:-3072}"
 RETENIDAS="${HALSA_VERSIONES_RETENIDAS:-5}"
 REGEX_TAG='^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'

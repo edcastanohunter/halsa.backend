@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-redis — el servicio "redis" de deploy/docker-compose.prod.yml como Quadlet (SPEC 13).
+#
+# Exec= y HealthCmd= terminan en el ExecStart de systemd, que expande especificadores y variables:
+#   %%s → %s   (con un solo %, systemd pone ahí el shell de root y la contraseña quedaría "/bin/bash")
+#   $$  → $    (la sustitución $(cat ...) la hace el sh del contenedor, no systemd)
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa Redis 7
+
+[Container]
+ContainerName=halsa-redis
+NetworkAlias=redis
+Image=docker.io/library/redis:7-alpine
+ReadOnly=true
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+Network=halsa-app.network
+Volume=halsa-redis-datos.volume:/data
+Volume=%h/.config/halsa/secretos/redis_password:/run/secrets/redis_password:ro
+Tmpfs=/run/redis
+# The password goes to a config file in a tmpfs, never to the command line (ps).
+Exec=/bin/sh -c 'umask 077 && printf "appendonly yes\\nappendfsync everysec\\nrequirepass %%s\\n" "$$(cat /run/secrets/redis_password)" > /run/redis/redis.conf && chown redis /run/redis/redis.conf && exec docker-entrypoint.sh redis-server /run/redis/redis.conf'
+HealthCmd=sh -c 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -q PONG'
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=10
+Notify=healthy
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=90
+
+[Install]
+WantedBy=default.target

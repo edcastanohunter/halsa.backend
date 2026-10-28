@@ -8,14 +8,16 @@
 
 | Secreto | En el VPS | Custodia fuera de línea | Si se pierde |
 | --- | --- | --- | --- |
-| `halsa_kek` (la KEK, SPEC 03) | `/etc/halsa/secretos/halsa_kek` | **Sí**, 2 ubicaciones | Las DEK guardadas en la base no se pueden desenvolver: **la HC queda ilegible** |
-| `halsa_sello` (SPEC 11, pendiente) | `/etc/halsa/secretos/halsa_sello` | **Sí**, 2 ubicaciones | No se pueden emitir sellos con la misma llave (los viejos se verifican con la pública) |
+| `halsa_kek` (la KEK, SPEC 03) | `~/.config/halsa/secretos/halsa_kek` | **Sí**, 2 ubicaciones | Las DEK guardadas en la base no se pueden desenvolver: **la HC queda ilegible** |
+| `halsa_sello` (SPEC 11, pendiente) | `~/.config/halsa/secretos/halsa_sello` | **Sí**, 2 ubicaciones | No se pueden emitir sellos con la misma llave (los viejos se verifican con la pública) |
 | Raíz de la CA de integraciones | **Nunca** | **Sí**, equipo sin red + 2 copias cifradas | No se pueden emitir intermedias nuevas: hay que crear otra CA y reemitir todo |
-| Intermedia de la CA | `/etc/halsa/pki/intermedia/intermedia.key` | No (se reemite desde la raíz) | Runbook 06, "Compromiso o pérdida de la intermedia" |
-| `pg_*_password` | `/etc/halsa/secretos/` | En el gestor de contraseñas del equipo | Se cambian con `ALTER ROLE` (runbook 05) |
-| `backups_s3_*`, `backups_cipher_pass` | `/etc/halsa/secretos/` | **`backups_cipher_pass` sí**: sin ella, los backups no sirven | Sin la passphrase, el repositorio de pgBackRest es ilegible |
-| `worm_s3_*` (SPEC 11, pendiente) | `/etc/halsa/secretos/` | En el gestor de contraseñas | Se rotan en el proveedor |
-| `kc_bff_secret`, `redis_password` | `/etc/halsa/secretos/` | En el gestor de contraseñas | Se regeneran (runbook 05; el del BFF también en el Keycloak compartido) |
+| Intermedia de la CA | `~/.config/halsa/pki/intermedia/intermedia.key` | No (se reemite desde la raíz) | Runbook 06, "Compromiso o pérdida de la intermedia" |
+| `pg_*_password` | `~/.config/halsa/secretos/` | En el gestor de contraseñas del equipo | Se cambian con `ALTER ROLE` (runbook 05) |
+| `backups_s3_*`, `backups_cipher_pass` | `~/.config/halsa/secretos/` | **`backups_cipher_pass` sí**: sin ella, los backups no sirven | Sin la passphrase, el repositorio de pgBackRest es ilegible |
+| `worm_s3_*` (SPEC 11, pendiente) | `~/.config/halsa/secretos/` | En el gestor de contraseñas | Se rotan en el proveedor |
+| `kc_bff_secret`, `redis_password` | `~/.config/halsa/secretos/` | En el gestor de contraseñas | Se regeneran (runbook 05; el del BFF también en el Keycloak compartido) |
+
+`~` es el home de `edhunter`, el dueño de los Quadlets rootless (runbook 01). Todo se hace como `edhunter`.
 
 **Custodia fuera de línea** = dos ubicaciones independientes (p. ej. una caja fuerte en la oficina y una bóveda de
 un custodio externo). En cada una, una memoria USB cifrada (LUKS o VeraCrypt) con la KEK, la llave de sello y la
@@ -24,9 +26,12 @@ copia de la raíz. La passphrase la tienen al menos dos personas, y ninguna de e
 
 ## Crear el directorio de secretos (VPS nuevo)
 
+Como `edhunter`, sin sudo. En rootless, el root del contenedor **es** `edhunter`: los archivos deben ser suyos (con
+`root:root` el contenedor no podría leerlos), y `instalar.sh` lo verifica.
+
 ```bash
-install -d -o root -g root -m 0700 /etc/halsa/secretos
-cd /etc/halsa/secretos
+install -d -m 0700 ~/.config/halsa ~/.config/halsa/secretos
+cd ~/.config/halsa/secretos
 umask 077
 
 # Restaurar desde la custodia (NO generar una KEK nueva si ya hay datos cifrados con la anterior):
@@ -45,14 +50,18 @@ printf '%s' '<passphrase>'  > backups_cipher_pass     # la de la custodia, si se
 printf '%s' '<access key>'  > worm_s3_key             # SPEC 11
 printf '%s' '<secret key>'  > worm_s3_secret          # SPEC 11
 
-chown root:root ./* && chmod 0600 ./*
-ls -l   # todos -rw------- root root
+chmod 0600 ./*
+ls -l   # todos -rw------- edhunter edhunter
 ```
+
+Si el directorio ya existía (por ejemplo, a medio crear), basta con repetir el bloque: no regenera las contraseñas
+que ya están, y `install -d` y `chmod` corrigen los permisos.
 
 Halsa no guarda secretos de Keycloak salvo `kc_bff_secret`: la base y el admin de Keycloak son del dueño de esa
 instancia compartida. Los realms de Halsa viven en ella; lo que Halsa puede reconstruir está en el repo (runbook 06).
 
-Cada contenedor recibe solo los suyos (`secrets:` en `docker-compose.prod.yml`). Los servicios que no corren como
+Cada contenedor recibe solo los suyos (`Volume=…/secretos/<s>:/run/secrets/<s>:ro` en su unidad de
+`deploy-quadlets/`, igual que `secrets:` en `docker-compose.prod.yml`). Los servicios que no corren como
 root los copian al arrancar a un **tmpfs** propio (`deploy/scripts/arrancar-dotnet.sh` y `deploy/postgres/arrancar.sh`).
 Así nunca tocan el disco del contenedor ni un volumen.
 
@@ -61,16 +70,17 @@ Así nunca tocan el disco del contenedor ni un volumen.
 1. **pgBackRest** respalda solo `PGDATA` (`/var/lib/postgresql/data` dentro del volumen `postgres-datos`). Los secretos
    no están ahí. Verificación (criterio *staging*):
    ```bash
-   podman compose -f /opt/halsa/deploy/docker-compose.prod.yml exec -u postgres postgres \
+   podman exec -u postgres halsa-postgres \
      pgbackrest --stanza=halsa repo-ls --recurse | grep -Ei 'secret|halsa_kek|sello|password' \
      && echo "FALLO" || echo "OK: ningún secreto en el repositorio"
    ```
 2. **Snapshots del proveedor del VPS:** si se usan, el disco completo entra en el snapshot. Por eso:
-   - `/etc/halsa/secretos` y `/etc/halsa/pki/intermedia` van en un **volumen aparte** (un disco adicional pequeño o un
-     `tmpfs` que se repuebla desde la custodia al arrancar), **excluido** de la política de snapshots;
+   - `~/.config/halsa/` (los secretos y `pki/intermedia`) va en un **volumen aparte** montado ahí (un disco adicional
+     pequeño, o un `tmpfs` que se repuebla desde la custodia al arrancar), **excluido** de la política de snapshots;
    - o los snapshots del proveedor se desactivan y la recuperación se hace solo con el runbook 01 + 04.
    Anota aquí qué opción se usa y la revisión: `____________ (fecha, responsable)`.
-3. **Cualquier otra copia** (rsync, restic) excluye `/etc/halsa/` y `/opt/halsa/deploy/.env`.
+3. **Cualquier otra copia** (rsync, restic, una copia del home de `edhunter`) excluye `~/.config/halsa/` y
+   `~/halsa/deploy/.env`.
 
 ## Ensayo semestral de recuperación
 

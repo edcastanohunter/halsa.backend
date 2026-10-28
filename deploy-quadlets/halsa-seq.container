@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-seq — el servicio "seq" de deploy/docker-compose.prod.yml como Quadlet (SPEC 13).
+# La UI solo por túnel SSH (runbook 07). Egreso para las alertas por SMTP.
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa Seq (logs y alertas)
+
+[Container]
+ContainerName=halsa-seq
+NetworkAlias=seq
+Image=docker.io/datalust/seq:${HALSA_SEQ_TAG}
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+Network=halsa-app.network
+Network=halsa-egreso.network
+Volume=halsa-seq-datos.volume:/data
+Environment=ACCEPT_EULA=Y
+Environment=SEQ_FIRSTRUN_ADMINPASSWORDHASH=${HALSA_SEQ_ADMIN_HASH}
+
+[Service]
+EnvironmentFile=%h/halsa/deploy/.env
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

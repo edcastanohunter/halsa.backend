@@ -1,0 +1,6 @@
+[Network]
+NetworkName=halsa_egreso
+Subnet=172.30.3.0/24
+
+[Install]
+WantedBy=default.target

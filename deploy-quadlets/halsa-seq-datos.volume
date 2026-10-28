@@ -1,0 +1,5 @@
+[Volume]
+VolumeName=halsa_seq-datos
+
+[Install]
+WantedBy=default.target

@@ -7,7 +7,7 @@
 #           (por defecto, keyCompromise)
 #
 # Después hay que llevar la CRL nueva a Nginx Proxy Manager (runbook 06):
-#   bash /opt/halsa/deploy/scripts/sincronizar-npm.sh
+#   bash ~/halsa/deploy/scripts/sincronizar-npm.sh
 #
 # Revocar la intermedia NO se hace aquí: se revoca desde la raíz, en el equipo sin red
 # (openssl ca -revoke con raiz/openssl.cnf y generar-crl.sh --raiz), runbook 06.

@@ -1,0 +1,25 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# halsa-antivirus — el servicio "antivirus" de deploy/docker-compose.prod.yml como Quadlet (SPEC 07 y 13).
+# Egreso solo para freshclam (firmas).
+# ─────────────────────────────────────────────────────────────────────────────
+[Unit]
+Description=Halsa ClamAV
+
+[Container]
+ContainerName=halsa-antivirus
+NetworkAlias=antivirus
+Image=docker.io/clamav/clamav:1.4
+NoNewPrivileges=true
+Ulimit=core=0
+LogDriver=journald
+Network=halsa-app.network
+Network=halsa-egreso.network
+Volume=halsa-clamav-firmas.volume:/var/lib/clamav
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

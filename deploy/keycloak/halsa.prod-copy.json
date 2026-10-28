@@ -1,0 +1,695 @@
+{
+  "id": "halsa",
+  "realm": "halsa",
+  "displayName": "Hálsa Personal",
+  "enabled": true,
+  "sslRequired": "all",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyLookAheadWindow": 1,
+  "attributes": {
+    "acr.loa.map": "{\"1\":1,\"2\":2}"
+  },
+  "browserFlow": "browser-loa",
+  "authenticationFlows": [
+    {
+      "alias": "browser-loa",
+      "description": "Navegador con step-up (SPEC 07): nivel 1 = contraseña, nivel 2 = OTP. El nivel lo pide acr_values.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "flowAlias": "browser-loa niveles",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "browser-loa niveles",
+      "description": "Un subflujo condicional por nivel de autenticación.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "flowAlias": "browser-loa nivel 1",
+          "requirement": "CONDITIONAL",
+          "priority": 10,
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "userSetupAllowed": false
+        },
+        {
+          "flowAlias": "browser-loa nivel 2",
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "authenticatorFlow": true,
+          "autheticatorFlow": true,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "browser-loa nivel 1",
+      "description": "LoA 1: usuario y contraseña. Una sesión de menos de 10 h no la vuelve a pedir.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-level-of-authentication",
+          "authenticatorConfig": "loa-nivel-1",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-username-password-form",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "browser-loa nivel 2",
+      "description": "LoA 2: OTP. Se pide cada vez que el cliente envía acr_values=2.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-level-of-authentication",
+          "authenticatorConfig": "loa-nivel-2",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "authenticatorFlow": false,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "loa-nivel-1",
+      "config": {
+        "loa-condition-level": "1",
+        "loa-max-age": "36000"
+      }
+    },
+    {
+      "alias": "loa-nivel-2",
+      "config": {
+        "loa-condition-level": "2",
+        "loa-max-age": "0"
+      }
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "roles",
+      "description": "Emite realm_access y resource_access, de donde la API lee los permisos. Un realm importado con clientScopes propios no crea los scopes integrados de Keycloak.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "client roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "description": "Emite name y preferred_username: el nombre del profesional que firma sale del claim name.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "web-origins",
+      "description": "Emite allowed-origins, que Keycloak usa para el CORS del backoffice.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "allowed web origins",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-allowed-origins-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "acr",
+      "description": "Emite el claim acr (SPEC 07). Un realm importado con clientScopes propios no crea el scope integrado de Keycloak: sin él ningún token lleva acr y el step-up nunca se cumple.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "acr loa level",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-acr-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "halsa-claims",
+      "description": "Mappers de atributos de usuario: tenant_id, ips_id, actor_tipo y la identidad del profesional (rethus, tipo_documento, numero_documento)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "ips_id mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "ips_id",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "ips_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "actor_tipo mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "actor_tipo",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "actor_tipo",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "rethus mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "rethus",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "rethus",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "tipo_documento mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "tipo_documento",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "tipo_documento",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "numero_documento mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "false",
+            "user.attribute": "numero_documento",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "numero_documento",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": [
+    "profile",
+    "roles",
+    "web-origins",
+    "acr",
+    "halsa-claims"
+  ],
+  "defaultOptionalClientScopes": [
+    "offline_access"
+  ],
+  "clients": [
+    {
+      "clientId": "halsa-api",
+      "name": "Hálsa API",
+      "description": "Resource server. Bearer-only; no emite tokens.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "bearerOnly": true,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "halsa-backoffice",
+      "name": "Hálsa Backoffice",
+      "description": "SPA del equipo interno. Authorization Code + PKCE.",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "bearerOnly": false,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "https://halsa-backoffice.alcast.dev/*"
+      ],
+      "webOrigins": [
+        "https://halsa-backoffice.alcast.dev"
+      ],
+      "protocolMappers": [
+        {
+          "name": "halsa-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "halsa-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [],
+    "client": {
+      "halsa-api": [
+        {
+          "name": "casos:read",
+          "description": "Leer casos ATEL",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "casos:write",
+          "description": "Crear y modificar casos ATEL",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "casos:asignar",
+          "description": "Asignar personal a un caso",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "incapacidades:read",
+          "description": "Leer incapacidades",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "incapacidades:write",
+          "description": "Registrar y modificar incapacidades",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "plazos:read",
+          "description": "Consultar plazos legales",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "plazos:write",
+          "description": "Cumplir plazos legales a mano",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "clinico:read",
+          "description": "Leer expediente clínico",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "clinico:write",
+          "description": "Ingresar datos clínicos",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "clinico:emergencia",
+          "description": "Acceso de emergencia al expediente (break-the-glass)",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "pcl:dictamen:read",
+          "description": "Leer dictamen de PCL",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "pcl:dictamen:write",
+          "description": "Emitir y modificar dictamen de PCL",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "auditoria:read",
+          "description": "Leer registros de auditoría",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "auditoria:export",
+          "description": "Exportar registros de auditoría",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "auditoria:revisar",
+          "description": "Revisar y cerrar los accesos de emergencia",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "integracion:furat:write",
+          "description": "Enviar FURAT a través de integración",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "integracion:furep:write",
+          "description": "Enviar FUREP a través de integración",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "integracion:clinico:write",
+          "description": "Enviar datos clínicos a través de integración",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "webhooks:manage",
+          "description": "Gestionar webhooks salientes",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "pacientes:activar",
+          "description": "Emitir códigos de activación del portal del paciente",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "solicitudes-hc:gestionar",
+          "description": "Gestionar la bandeja de solicitudes de copia de la HC",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "analista-arl",
+          "description": "Analista de la ARL: gestión de casos, incapacidades y códigos del portal del paciente",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read",
+                "casos:write",
+                "casos:asignar",
+                "incapacidades:read",
+                "plazos:read",
+                "plazos:write",
+                "pacientes:activar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "medico-laboral",
+          "description": "Médico laboral de la ARL: analista + expediente clínico",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read",
+                "casos:write",
+                "incapacidades:read",
+                "plazos:read",
+                "clinico:read",
+                "clinico:write",
+                "incapacidades:write"
+              ]
+            }
+          }
+        },
+        {
+          "name": "medico-calificador",
+          "description": "Médico calificador de la ARL: laboral + dictamen PCL",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read",
+                "casos:write",
+                "incapacidades:read",
+                "plazos:read",
+                "clinico:read",
+                "clinico:write",
+                "incapacidades:write",
+                "pcl:dictamen:read",
+                "pcl:dictamen:write"
+              ]
+            }
+          }
+        },
+        {
+          "name": "medico-ips",
+          "description": "Médico de IPS: casos remitidos + expediente clínico",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read",
+                "clinico:read",
+                "clinico:write",
+                "incapacidades:read",
+                "incapacidades:write"
+              ]
+            }
+          }
+        },
+        {
+          "name": "oficial-privacidad",
+          "description": "Oficial de privacidad: auditoría completa y solicitudes de copia de la HC",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "auditoria:read",
+                "auditoria:export",
+                "auditoria:revisar",
+                "solicitudes-hc:gestionar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "coordinador-ips",
+          "description": "Coordinador de IPS: asigna a su personal los casos remitidos",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read",
+                "casos:asignar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "integracion-arl",
+          "description": "Cuenta de integración de ARL: FURAT, FUREP, webhooks y códigos del portal del paciente",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "integracion:furat:write",
+                "integracion:furep:write",
+                "webhooks:manage",
+                "pacientes:activar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "integracion-ips",
+          "description": "Cuenta de integración de IPS: envío de datos clínicos y webhooks",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "integracion:clinico:write",
+                "incapacidades:write",
+                "webhooks:manage"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "users": [],
+  "scopeMappings": [],
+  "clientScopeMappings": {
+    "halsa-api": []
+  },
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900
+}

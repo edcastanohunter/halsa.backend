@@ -16,59 +16,124 @@
       `incluir_postgres`);
    2. arma `paquete.tar` (imágenes, `git archive` de `deploy/` y sus sumas sha256);
    3. ejecuta `ssh halsa-deploy@<vps> "desplegar v1.0.<n>" < paquete.tar`.
-4. En el VPS, `halsa-recibir-despliegue` (`deploy/scripts/recibir-despliegue.sh`):
+4. En el VPS, `halsa-recibir-despliegue` (`deploy/scripts/recibir-despliegue.sh`), como `edhunter` (`sudo -u`):
    1. verifica el comando, el tamaño y las sumas; si algo falla, sale con `1` **sin tocar nada**;
-   2. `podman load` de las imágenes;
-   3. sincroniza `/opt/halsa/deploy` con `rsync --delete`, sin tocar `.env`;
+   2. `podman load` de las imágenes, en el almacén de `edhunter`;
+   3. sincroniza `~/halsa/deploy` con `rsync --delete`, sin tocar `.env`;
    4. ejecuta `desplegar.sh v1.0.<n>`:
       1. verifica que las imágenes del tag estén cargadas;
-      2. `podman compose run --rm migrador`, que sale con `0` o `1`. Si falla, no se toca nada más;
-      3. `up -d api worker bff`;
+      2. fija `HALSA_TAG` en `.env` y `systemctl --user start halsa-migrador`, que sale con el código del Migrador
+         (`0` o `1`). Si falla, vuelve el tag y no toca nada más;
+      3. `systemctl --user restart halsa-api halsa-worker halsa-bff`;
       4. espera hasta 120 s a que `/health` de `api` y `worker` esté en `Healthy`;
       5. sincroniza la configuración de borde con NPM (`sincronizar-npm.sh`, que valida con `nginx -t` antes de recargar);
       6. si no llega a `Healthy`, **vuelve al tag anterior**. Termina con `1` en cualquier caso de fallo;
    5. si todo terminó bien: conserva las 5 versiones más recientes (más la actual y la anterior) y borra la entrega.
 5. Revisar Seq: ningún `Error` nuevo desde el despliegue.
 
-Si el job falla, su log tiene la salida completa de los dos scripts. Una entrega fallida queda en
-`/var/lib/halsa/entregas/<tag>/` para diagnóstico; se puede borrar a mano.
+Si el job falla, su log tiene la salida completa de los dos scripts (y las últimas líneas de
+`journalctl --user -u halsa-migrador` si falló la migración). Una entrega fallida queda en
+`~/.local/state/halsa/entregas/<tag>/` para diagnóstico; se puede borrar a mano.
 
 Dos despliegues nunca corren a la vez: el job tiene su grupo de concurrencia (`despliegue-produccion`) y el script
-toma `/var/lock/halsa-despliegue.lock`. Si quedan varios esperando aprobación, basta con aprobar el más reciente y
+toma `/run/user/<uid de edhunter>/halsa-despliegue.lock`. Si quedan varios esperando aprobación, basta con aprobar el más reciente y
 rechazar los anteriores.
 
 ## Rollback manual
 
-`desplegar.sh` vuelve a cualquier tag que siga cargado en el VPS. Como root:
+`desplegar.sh` vuelve a cualquier tag que siga cargado en el VPS. Como `edhunter` (nunca como root: el root no ve
+las imágenes ni las unidades de `edhunter`):
 
 ```bash
 podman image ls localhost/halsa-backend                 # tags disponibles (los 5 más recientes)
-/opt/halsa/deploy/scripts/desplegar.sh v1.0.41
+~/halsa/deploy/scripts/desplegar.sh v1.0.41
 ```
+
+Solo las migraciones, sin cambiar de versión: `bash ~/halsa/deploy-quadlets/migrar.sh`.
 
 Un tag que ya no está cargado falla con `1` sin cambiar nada (`FALLO: falta la imagen ...`). Para volver a él,
 relanza en GitHub el run de `main` que lo creó (*Re-run all jobs*): un re-run conserva el `run_number`, así que
 construye y envía otra vez el mismo `v1.0.<n>`.
 
-El rollback vuelve a la imagen anterior con el `deploy/` **nuevo** (compose y scripts). Por eso, igual que las
-migraciones, los cambios en `deploy/` deben ser compatibles con la versión anterior, y el PR lo declara.
+El rollback vuelve a la imagen anterior con el `deploy/` **nuevo** (scripts y `arrancar-dotnet.sh`). Por eso, igual
+que las migraciones, los cambios en `deploy/` deben ser compatibles con la versión anterior, y el PR lo declara. Las
+unidades de `deploy-quadlets/` no cambian con un despliegue: solo con `instalar.sh` (deploy-quadlets/README).
 
 ## PostgreSQL: imagen nueva
 
-El CI solo **carga** `localhost/halsa-postgres:17` cuando cambia `deploy/postgres/`; `desplegar.sh` nunca recrea
-`postgres`. Para aplicarla, en una ventana de mantenimiento (corta las conexiones y el archivado unos segundos):
+El CI solo **carga** `localhost/halsa-postgres:17` cuando cambia `deploy/postgres/`; `desplegar.sh` nunca reinicia
+`halsa-postgres`. Para aplicarla, en una ventana de mantenimiento. Corta las conexiones y el archivado unos segundos,
+y por `Requires=` reinicia también api, worker y bff:
 
 ```bash
-cd /opt/halsa/deploy && C="podman compose -f docker-compose.prod.yml"
 podman image ls localhost/halsa-postgres                # 17 y 17-v1.0.<n>
-$C up -d postgres
-$C exec -u postgres postgres pgbackrest --stanza=halsa check
+systemctl --user restart halsa-postgres                 # espera a healthy (Notify=healthy)
+systemctl --user start halsa-api halsa-worker halsa-bff
+podman exec -u postgres halsa-postgres pgbackrest --stanza=halsa check
 ```
+
+## Transición a rootless (una sola vez)
+
+Para un VPS que corría Halsa con `podman compose` **como root** (`/opt/halsa`, `/etc/halsa`). El root y `edhunter`
+tienen almacenes, redes y volúmenes de Podman distintos: se copian los secretos, la PKI, las imágenes y los datos, y
+se apaga lo de root. En una ventana de mantenimiento, con el responsable de la plataforma. Halsa responde `502`
+mientras dura.
+
+```bash
+# Como edhunter. R = el compose de root, que sigue disponible para volver atrás.
+R="sudo podman compose -f /opt/halsa/deploy/docker-compose.prod.yml --env-file /opt/halsa/deploy/.env"
+
+# 1. Un backup completo del postgres de root y apagarlo, con sus cron: dos postgres archivarían en la misma stanza.
+$R exec -T -u postgres postgres pgbackrest --stanza=halsa --type=full backup
+$R down                                                  # SIN -v: los volúmenes de root son la vuelta atrás
+sudo mv /etc/cron.d/halsa-backups /etc/cron.d/halsa-crl /root/   # que no corran; se borran en el paso 7
+
+# 2. Código, .env, secretos y PKI, de edhunter (runbook 01, paso 2, para ~/halsa).
+sudo install -o edhunter -g edhunter -m 0600 /opt/halsa/deploy/.env ~/halsa/deploy/.env
+$EDITOR ~/halsa/deploy/.env      # HALSA_SECRETOS, HALSA_PKI_PUBLICADA y HALSA_NPM_DATA: las de .env.ejemplo
+install -d -m 0700 ~/.config/halsa ~/.config/halsa/secretos ~/.config/halsa/pki
+sudo cp -a /etc/halsa/secretos/. ~/.config/halsa/secretos/
+sudo cp -a /etc/halsa/pki/. ~/.config/halsa/pki/          # openssl.cnf se regenera con la ruta nueva en cada uso
+sudo chown -R edhunter:edhunter ~/.config/halsa && chmod 0600 ~/.config/halsa/secretos/*
+
+# 3. Las imágenes en uso, al almacén de edhunter.
+set -a; source ~/halsa/deploy/.env; set +a
+for i in "localhost/halsa-backend:$HALSA_TAG" "localhost/halsa-bff-paciente:$HALSA_TAG" \
+         "localhost/halsa-postgres:$HALSA_POSTGRES_TAG"; do
+  sudo podman save "$i" | podman load
+done
+
+# 4. Los datos, copiados tal cual con el servidor detenido (sin timeline nuevo, la misma stanza). podman unshare
+#    escribe dentro del user namespace de edhunter: el UID 999 de postgres y el 1654 de app quedan como los ve el
+#    contenedor rootless. ClamAV regenera sus firmas solo.
+for v in halsa_postgres-datos halsa_archivos halsa_seq-datos halsa_redis-datos; do
+  podman volume create --ignore "$v" >/dev/null
+  origen="$(sudo podman volume inspect "$v" --format '{{.Mountpoint}}')"
+  destino="$(podman volume inspect "$v" --format '{{.Mountpoint}}')"
+  sudo tar -C "$origen" --numeric-owner -cf - . | podman unshare tar -C "$destino" --numeric-owner -xpf -
+done
+
+# 5. Las unidades y la versión que corría.
+bash ~/halsa/deploy-quadlets/instalar.sh
+podman exec -u postgres halsa-postgres pgbackrest --stanza=halsa check     # la stanza de siempre: sin stanza-create
+~/halsa/deploy/scripts/desplegar.sh "$HALSA_TAG"
+```
+
+6. El CI y los cron: runbook 01, paso 10 (el sudoers pasa a `(edhunter)`, el `command=` a `sudo -u edhunter`, y se
+   reinstala `halsa-recibir-despliegue` versión 2), el crontab de `edhunter` (runbooks 04 y 06) y la verificación del
+   runbook 01, paso 9. Un `full backup` nuevo (runbook 04).
+7. **Unos días después**, si todo sigue bien: `sudo podman volume rm` de los `halsa_*` de root,
+   `sudo rm -rf /etc/halsa /opt/halsa /var/lib/halsa /root/halsa-backups /root/halsa-crl` y `sudo podman image rm` de las
+   `localhost/halsa-*` de root. Antes de borrar `/etc/halsa`, comprobar que `~/.config/halsa` está completo: la
+   custodia (runbook 02) solo tiene la KEK, la llave de sello y la raíz.
+
+**Volver atrás** antes del paso 7: `systemctl --user stop 'halsa-*'`, mover los cron de vuelta a `/etc/cron.d/` y
+`$R up -d postgres redis antivirus seq api worker bff`. Lo escrito en la base rootless desde el paso 5 se pierde.
 
 ## Transición desde GHCR (una sola vez)
 
-Para un VPS que ya corría con imágenes de GHCR (SPEC 13). Hacerlo **antes** del primer despliegue del CI, para que el
-primer rollback tenga a dónde volver. Como root:
+Para un VPS que ya corría con imágenes de GHCR (SPEC 13), antes de la transición a rootless. Hacerlo **antes** del
+primer despliegue del CI, para que el primer rollback tenga a dónde volver. Como root:
 
 ```bash
 cd /opt/halsa/deploy
@@ -107,7 +172,7 @@ despliegue (runbook 04), con la pérdida de los datos posteriores que eso implic
 
 ## Rollback fallido
 
-1. `podman compose -f docker-compose.prod.yml logs --since 15m api worker`.
+1. `journalctl --user -u halsa-api -u halsa-worker --since -15m --no-pager`.
 2. Si es configuración (`ProductionGuard: ...` en el log y exit `1`), corregir `.env` o los secretos y repetir.
 3. Si es el esquema: detener `api` y `worker` (NPM responde 502), avisar (runbook 07, "Comunicación") y decidir
    entre corregir hacia adelante (un `vX.Y.Z+1` con el arreglo) o el PITR del runbook 04.
@@ -119,9 +184,9 @@ la condición:
 
 | Condición | Corrección |
 | --- | --- |
-| `Keycloak:RequireHttpsMetadata=false` | quitar el override; el compose lo fija en `true` |
+| `Keycloak:RequireHttpsMetadata=false` | quitar el override; las unidades lo fijan en `true` |
 | un emisor no es `https` | `HALSA_DOMINIO` mal escrito o vacío |
-| `Halsa:Rol` vacío o `Ambos` | cada servicio tiene su rol en el compose |
+| `Halsa:Rol` vacío o `Ambos` | cada servicio tiene su rol en su unidad (`halsa-*.container`) |
 | `Integraciones:ExigirCertificado=false` | quitar el override |
 | `Webhooks:PermitirDestinosLocales=true` | quitar el override |
 | `Clinico:KekBase64` tiene valor | la KEK viene solo del secreto `halsa_kek` |
@@ -134,8 +199,11 @@ la condición:
 monitor externo alerta en 2 minutos. Para recuperarlo:
 
 ```bash
-/opt/halsa/deploy/scripts/sincronizar-npm.sh     # vuelve a unirlo con la IP 172.30.0.10; idempotente
+~/halsa/deploy/scripts/sincronizar-npm.sh     # vuelve a unirlo con la IP 172.30.0.10; idempotente
 ```
+
+Para que no vuelva a pasar, la red va fija en el `npm.container` de NPM (deploy-quadlets/README, "NPM en una red
+bridge").
 
 Si después de una **actualización** de NPM los proxy hosts de Halsa quedan *Offline* con `duplicate location "/"`,
 cambió cómo NPM detecta el `location /` de Advanced: runbook 01, "Actualizar NPM".
@@ -157,8 +225,8 @@ al pedir el token. Ver README, "Keycloak → Shared instance".
 Seq no se publica. Para su interfaz, un proxy efímero en el loopback del VPS y un túnel SSH:
 
 ```bash
-# En el VPS:
-podman run --rm -d --name seq-tunel -p 127.0.0.1:8082:80 alpine/socat tcp-listen:80,fork,reuseaddr tcp-connect:seq:80
+# En el VPS, como edhunter (--network podman: un contenedor en pasta, el predeterminado rootless, no puede unirse a otra red):
+podman run --rm -d --name seq-tunel --network podman -p 127.0.0.1:8082:80 alpine/socat tcp-listen:80,fork,reuseaddr tcp-connect:seq:80
 podman network connect halsa_app seq-tunel
 # En tu equipo:
 ssh -N -L 8082:127.0.0.1:8082 <usuario>@<vps>      # → http://localhost:8082
@@ -166,5 +234,5 @@ ssh -N -L 8082:127.0.0.1:8082 <usuario>@<vps>      # → http://localhost:8082
 podman rm -f seq-tunel
 ```
 
-> `halsa_app` es interna y Podman no publica puertos desde una red interna: el proxy efímero arranca en la red por
-> defecto (que publica solo en el loopback del VPS) y luego se une a `halsa_app`. Existe solo mientras dura la sesión.
+> `halsa_app` es interna y Podman no publica puertos desde una red interna: el proxy efímero arranca en la red bridge
+> `podman` (que publica solo en el loopback del VPS) y luego se une a `halsa_app`. Existe solo mientras dura la sesión.
