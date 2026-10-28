@@ -33,6 +33,9 @@ contenedor no podría leerlos). **Excluye `~/.config/halsa/` de cualquier backup
 Los contenedores se llaman `halsa-<servicio>` (Quadlet arranca con `--replace`: con `postgres` a secas habría
 reemplazado el postgres que ya corre en el VPS). Dentro de las redes de Halsa conservan su nombre corto con
 `NetworkAlias=` (`postgres`, `redis`, `api`, …), que es el que usan las cadenas de conexión y NPM.
+`NetworkAlias=` vale en **todas** las redes del contenedor. Por eso postgres lleva su alias solo en `datos`
+(`Network=halsa-datos.network:alias=postgres`): el worker también está en `egreso`, y con el alias ahí a veces
+resolvía `postgres` a una IP 172.30.3.x, que `pg_hba.conf` rechaza.
 
 ## Archivos
 

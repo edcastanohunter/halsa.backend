@@ -9,7 +9,6 @@ Description=Halsa PostgreSQL 17 + pgBackRest
 
 [Container]
 ContainerName=halsa-postgres
-NetworkAlias=postgres
 # Built by the CI (deploy/postgres/Dockerfile) and loaded into the VPS only when it changes (SPEC 14).
 Image=localhost/halsa-postgres:${HALSA_POSTGRES_TAG}
 Pull=never
@@ -17,7 +16,9 @@ ShmSize=256m
 NoNewPrivileges=true
 Ulimit=core=0
 LogDriver=journald
-Network=halsa-datos.network
+# The "postgres" alias only on datos. NetworkAlias= would put it on egreso too, and the worker (also on egreso) would
+# sometimes resolve it to 172.30.3.x, which pg_hba.conf rejects. Egreso is only for pgBackRest to reach the bucket.
+Network=halsa-datos.network:alias=postgres
 Network=halsa-egreso.network
 Volume=halsa-postgres-datos.volume:/var/lib/postgresql/data
 Volume=%h/.config/halsa/secretos/pg_postgres_password:/run/secrets/pg_postgres_password:ro
