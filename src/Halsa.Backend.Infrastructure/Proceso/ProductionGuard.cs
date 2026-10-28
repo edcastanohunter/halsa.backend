@@ -90,19 +90,9 @@ public static class ProductionGuard
 
         using IServiceScope scope = services.CreateScope();
 
-        try
-        {
-            if (scope.ServiceProvider.GetService<IAfiliacionGateway>() is DevAfiliacionGateway)
-            {
-                return ["El stub de afiliación (DevAfiliacionGateway) está registrado: aprobaría casos sin consultar a la ARL."];
-            }
-        }
-        catch (InvalidOperationException)
-        {
-            // No gateway can be built: AfiliacionGatewayValidator already stops the start, with its own message.
-        }
-
-        return [];
+        return scope.ServiceProvider.GetService<IAfiliacionGateway>() is DevAfiliacionGateway
+            ? ["El stub de afiliación (DevAfiliacionGateway) está registrado: aprobaría casos sin consultar a la ARL."]
+            : [];
     }
 
     /// <summary>Escribe las condiciones incumplidas y devuelve el código de salida del proceso.</summary>

@@ -275,6 +275,21 @@ datos de NPM son de `edhunter`.
    ssh -i ci-halsa halsa-deploy@<vps>; echo "exit=$?"            # "comando no permitido", exit=2, sin shell
    ssh -i ci-halsa halsa-deploy@<vps> bash; echo "exit=$?"       # igual
    ```
+   Si el job del CI termina con `desplegar: command not found` (exit `127`), la llave **sí entró, pero sin el
+   `command=`**: el shell remoto ejecutó `desplegar v1.0.<n>` como comando, y esa llave tiene un shell completo en el
+   VPS. Pasa cuando `VPS_USER` no es `halsa-deploy`, cuando `ci-halsa.pub` también está en otro `authorized_keys`
+   (`ssh-copy-id`), o cuando la línea del paso 5 no lleva `command=`. `sudo journalctl -u ssh | grep Accepted` dice
+   con qué usuario entró. Quita la llave de cualquier otro `authorized_keys` y deja solo la línea del paso 5.
+
+   Si termina con `Permission denied (publickey)`, `sshd` dice el motivo en el VPS:
+   `sudo journalctl -u ssh --since "10 min ago"`. Los habituales:
+   - `bad ownership or modes`: `/home/halsa-deploy` escribible por otros, o `.ssh` / `authorized_keys` que no son de
+     `halsa-deploy` (0700 / 0600);
+   - `not allowed because not listed in AllowUsers` (o `AllowGroups`): agrégalo en `sshd_config`;
+   - `account is locked`: `sudo usermod -p '*' halsa-deploy` (sin contraseña, pero no bloqueada);
+   - solo `Connection closed by authenticating user halsa-deploy … [preauth]`: la llave no coincide. Compara `ssh-keygen -lf ci-halsa` (tu máquina) con
+     `sudo ssh-keygen -lf /home/halsa-deploy/.ssh/authorized_keys`. Suele ser la línea partida al pegarla, el
+     `AAAA…` del ejemplo sin reemplazar, o un secret `VPS_SSH_KEY` de otra llave.
 
 **Cuando cambie `deploy/scripts/recibir-despliegue.sh` en el repo** (su cabecera lleva `# version:`), el despliegue
 copia el archivo nuevo a `~/halsa/deploy/scripts/`, pero el que se ejecuta es el instalado. Revisa el diff y

@@ -21,7 +21,8 @@ namespace Halsa.Backend.Application.Integraciones.Validacion;
 ///   <item>Deduplicación: otro caso del mismo tenant, tipo y trabajador, no rechazado, radicado antes y con el
 ///   evento dentro de <see cref="IntegracionesOptions.VentanaDuplicado"/>, lo rechaza como duplicado.</item>
 ///   <item>Afiliación: si el core de la ARL dice que no está afiliado, se rechaza. Si el core falla, este handler
-///   lanza y el outbox reintenta.</item>
+///   lanza y el outbox reintenta. Si no hay core integrado (<see cref="ResultadoAfiliacion.SinVerificar"/>), el caso
+///   queda <c>Radicado</c> y el mensaje se da por procesado.</item>
 ///   <item>Si no aplica ninguna, el caso queda validado.</item>
 /// </list>
 /// El cambio de estado, sus eventos en el outbox y la auditoría se confirman juntos. Un evento repetido encuentra
@@ -69,6 +70,13 @@ internal sealed partial class ValidarCasoRadicadoHandler(
         {
             ResultadoAfiliacion resultado = await afiliacion.VerificarAsync(
                 tenant, caso.Trabajador, caso.Empleador, caso.FechaEvento, cancellationToken);
+
+            // No ARL core to ask yet: the message is done and the case waits in Radicado, with nothing to save.
+            if (resultado == ResultadoAfiliacion.SinVerificar)
+            {
+                LogAfiliacionPendiente(logger, caso.Id.Value);
+                return;
+            }
 
             transicion = resultado == ResultadoAfiliacion.NoAfiliado
                 ? caso.Rechazar(MotivoRechazo.NoAfiliado, duplicadoDe: null, ahora)
@@ -136,6 +144,10 @@ internal sealed partial class ValidarCasoRadicadoHandler(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Caso {CasoId} ya validado ({Estado}); el evento repetido se ignora")]
     private static partial void LogYaValidado(ILogger logger, Guid casoId, EstadoCaso estado);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Caso {CasoId}: sin core de afiliación integrado, queda Radicado hasta que se pueda verificar")]
+    private static partial void LogAfiliacionPendiente(ILogger logger, Guid casoId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Caso {CasoId} validado: {Estado} {MotivoRechazo}")]
     private static partial void LogValidado(ILogger logger, Guid casoId, EstadoCaso estado, MotivoRechazo? motivoRechazo);

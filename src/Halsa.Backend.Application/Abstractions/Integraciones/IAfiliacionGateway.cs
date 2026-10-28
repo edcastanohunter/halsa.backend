@@ -20,5 +20,11 @@ public interface IAfiliacionGateway
 public enum ResultadoAfiliacion
 {
     Afiliado = 1,
-    NoAfiliado = 2
+    NoAfiliado = 2,
+
+    /// <summary>
+    /// No hay core integrado para consultar (<c>AfiliacionNoIntegradaGateway</c>): el caso queda <c>Radicado</c>, sin
+    /// validar ni rechazar, hasta que exista el cliente real y se vuelva a validar.
+    /// </summary>
+    SinVerificar = 3
 }

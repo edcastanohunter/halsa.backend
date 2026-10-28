@@ -211,23 +211,19 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(IncapacidadesOptions.SectionName));
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<IncapacidadesOptions>>().Value);
 
-        // The asynchronous validation: the duplicate window and the affiliation gateway. Only the dev stub exists
-        // yet, so outside Development and Testing the API refuses to start instead of approving real cases.
+        // The asynchronous validation: the duplicate window and the affiliation gateway. No ARL core is integrated
+        // yet: outside Development and Testing the cases wait in Radicado instead of being approved by the stub.
         services
             .AddOptions<IntegracionesOptions>()
             .Bind(configuration.GetSection(IntegracionesOptions.SectionName))
             .ValidateOnStart();
-        services.AddSingleton<IValidateOptions<IntegracionesOptions>>(sp =>
-            new AfiliacionGatewayValidator(sp.GetService<IHostEnvironment>()?.EnvironmentName));
+        services.AddSingleton<IValidateOptions<IntegracionesOptions>, IntegracionesOptionsValidator>();
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<IntegracionesOptions>>().Value);
 
         services.AddScoped<IAfiliacionGateway>(sp =>
-        {
-            string? environmentName = sp.GetService<IHostEnvironment>()?.EnvironmentName;
-            return DevAfiliacionGateway.Admitido(environmentName)
+            DevAfiliacionGateway.Admitido(sp.GetService<IHostEnvironment>()?.EnvironmentName)
                 ? new DevAfiliacionGateway()
-                : throw new InvalidOperationException($"No hay un IAfiliacionGateway real para '{environmentName}'.");
-        });
+                : new AfiliacionNoIntegradaGateway());
 
         return services;
     }

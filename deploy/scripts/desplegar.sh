@@ -84,19 +84,25 @@ esperar_salud() {
     return 1
 }
 
+# Both images of a tag loaded (podman, or docker in the compose mode).
+imagenes_cargadas() {
+    local imagen
+    for imagen in "localhost/halsa-backend:$1" "localhost/halsa-bff-paciente:$1"; do
+        podman image inspect "$imagen" >/dev/null 2>&1 || docker image inspect "$imagen" >/dev/null 2>&1 || return 1
+    done
+}
+
 anterior="$(grep -E '^HALSA_TAG=' "$ENV" | cut -d= -f2- || true)"
 info "desplegando $nuevo (anterior: ${anterior:-ninguno})"
 
 fijar_tag "$nuevo"
 
 info "1/4 imágenes"
-for imagen in "localhost/halsa-backend:$nuevo" "localhost/halsa-bff-paciente:$nuevo"; do
-    if ! podman image inspect "$imagen" >/dev/null 2>&1 && ! docker image inspect "$imagen" >/dev/null 2>&1; then
-        fijar_tag "$anterior"
-        echo "FALLO: falta la imagen $imagen en el VPS; nada cambió." >&2
-        exit 1
-    fi
-done
+if ! imagenes_cargadas "$nuevo"; then
+    fijar_tag "$anterior"
+    echo "FALLO: faltan las imágenes de $nuevo en el VPS; nada cambió." >&2
+    exit 1
+fi
 
 info "2/4 migraciones"
 if usar_quadlets; then
@@ -139,6 +145,13 @@ fi
 
 if [[ -z "$anterior" || "$anterior" == "$nuevo" ]]; then
     echo "No hay un tag anterior al que volver: revisa los logs (runbook 03)." >&2
+    exit 1
+fi
+# The first deploy: HALSA_TAG still holds the placeholder of .env.ejemplo, with no images behind it. Restarting onto
+# it would only take down the units that were healthy (bff).
+if ! imagenes_cargadas "$anterior"; then
+    echo "No hay rollback: las imágenes de $anterior no están cargadas (¿primer despliegue?). $nuevo queda fijado;" \
+         "corrige y vuelve a desplegar. Logs: journalctl --user -u halsa-api -n 100" >&2
     exit 1
 fi
 

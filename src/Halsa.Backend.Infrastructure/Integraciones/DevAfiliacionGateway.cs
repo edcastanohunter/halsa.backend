@@ -1,8 +1,6 @@
 using Halsa.Backend.Application.Abstractions.Integraciones;
-using Halsa.Backend.Application.Integraciones;
 using Halsa.Backend.Domain.Casos;
 using Halsa.Backend.SharedKernel.Tenancy;
-using Microsoft.Extensions.Options;
 
 namespace Halsa.Backend.Infrastructure.Integraciones;
 
@@ -32,26 +30,4 @@ internal sealed class DevAfiliacionGateway : IAfiliacionGateway
         environmentName is null
         || string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase)
         || string.Equals(environmentName, "Testing", StringComparison.OrdinalIgnoreCase);
-}
-
-/// <summary>
-/// Se ejecuta al arrancar (<c>ValidateOnStart</c>): fuera de Development y Testing todavía no hay un gateway de
-/// afiliación real, así que la API no arranca en vez de aprobar casos con el stub.
-/// </summary>
-internal sealed class AfiliacionGatewayValidator(string? environmentName) : IValidateOptions<IntegracionesOptions>
-{
-    public ValidateOptionsResult Validate(string? name, IntegracionesOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-
-        if (options.VentanaDuplicado <= TimeSpan.Zero)
-        {
-            return ValidateOptionsResult.Fail("Integraciones:VentanaDuplicado debe ser positiva.");
-        }
-
-        return DevAfiliacionGateway.Admitido(environmentName)
-            ? ValidateOptionsResult.Success
-            : ValidateOptionsResult.Fail(
-                $"No hay un IAfiliacionGateway real para '{environmentName}': DevAfiliacionGateway solo se admite en Development y Testing.");
-    }
 }

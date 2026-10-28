@@ -59,10 +59,10 @@ public sealed class ProductionGuardTests
     }
 
     [Fact]
-    public void AGatewayThatCannotBeBuilt_ShouldBeLeftToItsOwnValidator()
+    public void TheNotIntegratedGateway_ShouldBeAccepted()
     {
         var services = new ServiceCollection();
-        services.AddScoped<IAfiliacionGateway>(_ => throw new InvalidOperationException("sin gateway real"));
+        services.AddScoped<IAfiliacionGateway, AfiliacionNoIntegradaGateway>();
 
         ProductionGuard.VerificarServicios(services.BuildServiceProvider()).ShouldBeEmpty();
     }

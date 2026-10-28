@@ -165,10 +165,11 @@ Una solicitud de otro tenant responde `404`.
 - `OutboxProcessor` entrega `CasoRadicadoIntegrationEvent` a `InProcessEventBus`. Este abre un *scope* por mensaje y publica a los `IIntegrationEventHandler<T>` registrados (además de registrarlo en el log, como hacía `LoggingEventBus`).
 - `ValidarCasoRadicadoHandler` entra en `ISystemTenantScope.Entrar(tenantId)` y trabaja con `ApplicationDbContext` (`halsa_app`):
   1. **Deduplicación.** Busca otro caso del mismo tenant, tipo y trabajador, con `|fecha_evento − fecha| ≤ 24 h`, que no esté `Rechazado` y que se haya radicado antes. Si existe, rechaza con `Duplicado` y `duplicado_de`.
-  2. **Afiliación.** `IAfiliacionGateway.VerificarAsync(tenant, trabajador, empleador, fechaEvento)` devuelve `Afiliado`, `NoAfiliado` o lanza una excepción. Con `NoAfiliado`, el caso se rechaza. Si lanza, el mensaje del outbox se reintenta.
+  2. **Afiliación.** `IAfiliacionGateway.VerificarAsync(tenant, trabajador, empleador, fechaEvento)` devuelve `Afiliado`, `NoAfiliado`, `SinVerificar` o lanza una excepción. Con `NoAfiliado`, el caso se rechaza. Si lanza, el mensaje del outbox se reintenta. Con `SinVerificar` (no hay core integrado), el caso queda `Radicado`, sin evento ni auditoría, el mensaje se da por procesado y se registra un `Warning`.
   3. Si no aplica ninguna de las dos, el caso pasa a `Validado`.
   4. Los eventos de dominio se convierten en `CasoValidadoIntegrationEvent` y `CasoRechazadoIntegrationEvent` en el outbox (sin consumidor hasta la SPEC 10), y se audita `ACTUALIZAR / CASO` con el actor de sistema.
 - `DevAfiliacionGateway` aprueba siempre, salvo los trabajadores cuyo número termina en `000`, que rechaza para poder probar ese camino. Solo se registra en `Development` y `Testing`.
+- En cualquier otro entorno, mientras no exista el cliente del core de ninguna ARL, se registra `AfiliacionNoIntegradaGateway`, que siempre devuelve `SinVerificar`. Producción recibe y deduplica las radicaciones, pero no valida ni rechaza por afiliación. **Pendiente para la spec del primer core:** reemplazar este gateway y volver a validar los casos que sigan en `Radicado`, por ejemplo volviendo a encolar su `CasoRadicadoIntegrationEvent`.
 
 ### Contexto de sistema (`ISystemTenantScope`)
 

@@ -276,6 +276,17 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
+          # An unknown or empty secret expands to "" without error, and ssh then only prints its usage.
+          falta=0
+          for nombre in VPS_HOST VPS_USER VPS_SSH_KEY VPS_SSH_KNOWN_HOSTS; do
+            if [[ -z "${!nombre//[[:space:]]/}" ]]; then
+              echo "::error::falta el secret $nombre (o está vacío) en el environment produccion"; falta=1
+            fi
+          done
+          if [[ "$VPS_HOST" =~ [[:space:]@/:] || "$VPS_USER" =~ [[:space:]@] ]]; then
+            echo "::error::VPS_HOST debe ser solo el host o la IP (sin usuario, puerto, ssh:// ni espacios) y VPS_USER solo el usuario"; falta=1
+          fi
+          (( falta == 0 )) || exit 1
           install -m 600 /dev/null llave_ssh
           printf '%s\n' "$VPS_SSH_KEY" > llave_ssh
           printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > known_hosts

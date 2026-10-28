@@ -196,6 +196,11 @@ la condición:
 | el stub de afiliación está registrado | build de desarrollo desplegado por error |
 | `ConnectionStrings:Database` usa `halsa_owner` o `postgres` | la API usa `halsa_app` (`arrancar-dotnet.sh`) |
 
+**Afiliación sin core integrado.** Todavía no hay cliente del core de ninguna ARL (SPEC 05). En producción, las
+radicaciones FURAT/FUREP se reciben y se deduplican, pero quedan en `Radicado`: no se validan ni se rechazan por
+afiliación. Cada una deja en Seq un `Warning` *sin core de afiliación integrado*. Es lo esperado hasta la spec del
+primer core, que volverá a validar esos casos.
+
 ## NPM se recreó (actualización, reinicio) y Halsa responde 502
 
 `podman network connect` no sobrevive a la recreación del contenedor de NPM: NPM pierde la red `halsa_borde`. El

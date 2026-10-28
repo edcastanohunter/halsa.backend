@@ -114,6 +114,35 @@ public sealed class ValidacionTests(DatabaseFixture db)
     }
 
     [Fact]
+    public async Task NoIntegratedCore_ShouldLeaveTheCaseRadicado_ProcessTheMessage_AndStillRejectDuplicates()
+    {
+        const string tenant = "ARL_VAL_SIN_CORE";
+        RadicacionResponse primero = await RadicarValidoAsync(db, tenant, Furat("SIN-CORE-1", fechaHora: Evento));
+        RadicacionResponse segundo = await RadicarValidoAsync(db, tenant, Furat("SIN-CORE-2", fechaHora: Evento.AddHours(3)));
+
+        await using (ServiceProvider sinCore = db.CrearServicios(services =>
+                     {
+                         services.RemoveAll<IAfiliacionGateway>();
+                         services.AddScoped<IAfiliacionGateway, AfiliacionNoIntegradaGateway>();
+                     }))
+        {
+            await ProcesarOutboxAsync(sinCore);
+        }
+
+        (await EstadoAsync(primero.CasoId)).ShouldBe(("Radicado", null, null));
+        (await EstadoAsync(segundo.CasoId)).ShouldBe(("Rechazado", "Duplicado", primero.CasoId));
+        (await ContarAsync(db, """
+            SELECT count(*) FROM outbox.outbox_messages
+            WHERE type LIKE '%CasoRadicadoIntegrationEvent' AND (content->>'casoId')::uuid = @caso
+              AND processed_on_utc IS NOT NULL AND error IS NULL
+            """, ("caso", primero.CasoId))).ShouldBe(1);
+        (await ContarAsync(db, """
+            SELECT count(*) FROM outbox.outbox_messages
+            WHERE type LIKE '%CasoValidadoIntegrationEvent' AND (content->>'casoId')::uuid = @caso
+            """, ("caso", primero.CasoId))).ShouldBe(0);
+    }
+
+    [Fact]
     public async Task RedeliveredEvent_ShouldChangeNothing()
     {
         const string tenant = "ARL_VAL_REPETIDO";
