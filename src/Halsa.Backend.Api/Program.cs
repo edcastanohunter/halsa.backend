@@ -46,6 +46,7 @@ if (rol.AtiendeApi())
 }
 
 builder.Services.AddProxyConfiable(builder.Configuration);
+builder.Services.AddCorsBackoffice(builder.Configuration);
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
@@ -66,6 +67,9 @@ if (app.Environment.IsProduction())
 
 // SPEC 13: first, so everything after it sees the client's IP and scheme, and no forged X-Client-Cert.
 app.UseProxyConfiable();
+
+// Before everything that can answer: the preflight carries no token, and a 401/403/500 must still reach the SPA.
+app.UseCorsBackoffice(app.Configuration);
 
 app.UseExceptionHandler();
 

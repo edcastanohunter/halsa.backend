@@ -57,6 +57,47 @@ public sealed class ProdRealmsTests
         realm.ContainsKey("smtpServer").ShouldBeFalse();
     }
 
+    [Fact]
+    public void ThePersonalRealm_ShouldIssueSubAndAuthTime()
+    {
+        JsonObject realm = Cargar("halsa.prod.json");
+
+        JsonObject basic = realm["clientScopes"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(s => s["name"]!.GetValue<string>() == "basic");
+        basic["protocolMappers"]!.AsArray().Select(m => m!["protocolMapper"]!.GetValue<string>())
+            .ShouldBe(["oidc-sub-mapper", "oidc-usersessionmodel-note-mapper"], ignoreOrder: true);
+
+        realm["defaultDefaultClientScopes"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("basic");
+    }
+
+    [Fact]
+    public void TheAdministradorRole_ShouldHaveNeitherClinicalNorIntegrationPermissions()
+    {
+        JsonObject rol = Cargar("halsa.prod.json")["roles"]!["client"]!["halsa-api"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(r => r["name"]!.GetValue<string>() == "administrador");
+
+        string[] permisos = [.. rol["composites"]!["client"]!["halsa-api"]!.AsArray().Select(n => n!.GetValue<string>())];
+
+        permisos.ShouldContain("auditoria:read");
+        permisos.ShouldContain("casos:read");
+        permisos.Where(p => p.StartsWith("clinico:", StringComparison.Ordinal) ||
+                            p.StartsWith("pcl:", StringComparison.Ordinal) ||
+                            p.StartsWith("integracion:", StringComparison.Ordinal))
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void TheBackofficeClient_ShouldRequirePkce()
+    {
+        JsonObject backoffice = Cargar("halsa.prod.json")["clients"]!.AsArray()
+            .Select(n => n!.AsObject())
+            .Single(c => c["clientId"]!.GetValue<string>() == "halsa-backoffice");
+
+        backoffice["attributes"]!["pkce.code.challenge.method"]!.GetValue<string>().ShouldBe("S256");
+    }
+
     /// <summary>
     /// importar-realms.sh fills only these with envsubst; ${client_id} is Keycloak's own mapper syntax and must stay
     /// literal. Anything else would reach the shared Keycloak unrendered.

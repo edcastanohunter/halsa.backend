@@ -11,6 +11,7 @@
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "accessTokenLifespan": 300,
+  "passwordPolicy": "length(12) and notUsername and notEmail",
   "otpPolicyType": "totp",
   "otpPolicyAlgorithm": "HmacSHA1",
   "otpPolicyDigits": 6,
@@ -434,6 +435,10 @@
       "webOrigins": [
         "${HALSA_BACKOFFICE_URL}"
       ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${HALSA_BACKOFFICE_URL}/*"
+      },
       "protocolMappers": [
         {
           "name": "halsa-api audience",
@@ -711,6 +716,30 @@
               "halsa-api": [
                 "integracion:clinico:write",
                 "incapacidades:write",
+                "webhooks:manage"
+              ]
+            }
+          }
+        },
+        {
+          "name": "administrador",
+          "description": "Administrador de la plataforma para su ARL: casos, incapacidades, plazos, auditoría, webhooks, códigos del portal y solicitudes de copia de la HC. Sin HC, PCL ni emergencia (secreto profesional) ni cuentas de integración.",
+          "composite": true,
+          "clientRole": true,
+          "composites": {
+            "client": {
+              "halsa-api": [
+                "casos:read",
+                "casos:write",
+                "casos:asignar",
+                "incapacidades:read",
+                "plazos:read",
+                "plazos:write",
+                "pacientes:activar",
+                "auditoria:read",
+                "auditoria:export",
+                "auditoria:revisar",
+                "solicitudes-hc:gestionar",
                 "webhooks:manage"
               ]
             }
