@@ -31,6 +31,8 @@ Volume=%h/.config/halsa/secretos/pg_owner_password:/run/secrets/pg_owner_passwor
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=Halsa__Rol=Migrador
 Environment=HALSA_SERVICIO=migrador
+# postgres by its fixed IP on datos, not by name (halsa-postgres.container).
+Environment=HALSA_DB_HOST=172.30.2.10
 
 [Service]
 EnvironmentFile=%h/halsa/deploy/.env

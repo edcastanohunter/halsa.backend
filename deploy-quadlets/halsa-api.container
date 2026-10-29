@@ -44,6 +44,8 @@ Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_HTTP_PORTS=8080
 Environment=Halsa__Rol=Api
 Environment=HALSA_SERVICIO=api
+# postgres by its fixed IP on datos, not by name (halsa-postgres.container).
+Environment=HALSA_DB_HOST=172.30.2.10
 Environment=Keycloak__PersonalAuthority=${HALSA_KEYCLOAK_URL}/realms/halsa
 Environment=Keycloak__PacientesAuthority=${HALSA_KEYCLOAK_URL}/realms/halsa-pacientes
 Environment=Keycloak__RequireHttpsMetadata=true

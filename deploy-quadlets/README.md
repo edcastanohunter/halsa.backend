@@ -33,9 +33,10 @@ contenedor no podría leerlos). **Excluye `~/.config/halsa/` de cualquier backup
 Los contenedores se llaman `halsa-<servicio>` (Quadlet arranca con `--replace`: con `postgres` a secas habría
 reemplazado el postgres que ya corre en el VPS). Dentro de las redes de Halsa conservan su nombre corto con
 `NetworkAlias=` (`postgres`, `redis`, `api`, …), que es el que usan las cadenas de conexión y NPM.
-`NetworkAlias=` vale en **todas** las redes del contenedor. Por eso postgres lleva su alias solo en `datos`
-(`Network=halsa-datos.network:alias=postgres`): el worker también está en `egreso`, y con el alias ahí a veces
-resolvía `postgres` a una IP 172.30.3.x, que `pg_hba.conf` rechaza.
+La excepción es la base de datos. api, worker y migrador se conectan a la **IP fija de postgres en `datos`**,
+`172.30.2.10` (`HALSA_DB_HOST` en sus unidades), y `halsa-datos.network` deja esa IP fuera de su `IPRange`. El
+worker y postgres también comparten `egreso`, y el DNS de Podman responde `postgres` primero con la IP de `egreso`,
+incluso con el alias solo en `datos`. `pg_hba.conf` rechaza esa IP, así que la conexión fallaba.
 
 ## Archivos
 

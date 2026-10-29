@@ -239,6 +239,41 @@
       ]
     },
     {
+      "name": "basic",
+      "description": "Emite sub y auth_time. Un realm importado con clientScopes propios no crea el scope integrado de Keycloak 25+: sin él ningún token lleva sub (TenantContextMiddleware responde 403 Tenant.ClaimsIncompletos) ni auth_time (el step-up con antigüedad máxima no se cumple).",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "auth_time",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "AUTH_TIME",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "claim.name": "auth_time",
+            "jsonType.label": "long"
+          }
+        }
+      ]
+    },
+    {
       "name": "acr",
       "description": "Emite el claim acr (SPEC 07). Un realm importado con clientScopes propios no crea el scope integrado de Keycloak: sin él ningún token lleva acr y el step-up nunca se cumple.",
       "protocol": "openid-connect",
@@ -355,6 +390,7 @@
     }
   ],
   "defaultDefaultClientScopes": [
+    "basic",
     "profile",
     "roles",
     "web-origins",

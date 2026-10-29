@@ -16,9 +16,10 @@ ShmSize=256m
 NoNewPrivileges=true
 Ulimit=core=0
 LogDriver=journald
-# The "postgres" alias only on datos. NetworkAlias= would put it on egreso too, and the worker (also on egreso) would
-# sometimes resolve it to 172.30.3.x, which pg_hba.conf rejects. Egreso is only for pgBackRest to reach the bucket.
-Network=halsa-datos.network:alias=postgres
+# A fixed IP on datos, outside its IPRange: api, worker and migrador connect to 172.30.2.10 (HALSA_DB_HOST), never
+# to a name. The worker is on egreso too, and Podman's DNS answers "postgres" with the egreso IP first even with the
+# alias only on datos; pg_hba.conf rejects that. Egreso is only for pgBackRest to reach the bucket.
+Network=halsa-datos.network:ip=172.30.2.10,alias=postgres
 Network=halsa-egreso.network
 Volume=halsa-postgres-datos.volume:/var/lib/postgresql/data
 Volume=%h/.config/halsa/secretos/pg_postgres_password:/run/secrets/pg_postgres_password:ro
