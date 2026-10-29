@@ -1,4 +1,4 @@
-ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss#!/usr/bin/env bash
+#!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # crear-usuarios-prueba.sh — da de alta (o borra) los usuarios de la fase de pruebas en el Keycloak COMPARTIDO.
 #
